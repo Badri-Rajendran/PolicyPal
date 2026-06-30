@@ -45,3 +45,5 @@ notebooks/
 
 data/
 .env
+
+logs/

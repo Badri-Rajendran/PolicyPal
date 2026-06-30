@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     environment: Literal["development", "productin"] = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "CRITICAL", "ERROR"] = "INFO"
+    log_dir: str = "logs/backend"
 
     # Database PostgreSQL + pgvector
 
