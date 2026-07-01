@@ -34,5 +34,3 @@ RAW = Path("data/corpus/raw")
 MARKDOWN = Path("data/corpus/markdown")
 
 CHUNKS_DIR = Path("data/corpus/chunks")
-
-TOKENIZER = tt.encoding_for_model("gpt2")

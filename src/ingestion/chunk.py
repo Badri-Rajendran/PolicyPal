@@ -10,15 +10,15 @@ import json
 import re
 from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from .constants import TOKENIZER, CHUNKS_DIR, WIKI_ARTICLES, MARKDOWN
+from .constants import CHUNKS_DIR, WIKI_ARTICLES, MARKDOWN
 
 
 # Token counting
 
 def count_tokens(text: str) -> int:
-    token_ids = TOKENIZER.encode(text)
-
-    return len(token_ids)
+    '''Here token count is approximately taken as 1.35 times the word count in a text'''
+    no_of_words = len(text.split())
+    return int(no_of_words * 1.35)
 
 
 # Content feature detection
