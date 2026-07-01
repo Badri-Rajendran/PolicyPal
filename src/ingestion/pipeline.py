@@ -1,6 +1,7 @@
 from . import download
 from . import clean
 from . import chunk
+from . import embed
 from src.core.logging import get_logger, setup_logging
 
 def main():
@@ -30,8 +31,7 @@ def main():
 
     print("\n=== Running Phase 4 ===")
 
-    # TODO: Call the embed initiator function here.
-    print("To be completed...")
+    embed.execute()
 
     print("\n=== Phase 4 Completed ===")
     
