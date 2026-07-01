@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_dim: int = 384
 
+    device: Literal["auto", "cpu", "mps", "cuda"] = "auto"
+
+    query_prefix: str = "Represent this sentence for searching relevant passages: "
+
     # HF Token
 
     hf_api_key: Optional[SecretStr] = None
