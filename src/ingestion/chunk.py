@@ -68,6 +68,12 @@ def make_recursive_splitter(
         is_separator_regex=True,
     )
 
+def _make_chunk_id(sanitized_title: str, chunk_idx: int) -> str:
+    chunk_id = f"wikipedia_{sanitized_title}_s0_c{chunk_idx:02d}"
+    if len(chunk_id) > 255:
+        raise ValueError(f"chunk_id too long ({len(chunk_id)} chars): {chunk_id}")
+    return chunk_id
+
 # Wikipedia article chunking
 
 def chunk_wikipedia(filepath: Path, title: str) -> list[dict]:
@@ -107,7 +113,7 @@ def chunk_wikipedia(filepath: Path, title: str) -> list[dict]:
         if count_tokens(first_line) < 15 and _section_title_re.match(first_line):
             cur_section = first_line
 
-        chunk_id = f"wikipedia_{sanitized_title}_s0_c{c_idx:02d}"
+        chunk_id = _make_chunk_id(sanitized_title, c_idx)
 
         chunks.append({
             "text": chunk_text,
