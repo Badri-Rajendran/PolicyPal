@@ -5,13 +5,19 @@ Strategy per document type:
   Wikipedia        → RecursiveCharacterTextSplitter (paragraph-first,
                        chunk_size=350 tok, overlap=0)
 """
+from .constants import CHUNKS_DIR, WIKI_ARTICLES, MARKDOWN, INDEX_DIR
+from src.core.logging import get_logger
+
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 import json
 import re
 from pathlib import Path
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from .constants import CHUNKS_DIR, WIKI_ARTICLES, MARKDOWN
+from rank_bm25 import BM25Okapi
+import pickle
 
+
+logger = get_logger(__name__)
 
 # Token counting
 
@@ -125,6 +131,26 @@ def chunk_wikipedia(filepath: Path, title: str) -> list[dict]:
     return chunks
 
 
+def _build_and_store_index(texts: list[str], chunk_ids: list[str]) -> None:
+    INDEX_DIR.mkdir(parents = True, exist_ok = True)
+
+    index_file_path = INDEX_DIR / "bm25.pkl"
+
+    tokenized_texts = [text.lower().split() for text in texts]
+
+    bm25 = BM25Okapi(tokenized_texts)
+
+    with index_file_path.open("wb") as file:
+        pickle.dump({
+            "bm25": bm25,
+            "chunk_ids" : chunk_ids,
+            "texts": texts
+        }, 
+        file)
+    
+    logger.info(f"BM25 index -> {len(tokenized_texts)} docs saved.")
+
+
 # Executor
 
 def execute() -> None:
@@ -149,9 +175,16 @@ def execute() -> None:
 
     output_path = CHUNKS_DIR / "all_chunks.jsonl"
 
+    chunk_texts = []
+    chunk_ids = []
+
     with output_path.open("w", encoding="utf-8") as f:
         for chunk in all_chunks:
+            chunk_texts.append(chunk["text"])
+            chunk_ids.append(chunk["metadata"]["chunk_id"])
             f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
+
+    _build_and_store_index(chunk_texts, chunk_ids)
 
     print(f"\nWrote {len(all_chunks)} chunks to {output_path}")
     

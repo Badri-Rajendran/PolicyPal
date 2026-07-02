@@ -34,3 +34,5 @@ RAW = Path("data/corpus/raw")
 MARKDOWN = Path("data/corpus/markdown")
 
 CHUNKS_DIR = Path("data/corpus/chunks")
+
+INDEX_DIR = Path("data/corpus/indices")
