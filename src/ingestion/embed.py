@@ -74,7 +74,8 @@ def execute(chunks_path: Path=CHUNKS_PATH, batch_size: int=BATCH_SIZE, rebuild: 
                     {
                         "content": chunk["text"],
                         "source": chunk["metadata"]["source_file"],
-                        "embedding": em_vector
+                        "embedding": em_vector,
+                        "chunk_id": chunk["metadata"]["chunk_id"]
                     }
                     for chunk, em_vector in zip(curr_chunks, embedded_vectors)
                 ],

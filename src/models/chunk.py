@@ -13,4 +13,5 @@ class Chunk(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str] = mapped_column(String(300), index=True)
+    chunk_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     embedding: Mapped[list[float]] = mapped_column(Vector(settings.embedding_dim))
