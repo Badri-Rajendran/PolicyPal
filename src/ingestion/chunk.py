@@ -218,3 +218,9 @@ def _print_summary(chunks: list[dict]) -> None:
     
     print(f"Average token count:    {avg:.1f}")
     print(f"Min / Max token count:  {min(token_counts)} / {max(token_counts)}")
+
+
+if __name__ == "__main__":
+    from src.core.logging import setup_logging
+    setup_logging()
+    execute()
