@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     rerank_top_k: int = 15
 
+    # LLM
+
+    llm_model: str = "Qwen/Qwen2.5-1.5B-Instruct"
+    max_new_tokens: int = 1024
+    temperature: float = 1.5
+
 
 @lru_cache
 def get_settings():

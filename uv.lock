@@ -1198,6 +1198,7 @@ dependencies = [
     { name = "tiktoken" },
     { name = "torch" },
     { name = "tqdm" },
+    { name = "transformers" },
     { name = "wikipedia-api" },
 ]
 
@@ -1219,6 +1220,7 @@ requires-dist = [
     { name = "tiktoken", specifier = ">=0.13.0" },
     { name = "torch", specifier = ">=2.12.1" },
     { name = "tqdm", specifier = ">=4.68.3" },
+    { name = "transformers", specifier = ">=5.12.1" },
     { name = "wikipedia-api", specifier = ">=0.15.0" },
 ]
 
