@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     chunk_size: int = 350
     chunk_overlap: int = 0
 
+    # Hybrid retrieval
+    bm25_index_path: str = "data/corpus/indices/bm25.pkl"
+
+    sparse_top_k: int = 20
+    dense_top_k: int = 30
+
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    rerank_top_k: int = 15
+
 
 @lru_cache
 def get_settings():
