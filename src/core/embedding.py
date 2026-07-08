@@ -1,10 +1,6 @@
 from src.policypal.config import settings
 from .logging import get_logger
-
-import os
-
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+from .device import resolve_device
 
 from sentence_transformers import SentenceTransformer
 
@@ -13,24 +9,10 @@ from functools import lru_cache
 
 logger = get_logger(__name__)
 
-def _resolve_device() -> str:
-    '''Pick the compute device. "auto" -> best available (mps on Apple Silicon).'''
-    if settings.device != "auto":
-        return settings.device
-    
-    import torch
-
-    if torch.cuda.is_available():   # NVidia GPU
-        return "cuda"
-    if torch.backends.mps.is_available():   #Apple Silicon GPU
-        return "mps"
-    
-    return "cpu"
-
 @lru_cache
 def _model():
     '''Load the embedding model once per process (cached).'''
-    device = _resolve_device()
+    device = resolve_device()
     logger.info("loading embedding model %s on %s", settings.embedding_model, device)
     return SentenceTransformer(settings.embedding_model, device=device)
 

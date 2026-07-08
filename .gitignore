@@ -47,3 +47,5 @@ data/
 .env
 
 logs/
+
+node_modules/

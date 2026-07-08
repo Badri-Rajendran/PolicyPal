@@ -16,6 +16,7 @@ dependencies = [
     "tiktoken>=0.13.0",
     "torch>=2.12.1",
     "tqdm>=4.68.3",
+    "transformers>=5.12.1",
     "wikipedia-api>=0.15.0",
 ]
 
