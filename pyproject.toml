@@ -5,8 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.18.5",
     "langchain-text-splitters>=1.1.2",
+    "pgvector>=0.4.2",
+    "psycopg[binary]>=3.3.4",
+    "pydantic-settings>=2.14.2",
+    "rank-bm25>=0.2.2",
+    "sentence-transformers>=5.6.0",
+    "sqlalchemy>=2.0.51",
     "tiktoken>=0.13.0",
+    "torch>=2.12.1",
     "tqdm>=4.68.3",
     "wikipedia-api>=0.15.0",
 ]
@@ -17,3 +25,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["utils"]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.3.0",
+]

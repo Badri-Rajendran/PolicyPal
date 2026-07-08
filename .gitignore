@@ -44,3 +44,6 @@ htmlcov/
 notebooks/
 
 data/
+.env
+
+logs/
