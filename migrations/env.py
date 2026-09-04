@@ -1,5 +1,6 @@
 from src.policypal.config import settings
 from src.core.db import Base
+from src.models import chunk, user  # noqa: F401 — register models on Base.metadata
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool

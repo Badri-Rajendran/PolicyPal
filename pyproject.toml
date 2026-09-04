@@ -30,4 +30,8 @@ packages = ["utils"]
 [dependency-groups]
 dev = [
     "ipykernel>=7.3.0",
+    "pytest>=8.4.0",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
