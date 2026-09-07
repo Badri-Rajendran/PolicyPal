@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     # Low temperature keeps grounded QA deterministic and reduces hallucination.
     temperature: float = 0.2
 
+    # API / Auth
+
+    jwt_secret_key: SecretStr = Field(..., description="Signing key for access tokens.")
+    jwt_access_token_expires_minutes: int = 30
+
+    # Only this origin may call the API from a browser.
+    frontend_origin: str = "http://localhost:5173"
+
 
 @lru_cache
 def get_settings():

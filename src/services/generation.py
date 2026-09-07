@@ -40,13 +40,11 @@ def _llm():
 
 def _build_user_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
 
-    context = "\n\n".join(
-        f"[Source: {chunk.source}]\n Content:\n{chunk.content}\n Chunk ID: {chunk.chunk_id}" for chunk in chunks
-    )
+    context = "\n\n".join(f"[Source: {chunk.source}]\nContent:\n{chunk.content}" for chunk in chunks)
 
     content = (
         f"Question: {query}\n\n"
-        f"Context:\n{context}"
+        f"Context:\n{context}\n\n"
         "Think step by step to obtain the answer"
     )
 
