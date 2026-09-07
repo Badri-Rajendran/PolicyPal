@@ -1,15 +1,16 @@
-from pathlib import Path
 import json
-from src.core.logging import get_logger
-from .constants import CHUNKS_DIR
-from src.core.db import get_session
+from pathlib import Path
+
 from sqlalchemy import delete, insert
-from src.models.chunk import Chunk
 from tqdm import tqdm
 
+from src.core.db import get_session
 from src.core.embedding import embed_texts
-
+from src.core.logging import get_logger
+from src.models.chunk import Chunk
 from src.policypal.config import settings
+
+from .constants import CHUNKS_DIR
 
 CHUNKS_PATH = CHUNKS_DIR / "all_chunks.jsonl"
 BATCH_SIZE = 64

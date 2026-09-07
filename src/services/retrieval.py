@@ -1,19 +1,17 @@
-from src.core.logging import get_logger
-from src.core.db import get_session
-from src.models.chunk import Chunk
-from src.core.embedding import embed_query
-from src.policypal.config import settings
-from src.core.reranker import rerank
+import math
+import pickle as pkl
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 
 from sqlalchemy import select
 
-from dataclasses import dataclass
-
-from functools import lru_cache
-from pathlib import Path
-import pickle as pkl
-import math
-
+from src.core.db import get_session
+from src.core.embedding import embed_query
+from src.core.logging import get_logger
+from src.core.reranker import rerank
+from src.models.chunk import Chunk
+from src.policypal.config import settings
 
 logger = get_logger(__name__)
 
@@ -34,7 +32,10 @@ def _bm25_index() -> dict:
         raise FileNotFoundError(f"BM25 index not found at {index_path}. Run the chunk stage first.")
     
     with index_path.open("rb") as file:
-        return pkl.load(file)
+        # This file is only ever produced by our own ingestion pipeline
+        # (src/ingestion/chunk.py), never from user input or an external
+        # source, so there's no untrusted data to deserialize here.
+        return pkl.load(file)  # nosec B301
 
 
 def _sparse_search(query: str, top_k: int) -> list[str]:

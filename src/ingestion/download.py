@@ -1,11 +1,13 @@
-#!/usr/bin/env python3
 """Phase 1: Download all corpus sources."""
 
 import re
 import time
+
 import wikipediaapi
 from tqdm import tqdm
+
 from .constants import RAW, WIKI_ARTICLES
+
 
 def wikipedia_data():
     print("\n=== Phase 1: Downloading Wikipedia Articles ===")
@@ -38,7 +40,7 @@ def wikipedia_data():
             
             time.sleep(0.5)
         
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- one bad article must not abort the whole batch
             print(f"  {title}: ERROR — {e}")
     
     _print_summary()

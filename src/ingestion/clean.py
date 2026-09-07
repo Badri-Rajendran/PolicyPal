@@ -1,9 +1,11 @@
-#!/usr/bin/env python3
 """Phase 2: Convert raw sources to clean markdown."""
 
 import re
+
 from tqdm import tqdm
-from .constants import WIKI_ARTICLES, RAW, MARKDOWN
+
+from .constants import MARKDOWN, RAW, WIKI_ARTICLES
+
 
 def sanitize_name(name: str) -> str:
     return re.sub(r"[^\w]+", "_", name).strip("_")

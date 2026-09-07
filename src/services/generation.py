@@ -1,12 +1,13 @@
+from functools import lru_cache
+
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+from src.core.device import resolve_device
 from src.core.logging import get_logger
 from src.policypal.config import settings
-from src.core.device import resolve_device
+
 from .retrieval import RetrievedChunk, search
-
-from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
-
-from functools import lru_cache
 
 logger = get_logger(__name__)
 
@@ -25,9 +26,10 @@ def _llm():
 
     logger.info("LLM will be run on: %s", device)
 
-    tokenizer = AutoTokenizer.from_pretrained(settings.llm_model)
+    tokenizer = AutoTokenizer.from_pretrained(settings.llm_model, revision=settings.llm_model_revision)
     model = AutoModelForCausalLM.from_pretrained(
         settings.llm_model,
+        revision=settings.llm_model_revision,
         # fp16 is only reliable on CUDA; MPS's fp16 kernels are known to
         # stall/misbehave on generation ops, so fall back to fp32 there.
         dtype=torch.float16 if device == "cuda" else torch.float32

@@ -3,7 +3,6 @@ import torch
 from src.policypal.config import settings
 
 
-
 def resolve_device() -> str:
     """Pick the compute device. settings.device='auto' -> best available."""
 

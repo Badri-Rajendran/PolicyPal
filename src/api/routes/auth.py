@@ -1,12 +1,11 @@
 from flask import Blueprint, jsonify
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, jwt_required
 
 from src.api.deps import get_current_user, get_db, parse_body
 from src.api.limiter import limiter
 from src.core.exceptions import EmailAlreadyRegisteredError, InvalidCredentialsError
 from src.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
 from src.services.auth import authenticate_user, register_user
-from flask_jwt_extended import jwt_required
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 

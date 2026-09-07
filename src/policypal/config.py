@@ -1,7 +1,8 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Literal, Optional
-from pydantic import Field, SecretStr
 from functools import lru_cache
+from typing import Literal
+
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -25,6 +26,10 @@ class Settings(BaseSettings):
     # Embedding
 
     embedding_model: str = "BAAI/bge-small-en-v1.5"
+    # Pinned commit, not a mutable branch ref: a model repo can change its
+    # weights under an unpinned name, which is a real supply-chain risk for
+    # anything downloaded and executed automatically (CWE-494).
+    embedding_model_revision: str = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
     embedding_dim: int = 384
 
     device: Literal["auto", "cpu", "mps", "cuda"] = "auto"
@@ -33,7 +38,7 @@ class Settings(BaseSettings):
 
     # HF Token
 
-    hf_api_key: Optional[SecretStr] = None
+    hf_api_key: SecretStr | None = None
 
     # RAG Chunking
 
@@ -50,6 +55,7 @@ class Settings(BaseSettings):
     dense_top_k: int = 30
 
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    reranker_model_revision: str = "233902d25c440f23af6f7d6e94d2946bac0bee0a"
     rerank_top_k: int = 15
 
     # Minimum reranker relevance (sigmoid of cross-encoder logit, 0-1) a chunk
@@ -60,6 +66,7 @@ class Settings(BaseSettings):
     # LLM
 
     llm_model: str = "Qwen/Qwen2.5-0.5B-Instruct"
+    llm_model_revision: str = "7ae557604adf67be50417f59c2c2f167def9a775"
     # Grounded answers should be short; this also bounds worst-case latency.
     max_new_tokens: int = 256
     # Low temperature keeps grounded QA deterministic and reduces hallucination.

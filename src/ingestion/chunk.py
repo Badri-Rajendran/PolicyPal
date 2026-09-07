@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Phase 3: Chunking Pipeline — LangChain-based chunking for all document types.
 
 Strategy per document type:
@@ -7,18 +6,18 @@ Strategy per document type:
                        each chunk indexed under a title/section-prefixed
                        "contextualized_text" (see chunk_wikipedia).
 """
-from .constants import CHUNKS_DIR, WIKI_ARTICLES, MARKDOWN, INDEX_DIR
+import json
+import pickle
+import re
+from pathlib import Path
+
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from rank_bm25 import BM25Okapi
+
 from src.core.logging import get_logger
 from src.policypal.config import settings
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-import json
-import re
-from pathlib import Path
-from rank_bm25 import BM25Okapi
-import pickle
-
+from .constants import CHUNKS_DIR, INDEX_DIR, MARKDOWN, WIKI_ARTICLES
 
 logger = get_logger(__name__)
 

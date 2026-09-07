@@ -1,8 +1,6 @@
-from . import download
-from . import clean
-from . import chunk
-from . import embed
 from src.core.logging import get_logger, setup_logging
+
+from . import chunk, clean, download, embed
 
 STAGES = [
     ("Phase 1", download.wikipedia_data),
