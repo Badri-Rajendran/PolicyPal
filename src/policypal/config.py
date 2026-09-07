@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # Environment & Logging:
 
-    environment: Literal["development", "productin"] = "development"
+    environment: Literal["development", "production"] = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "CRITICAL", "ERROR"] = "INFO"
     log_dir: str = "logs/backend"
 
@@ -49,11 +49,17 @@ class Settings(BaseSettings):
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     rerank_top_k: int = 15
 
+    # Minimum reranker relevance (sigmoid of cross-encoder logit, 0-1) a chunk
+    # must clear to be used as context. Below this the match is treated as
+    # noise so the LLM isn't fed distracting content it might hallucinate from.
+    min_relevance_score: float = 0.5
+
     # LLM
 
     llm_model: str = "Qwen/Qwen2.5-1.5B-Instruct"
     max_new_tokens: int = 1024
-    temperature: float = 1.5
+    # Low temperature keeps grounded QA deterministic and reduces hallucination.
+    temperature: float = 0.2
 
 
 @lru_cache

@@ -67,6 +67,9 @@ def _dense_search(query: str, top_k: int) -> list[str]:
 
 def search(query: str, top_k: int | None = None) -> list[RetrievedChunk]:
     """Return the top_k most similar chunks for a user query."""
+    if top_k is not None and top_k < 5:
+        raise ValueError("Internal Error: Atleast 5 chunks are required for retrieval.")
+
     query = query.strip()
     if not query:
         logger.warning("empty query received; returning no results")
@@ -88,8 +91,10 @@ def search(query: str, top_k: int | None = None) -> list[RetrievedChunk]:
 
         rows = {row.chunk_id: row for row in session.execute(stmt).all()}
 
+    required_top_k_chunks = top_k or settings.rerank_top_k
+
     pairs = [(cid, rows[cid].content) for cid in rows]
-    ranked = rerank(query, pairs, settings.rerank_top_k)
+    ranked = rerank(query, pairs, required_top_k_chunks)
 
     results = [
         RetrievedChunk(
@@ -101,9 +106,11 @@ def search(query: str, top_k: int | None = None) -> list[RetrievedChunk]:
         for cid, raw_score in ranked
     ]
 
+    relevant = [r for r in results if r.score >= settings.min_relevance_score]
+
     logger.info(
-        "hybrid search: %d sparse + %d dense -> %d candidates -> %d reranked",
-        len(sparse_ids), len(dense_ids), len(candidate_ids), len(results),
+        "hybrid search: %d sparse + %d dense -> %d candidates -> %d reranked -> %d relevant",
+        len(sparse_ids), len(dense_ids), len(candidate_ids), len(results), len(relevant),
     )
 
-    return results
+    return relevant
