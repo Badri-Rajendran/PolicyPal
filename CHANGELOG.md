@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add `scripts/eval_retrieval.py`: a small golden set of insurance
+  questions (one per ingested article) run against the real corpus and
+  real models, reporting top-5/top-1 accuracy. Unlike the mocked unit
+  tests, this is the only thing that would catch a retrieval quality
+  regression from a chunking/embedding/reranking change. Currently
+  25/25 in the top 5, 24/25 ranked first.
 - Harden CI supply chain: pin every third-party GitHub Action to its exact
   commit SHA (not a mutable version tag) and verify gitleaks' downloaded
   binary against its published sha256 checksum before executing it.

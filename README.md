@@ -136,6 +136,29 @@ npm test
 npm run build
 ```
 
+CI (`.github/workflows/ci.yml`) also runs `ruff`, `alembic check` (schema
+drift), `bandit` (SAST), `pip-audit`/`npm audit` (dependency CVEs), and a
+gitleaks secret scan on every PR and push to `main`.
+
+### Retrieval quality eval
+
+`tests/` proves the retrieval/generation *code* is wired correctly (with
+mocked models and data). It can't catch a change that keeps everything
+wired correctly but quietly makes real answers worse — a chunking,
+embedding, or reranking change that still passes every unit test. For that,
+`scripts/eval_retrieval.py` runs the real `search()` against the real
+ingested corpus over a small hand-built set of insurance questions, one per
+ingested article, and reports whether each one retrieves its source article
+in the top 5 (and whether it ranks first). Run it after any change that
+could affect retrieval quality:
+
+```bash
+uv run python -m scripts.eval_retrieval
+```
+
+Not a CI gate — it needs the corpus already ingested and loads real models,
+so it's slow and environment-dependent by nature.
+
 ## License
 
 This project is for educational and portfolio purposes. Ingested content is sourced from Wikipedia under its respective license.
