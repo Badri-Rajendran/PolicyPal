@@ -7,6 +7,7 @@ Strategy per document type:
 """
 from .constants import CHUNKS_DIR, WIKI_ARTICLES, MARKDOWN, INDEX_DIR
 from src.core.logging import get_logger
+from src.policypal.config import settings
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -79,7 +80,6 @@ def _make_chunk_id(sanitized_title: str, chunk_idx: int) -> str:
 def chunk_wikipedia(filepath: Path, title: str) -> list[dict]:
     """
     RecursiveCharacterTextSplitter with paragraph-first separators.
-    chunk_size=350 tokens, overlap=0.
     Lead paragraph (first block before any section) kept as own chunk.
     """
     text = filepath.read_text(encoding="utf-8")
@@ -89,8 +89,8 @@ def chunk_wikipedia(filepath: Path, title: str) -> list[dict]:
     text = re.sub(r"^#\s+.+\n+", "", text, count=1).strip()
 
     splitter = make_recursive_splitter(
-        chunk_size=350,
-        chunk_overlap=0,
+        chunk_size=settings.chunk_size,
+        chunk_overlap=settings.chunk_overlap,
         separators=["\n\n", "\\. ", "\n", " ", ""],
     )
 

@@ -38,7 +38,10 @@ class Settings(BaseSettings):
     # RAG Chunking
 
     chunk_size: int = 350
-    chunk_overlap: int = 0
+    # ~15% of chunk_size: standard RAG guidance to avoid severing a definition
+    # from the qualifying clause right after it (e.g. "deductible" from an
+    # exclusion that follows in the next sentence) at a hard chunk boundary.
+    chunk_overlap: int = 50
 
     # Hybrid retrieval
     bm25_index_path: str = "data/corpus/indices/bm25.pkl"
