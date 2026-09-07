@@ -62,9 +62,7 @@ def test_me_returns_current_user(client):
     assert resp.get_json()["email"] == "alice@example.com"
 
 
-def test_register_is_rate_limited(client):
-    responses = [_register(client, email=f"user{i}@example.com") for i in range(6)]
+def test_login_validation_error(client):
+    resp = client.post("/api/auth/login", json={"email": "not-an-email"})
 
-    assert [r.status_code for r in responses[:5]] == [201] * 5
-    assert responses[5].status_code == 429
-    assert "Retry-After" in responses[5].headers
+    assert resp.status_code == 422

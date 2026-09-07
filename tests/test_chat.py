@@ -46,6 +46,31 @@ def test_unknown_thread_id_is_404(client):
     assert resp.status_code == 404
 
 
+def test_create_thread_requires_auth(client):
+    resp = client.post("/api/chat/threads", json={})
+    assert resp.status_code == 401
+
+
+def test_cannot_post_message_to_another_users_thread(client):
+    owner_headers = _auth_headers(client, email="owner2@example.com")
+    thread_id = client.post("/api/chat/threads", json={}, headers=owner_headers).get_json()["id"]
+
+    other_headers = _auth_headers(client, email="other2@example.com")
+    resp = client.post(f"/api/chat/threads/{thread_id}/messages", json={"content": "hi"}, headers=other_headers)
+
+    assert resp.status_code == 404
+
+
+def test_cannot_delete_another_users_thread(client):
+    owner_headers = _auth_headers(client, email="owner3@example.com")
+    thread_id = client.post("/api/chat/threads", json={}, headers=owner_headers).get_json()["id"]
+
+    other_headers = _auth_headers(client, email="other3@example.com")
+    resp = client.delete(f"/api/chat/threads/{thread_id}", headers=other_headers)
+
+    assert resp.status_code == 404
+
+
 @patch("src.api.routes.chat.answer_query")
 def test_send_message_returns_grounded_answer_with_sources(mock_answer_query, client):
     mock_answer_query.return_value = ("A deductible is the amount you pay before coverage kicks in.", _fake_chunks())
@@ -81,6 +106,24 @@ def test_message_validation_error(client):
     thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
 
     resp = client.post(f"/api/chat/threads/{thread_id}/messages", json={"content": ""}, headers=headers)
+
+    assert resp.status_code == 422
+
+
+def test_message_content_over_max_length_rejected(client):
+    headers = _auth_headers(client)
+    thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+
+    resp = client.post(
+        f"/api/chat/threads/{thread_id}/messages", json={"content": "x" * 4001}, headers=headers
+    )
+
+    assert resp.status_code == 422
+
+
+def test_thread_title_over_max_length_rejected(client):
+    headers = _auth_headers(client)
+    resp = client.post("/api/chat/threads", json={"title": "x" * 201}, headers=headers)
 
     assert resp.status_code == 422
 

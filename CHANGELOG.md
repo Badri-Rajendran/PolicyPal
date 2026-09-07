@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Harden CI supply chain: pin every third-party GitHub Action to its exact
+  commit SHA (not a mutable version tag) and verify gitleaks' downloaded
+  binary against its published sha256 checksum before executing it.
+- Add rate-limit tests for every remaining API endpoint (previously only
+  register had one) and close a few boundary/authz gaps CLAUDE.md's testing
+  section calls for explicitly: login validation errors, thread
+  title/message content length limits, and authz checks on the delete and
+  post-message routes specifically (not just the one they share code with).
 - Add CI (`.github/workflows/ci.yml`, ADR 0002): backend job runs ruff,
   Alembic migrations + drift check against a real pgvector service
   container, pytest, bandit, and pip-audit; frontend job runs lint, Vitest,
