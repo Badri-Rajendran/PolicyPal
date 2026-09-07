@@ -56,8 +56,9 @@ class Settings(BaseSettings):
 
     # LLM
 
-    llm_model: str = "Qwen/Qwen2.5-1.5B-Instruct"
-    max_new_tokens: int = 1024
+    llm_model: str = "Qwen/Qwen2.5-0.5B-Instruct"
+    # Grounded answers should be short; this also bounds worst-case latency.
+    max_new_tokens: int = 256
     # Low temperature keeps grounded QA deterministic and reduces hallucination.
     temperature: float = 0.2
 

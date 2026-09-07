@@ -28,7 +28,9 @@ def _llm():
     tokenizer = AutoTokenizer.from_pretrained(settings.llm_model)
     model = AutoModelForCausalLM.from_pretrained(
         settings.llm_model,
-        dtype=torch.float16 if device != "cpu" else torch.float32
+        # fp16 is only reliable on CUDA; MPS's fp16 kernels are known to
+        # stall/misbehave on generation ops, so fall back to fp32 there.
+        dtype=torch.float16 if device == "cuda" else torch.float32
     ).to(device)
 
     model.eval() # Switching to Inference mode.

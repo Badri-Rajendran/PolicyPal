@@ -22,7 +22,7 @@ class RetrievedChunk:
     chunk_id: str
     content: str
     source: str
-    score: float            # cosine similarity (1 = identical, 0 = unrelated)
+    score: float            # reranker relevance: sigmoid(cross-encoder logit), (0, 1)
 
 
 
