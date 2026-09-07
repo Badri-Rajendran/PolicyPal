@@ -3,7 +3,9 @@
 
 Strategy per document type:
   Wikipedia        → RecursiveCharacterTextSplitter (paragraph-first,
-                       chunk_size=350 tok, overlap=0)
+                       size/overlap from settings.chunk_size/chunk_overlap),
+                       each chunk indexed under a title/section-prefixed
+                       "contextualized_text" (see chunk_wikipedia).
 """
 from .constants import CHUNKS_DIR, WIKI_ARTICLES, MARKDOWN, INDEX_DIR
 from src.core.logging import get_logger
@@ -115,9 +117,19 @@ def chunk_wikipedia(filepath: Path, title: str) -> list[dict]:
 
         chunk_id = _make_chunk_id(sanitized_title, c_idx)
 
+        # Prepend the article title (and section, if we're past the lead) so
+        # BM25 and the embedding model both see context a mid-article chunk
+        # wouldn't otherwise mention by name — e.g. a chunk that just says
+        # "the deductible is..." still matches a "health insurance deductible"
+        # query. A cheap, template-based stand-in for full contextual
+        # retrieval (no per-chunk LLM call needed for a corpus this size).
+        contextualized_text = (
+            f"{title}\n{chunk_text}" if cur_section == title else f"{title}\n{cur_section}\n{chunk_text}"
+        )
+
         chunks.append({
             "text": chunk_text,
-            "contextualized_text": "",
+            "contextualized_text": contextualized_text,
             "metadata": {
                 "chunk_id":    chunk_id,
                 "source_file": f"wiki_{sanitized_title}.txt",
@@ -186,7 +198,9 @@ def execute() -> None:
 
     with output_path.open("w", encoding="utf-8") as f:
         for chunk in all_chunks:
-            chunk_texts.append(chunk["text"])
+            # BM25 indexes the contextualized text (see chunk_wikipedia); the
+            # raw chunk["text"] is what gets stored and shown as the source.
+            chunk_texts.append(chunk["contextualized_text"])
             chunk_ids.append(chunk["metadata"]["chunk_id"])
             f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
 

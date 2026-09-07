@@ -56,7 +56,10 @@ def execute(chunks_path: Path=CHUNKS_PATH, batch_size: int=BATCH_SIZE, rebuild: 
         for start in tqdm(range(0, len(chunks), batch_size), desc="Embedding"):
             curr_chunks = chunks[start: start + batch_size]
 
-            texts = [chunk["text"] for chunk in curr_chunks]
+            # Embed the contextualized text (title/section-prefixed) so
+            # semantic search can find a chunk even when it never names the
+            # broader topic itself; the DB still stores the raw chunk text.
+            texts = [chunk["contextualized_text"] for chunk in curr_chunks]
 
             embedded_vectors = embed_texts(texts)
 

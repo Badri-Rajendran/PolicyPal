@@ -66,6 +66,23 @@ def test_chunk_wikipedia_uses_configured_size_and_overlap(tmp_path):
     assert any(word in second_text for word in first_tail_words)
 
 
+def test_chunk_wikipedia_prefixes_contextualized_text_with_title(tmp_path):
+    md_path = tmp_path / "wiki_Topic.md"
+    md_path.write_text("# Health Insurance\n\nThe deductible is paid before coverage begins.\n", encoding="utf-8")
+
+    with patch("src.ingestion.chunk.settings") as mock_settings:
+        mock_settings.chunk_size = 350
+        mock_settings.chunk_overlap = 0
+        chunks = chunk_wikipedia(md_path, "Health Insurance")
+
+    # The raw text (what's stored/shown) must stay clean of the title prefix...
+    assert not chunks[0]["text"].startswith("Health Insurance")
+    # ...while the indexed/embedded text carries it, so a query naming the
+    # topic can match a chunk that itself never says "health insurance".
+    assert chunks[0]["contextualized_text"].startswith("Health Insurance\n")
+    assert "deductible" in chunks[0]["contextualized_text"]
+
+
 def test_chunk_wikipedia_strips_leading_heading(tmp_path):
     md_path = tmp_path / "wiki_Topic.md"
     md_path.write_text("# Topic\n\nActual content about the topic.\n", encoding="utf-8")
