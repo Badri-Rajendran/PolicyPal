@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Add the chat frontend (React 19, Vite): sign in/register, a thread sidebar,
+  and a message transcript with footnote-style source citations. Design is a
+  deliberate "policy document" identity (paper/brass palette, IBM Plex
+  Serif/Sans) rather than a generic chat-bubble look.
+- Add Vitest + React Testing Library; 75 tests across every component and
+  hook (render, interaction, loading/empty/error states).
+- Fix a real race condition found while browser-testing the new UI: sending
+  the first message in a brand-new thread kicked off the message-history GET
+  and the send's POST concurrently; the GET (fast, empty) would resolve
+  after the optimistic user message was added and silently erase it. Fixed
+  by never letting the fetch overwrite messages a send already added, with
+  a regression test that reproduces the exact ordering.
+- Update README to match the real stack and structure (Flask, plain JSX,
+  actual folders and Make targets) — it had drifted to describe an
+  unbuilt FastAPI/TypeScript/LangChain design.
 - Add a Flask API: JWT auth (register/login/me) and chat endpoints (threads,
   messages) that run the RAG pipeline and persist the conversation.
 - Add row-level authorization on chat endpoints — a thread not owned by the
