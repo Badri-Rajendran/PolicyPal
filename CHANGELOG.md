@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Add CI (`.github/workflows/ci.yml`, ADR 0002): backend job runs ruff,
+  Alembic migrations + drift check against a real pgvector service
+  container, pytest, bandit, and pip-audit; frontend job runs lint, Vitest,
+  build, and npm audit; a third job scans the full git history for
+  committed secrets with gitleaks. Docker build/scan and Azure CD are
+  deliberately deferred (no Dockerfile yet, no cloud credentials) — see
+  the ADR.
+- Add ruff, bandit, and pip-audit; fix everything they found (import
+  hygiene, two dead shebangs, one justified broad `except`, two
+  TYPE_CHECKING-guarded forward refs, three unpinned model revisions,
+  one justified pickle-load suppression, three CVE'd transitive deps
+  upgraded — torch, setuptools, tornado).
+- Fix `chunks.chunk_id` schema drift: a plain index and a separate unique
+  constraint had coexisted since the column was added, doing overlapping
+  work the ORM model never asked for. Consolidated to the single unique
+  index the model declares.
 - Add lightweight contextual retrieval: index each chunk's text prefixed
   with its article title/section (a dead `contextualized_text` field was
   already scaffolded for this), so a chunk that never names its topic by
