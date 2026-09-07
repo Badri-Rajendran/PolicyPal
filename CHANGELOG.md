@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add lightweight contextual retrieval: index each chunk's text prefixed
+  with its article title/section (a dead `contextualized_text` field was
+  already scaffolded for this), so a chunk that never names its topic by
+  itself still matches on keyword and semantic search. Raw chunk text
+  stored/shown is unchanged.
+- Wire `chunk_overlap`/`chunk_size` config into the actual chunker (they
+  were previously hardcoded and silently ignored) and raise the default
+  overlap to 50 tokens (~15%) so a definition and its qualifying clause
+  don't get severed across a chunk boundary.
 - Add the chat frontend (React 19, Vite): sign in/register, a thread sidebar,
   and a message transcript with footnote-style source citations. Design is a
   deliberate "policy document" identity (paper/brass palette, IBM Plex
