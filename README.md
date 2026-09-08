@@ -137,8 +137,9 @@ npm run build
 ```
 
 CI (`.github/workflows/ci.yml`) also runs `ruff`, `alembic check` (schema
-drift), `bandit` (SAST), `pip-audit`/`npm audit` (dependency CVEs), and a
-gitleaks secret scan on every PR and push to `main`.
+drift), `bandit` (SAST), `pip-audit`/`npm audit` (dependency CVEs), a
+gitleaks secret scan, and a backend coverage floor (`--cov-fail-under=80`)
+on every PR and push to `main`.
 
 ### Retrieval quality eval
 

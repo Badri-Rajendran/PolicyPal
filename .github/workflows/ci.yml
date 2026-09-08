@@ -46,8 +46,8 @@ jobs:
       - name: Check for schema drift
         run: uv run alembic check
 
-      - name: Test
-        run: uv run pytest -q
+      - name: Test (with coverage floor)
+        run: uv run pytest -q --cov=src --cov-report=term-missing --cov-fail-under=80
 
       - name: SAST (bandit)
         run: uv run bandit -r src -ll

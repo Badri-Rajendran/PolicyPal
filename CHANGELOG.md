@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add a backend coverage floor to CI (`--cov-fail-under=80`), resolving the
+  one item ADR 0002 had left deliberately open pending a baseline. Measured
+  baseline is 81%, concentrated in the API/service layer; infrastructure
+  glue wrapping torch/sentence-transformers sits lower by design and is
+  exercised by `scripts/ask.py`/`scripts/eval_retrieval.py` instead.
 - Harden the generation prompt against prompt injection (CLAUDE.md's LLM
   Top 10 mandate: treat model input as untrusted). The user's question and
   retrieved context are now wrapped in `<user_question>`/`<retrieved_context>`
