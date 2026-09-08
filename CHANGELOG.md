@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Fix comparison questions retrieving only one side of the comparison. Asked
+  "What's the difference between a copay and coinsurance?", the model replied
+  that "coinsurance is higher than in-network coinsurance because it allows
+  for more flexibility in payment terms" — a fabricated comparison that never
+  mentions copay. The cause was retrieval: a cross-encoder scores each chunk
+  against the whole query, so the coinsurance chunks took every slot on
+  lexical weight and the `Copayment` definition — present in the corpus —
+  never cleared the gate. Identical at rerank_top_k 5 and 15, so not a
+  consequence of narrowing the context. `_comparison_intents()` now splits out
+  the bare concepts behind a comparison cue (difference between / vs /
+  versus / compared to) and `_per_intent_results()` gives each intent an equal
+  share of the context budget, with every chunk still gated on its own score
+  against a real sub-question (ADR 0004).
+- Fix the coverage eval certifying that failure as a pass. Its evidence terms
+  were ("coinsurance", "percentage") — both satisfiable by coinsurance chunks
+  alone. Comparison cases now require both sides named, and an HMO/PPO case
+  was added. The general lesson is recorded in ADR 0004 because it will
+  recur: retrieval metrics do not measure answers. Coverage read 19/20 while
+  a question inside that 19 was producing invented content.
+- Rename an over-subtle chained assignment in `search()` (`self_relevant` ->
+  `matched_as_whole`) so the fallback condition reads plainly.
+
 - Replace the dead-end "I don't have enough information" reply with one that
   gives the user somewhere to go: what PolicyPal covers, and the state
   insurance department as the authority for the state-regulated procedural

@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from src.policypal.config import settings
-from src.services.retrieval import _subqueries, search
+from src.services.retrieval import _comparison_intents, _subqueries, search
 
 
 class _FakeSessionCtx:
@@ -147,3 +147,85 @@ def test_subquery_fallback_keeps_each_chunks_best_score():
     assert {r.chunk_id for r in results} == {"c1", "c2"}
     # Ordered by best score across subqueries, not by subquery order.
     assert [r.chunk_id for r in results] == ["c1", "c2"]
+
+
+# Comparison queries
+
+def test_comparison_intents_splits_difference_between():
+    assert _comparison_intents("What's the difference between a copay and coinsurance?") == [
+        "a copay", "coinsurance"
+    ]
+
+
+def test_comparison_intents_handles_vs_and_versus():
+    assert _comparison_intents("HMO vs PPO") == ["HMO", "PPO"]
+    assert _comparison_intents("term life versus whole life") == ["term life", "whole life"]
+
+
+def test_comparison_intents_handles_compared_to():
+    assert _comparison_intents("How is an HSA compared to an FSA") == ["How is an HSA", "an FSA"]
+
+
+def test_comparison_intents_ignores_non_comparisons():
+    """A conjunction alone isn't a comparison — that path is the fallback's job."""
+    assert _comparison_intents("What is a deductible?") == []
+    assert _comparison_intents("What does in-network mean and why does it matter?") == []
+
+
+def test_comparison_retrieval_keeps_both_sides_in_context():
+    """The measured bug: scoring every chunk against the whole query let the
+    coinsurance chunks take every slot, so the copay definition never reached
+    the model and it fabricated the comparison."""
+    rows = [
+        SimpleNamespace(chunk_id="copay", content="A copayment is a fixed amount.",
+                        source="hcg_glossary_Copayment.md"),
+        SimpleNamespace(chunk_id="coins", content="Coinsurance is a percentage.",
+                        source="hcg_glossary_Coinsurance.md"),
+    ]
+
+    def fake_rerank(query, pairs, k):
+        q = query.lower()
+        if "copay" in q and "coinsurance" not in q:
+            return [("copay", 5.0), ("coins", -5.0)][:k]
+        if "coinsurance" in q and "copay" not in q:
+            return [("coins", 5.0), ("copay", -5.0)][:k]
+        # The whole query: coinsurance dominates, copay is gated out.
+        return [("coins", 5.0), ("copay", -5.0)][:k]
+
+    results = _search_with(fake_rerank, "What's the difference between a copay and coinsurance?", rows)
+
+    assert {r.chunk_id for r in results} == {"copay", "coins"}
+
+
+def test_comparison_retrieval_does_not_lose_whole_query_hits():
+    rows = [
+        SimpleNamespace(chunk_id="both", content="Copay and coinsurance both cost-share.",
+                        source="hcg_article_Cost_sharing.md"),
+        SimpleNamespace(chunk_id="copay", content="A copayment is fixed.",
+                        source="hcg_glossary_Copayment.md"),
+    ]
+
+    def fake_rerank(query, pairs, k):
+        if "copay" in query.lower() and "coinsurance" not in query.lower():
+            return [("copay", 5.0), ("both", -5.0)][:k]
+        return [("both", 5.0), ("copay", -5.0)][:k]
+
+    results = _search_with(fake_rerank, "difference between a copay and coinsurance", rows)
+
+    assert "both" in {r.chunk_id for r in results}
+
+
+def test_comparison_results_stay_ordered_by_relevance():
+    rows = [
+        SimpleNamespace(chunk_id="a", content="A", source="a.md"),
+        SimpleNamespace(chunk_id="b", content="B", source="b.md"),
+    ]
+
+    def fake_rerank(query, pairs, k):
+        return ([("a", 5.0), ("b", 1.0)] if "term life" in query.lower()
+                else [("b", 3.0), ("a", 0.5)])[:k]
+
+    results = _search_with(fake_rerank, "difference between term life and whole life", rows)
+
+    scores = [r.score for r in results]
+    assert scores == sorted(scores, reverse=True)

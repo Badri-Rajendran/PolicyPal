@@ -42,8 +42,8 @@ ROUTING_TOP_K = 5
 # (no sampling anywhere in the path), so a drop below these means a change
 # made real answers worse rather than a flaky run. Raise them as the corpus
 # grows and the known gaps below get filled.
-MIN_ANSWERED = 19
-MIN_WITH_EVIDENCE = 19
+MIN_ANSWERED = 20
+MIN_WITH_EVIDENCE = 20
 MIN_ROUTING_TOP5 = 25
 MIN_ABSTENTIONS = 4
 
@@ -134,8 +134,13 @@ class CoverageCase:
 
 COVERAGE_SET = [
     # Definitional-practical: the vocabulary on a user's own paperwork
+    # A comparison question needs BOTH concepts in the retrieved context. The
+    # earlier evidence terms here were ("coinsurance", "percentage") — both
+    # satisfied by coinsurance chunks alone — so this passed while the context
+    # never mentioned copay and the generated answer invented the comparison.
+    # Every comparison case must name both sides for the same reason.
     CoverageCase("What's the difference between a copay and coinsurance?", "definition",
-                 ("coinsurance", "percentage")),
+                 ("copay", "coinsurance")),
     CoverageCase("What is an out-of-pocket maximum?", "definition",
                  ("out-of-pocket", "plan year")),
     CoverageCase("What does 'in-network' mean and why does it matter?", "definition",
@@ -175,6 +180,8 @@ COVERAGE_SET = [
                  ("life insurance",)),
     CoverageCase("What is the difference between term life and whole life insurance?",
                  "decision", ("term life", "whole life")),
+    CoverageCase("What is the difference between an HMO and a PPO?", "definition",
+                 ("hmo", "ppo")),
     CoverageCase("Do I need umbrella insurance?", "decision",
                  ("umbrella",)),
 ]

@@ -90,6 +90,61 @@ def _best_scores_across(subqueries: list[str], pairs: list[tuple[str, str]],
     return ranked[:top_k]
 
 
+# "What's the difference between X and Y", "X vs Y", "X compared to Y".
+_COMPARISON_CUE_RE = re.compile(
+    r"\bdifferences?\s+between\b|\bvs\.?\b|\bversus\b|\bcompared\s+(?:to|with)\b",
+    re.IGNORECASE,
+)
+
+# The cue itself plus the question scaffolding around it, so splitting on this
+# leaves the bare concepts rather than "What's the difference between a copay".
+_COMPARISON_SPLIT_RE = re.compile(
+    r"\b(?:what(?:'s|\s+is|\s+are)?\s+the\s+)?differences?\s+between\b"
+    r"|\bvs\.?\b|\bversus\b|\bcompared\s+(?:to|with)\b"
+    r"|\s+and\s+|\s+or\s+|\s*,\s*",
+    re.IGNORECASE,
+)
+
+
+def _comparison_intents(query: str) -> list[str]:
+    """Return one sub-query per side of a comparison, or [] if not a comparison.
+
+    A cross-encoder scores every chunk against the whole query, so for "what's
+    the difference between a copay and coinsurance" the coinsurance chunks win
+    every slot on lexical weight and the copay definition never clears the
+    gate. The model is then asked to contrast two things while being shown
+    only one of them — measured producing a fabricated comparison. Retrieving
+    for each side separately is what keeps both in context.
+    """
+    if not _COMPARISON_CUE_RE.search(query):
+        return []
+
+    parts = [part.strip(" ,;?!.") for part in _COMPARISON_SPLIT_RE.split(query)]
+    parts = [part for part in parts if part]
+
+    return parts if len(parts) >= 2 else []
+
+
+def _per_intent_results(intents: list[str], pairs: list[tuple[str, str]],
+                        rows: dict, budget: int) -> list["RetrievedChunk"]:
+    """Give each intent an equal share of the context budget.
+
+    Every chunk is still gated on its own score against a real sub-question,
+    so this widens *coverage* across the intents without lowering the bar that
+    keeps weak context away from the LLM.
+    """
+    share = max(1, budget // len(intents))
+    merged: dict[str, RetrievedChunk] = {}
+
+    for intent in intents:
+        for chunk in _above_gate(rerank(intent, pairs, share), rows):
+            existing = merged.get(chunk.chunk_id)
+            if existing is None or chunk.score > existing.score:
+                merged[chunk.chunk_id] = chunk
+
+    return sorted(merged.values(), key=lambda chunk: chunk.score, reverse=True)
+
+
 def _dense_search(query: str, top_k: int) -> list[str]:
     query_vector = embed_query(query)
 
@@ -136,7 +191,8 @@ def search(query: str, top_k: int | None = None) -> list[RetrievedChunk]:
 
     pairs = [(cid, rows[cid].content) for cid in rows]
     ranked = rerank(query, pairs, required_top_k_chunks)
-    relevant = self_relevant = _above_gate(ranked, rows)
+    relevant = _above_gate(ranked, rows)
+    matched_as_whole = bool(relevant)
 
     # Only if the query as a whole matched nothing: retry against its parts.
     # Making this a fallback rather than the default keeps every currently
@@ -144,7 +200,19 @@ def search(query: str, top_k: int | None = None) -> list[RetrievedChunk]:
     # subqueries can only raise scores, which would otherwise let weak chunks
     # past the relevance gate that guards against hallucination.
     decomposed = []
-    if not relevant:
+    intents = _comparison_intents(query)
+
+    if intents:
+        # A comparison needs every side present, so per-intent retrieval is the
+        # primary strategy here rather than a fallback. Merged with the
+        # whole-query hits so nothing that already ranked well is lost.
+        by_id = {chunk.chunk_id: chunk for chunk in relevant}
+        for chunk in _per_intent_results(intents, pairs, rows, required_top_k_chunks):
+            existing = by_id.get(chunk.chunk_id)
+            if existing is None or chunk.score > existing.score:
+                by_id[chunk.chunk_id] = chunk
+        relevant = sorted(by_id.values(), key=lambda chunk: chunk.score, reverse=True)
+    elif not matched_as_whole:
         decomposed = _subqueries(query)
         if decomposed:
             relevant = _above_gate(
@@ -155,7 +223,7 @@ def search(query: str, top_k: int | None = None) -> list[RetrievedChunk]:
         "hybrid search: %d sparse + %d dense -> %d candidates -> %d reranked -> "
         "%d relevant (%d subqueries tried)",
         len(sparse_ids), len(dense_ids), len(candidate_ids), len(ranked),
-        len(relevant), len(decomposed) if not self_relevant else 0,
+        len(relevant), len(decomposed) if not matched_as_whole else 0,
     )
 
     return relevant

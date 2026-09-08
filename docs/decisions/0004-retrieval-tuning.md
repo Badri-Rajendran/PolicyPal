@@ -87,6 +87,55 @@ the application never performed. Coverage now passes no `top_k` so it
 exercises the configured production path; routing still asks for a fixed
 window because it is scored by rank.
 
+### Retrieve per-intent for comparison questions
+
+The compound-question fallback above fixed queries that matched *nothing*. A
+second, worse variant matches something — just not everything it needs.
+
+Running the full `answer_query()` path for the first time (every eval until
+now stopped at retrieval) surfaced it. Asked *"What's the difference between
+a copay and coinsurance?"*, the model replied that *"coinsurance is higher
+than in-network coinsurance because it allows for more flexibility in payment
+terms"* — a fabricated comparison that never mentions copay.
+
+Retrieval was the cause. Only two chunks clear the gate, `Coinsurance` (0.98)
+and `In-network coinsurance` (0.61); the `Copayment` definition, which is in
+the corpus, never appears. Identical at `rerank_top_k` 5 and 15, so this is
+not a consequence of narrowing the context. A cross-encoder scores each chunk
+against the whole query, so for "A vs B" whichever concept carries more
+lexical weight takes every slot — and the model, handed one side of a
+comparison, invents the other.
+
+`_comparison_intents()` detects the comparison cues (`difference between`,
+`vs`, `versus`, `compared to`) and splits out the bare concepts;
+`_per_intent_results()` then gives each intent an equal share of the context
+budget. Every chunk is still gated on its own score against a real
+sub-question, so this widens coverage *across* intents without lowering the
+bar that keeps weak context away from the LLM — the distinction the abstention
+guard depends on. Unlike the compound-question fallback this runs as the
+primary strategy for comparisons, merged with the whole-query hits so nothing
+already ranking well is lost.
+
+**The eval was passing this.** Its evidence terms were `("coinsurance",
+"percentage")`, both satisfiable by coinsurance chunks alone. A comparison
+question has to require *both* sides, or the check certifies exactly the
+context that produces a fabricated answer. All comparison cases now name both
+concepts, and an HMO/PPO case was added.
+
+The general lesson is recorded because it will recur: **retrieval metrics do
+not measure answers.** Coverage said 19/20 while a question inside that 19 was
+producing invented content. Nothing short of running generation would have
+caught it.
+
+The cost is a rerank pass per intent on top of the whole-query pass — three
+passes over the candidate set for a two-sided comparison, where a plain
+question does one. It applies only to queries matching a comparison cue, and
+the cross-encoder runs over roughly 35 candidates, so this is a modest
+latency increase on a minority of queries in exchange for not fabricating
+the answer. If comparison queries turn out to be common enough for that to
+matter, the fix is to reuse the whole-query pass's scores for the dominant
+side rather than to narrow the retrieval.
+
 ### Guard abstention as a measured property
 
 While checking the remaining gaps, one coverage question turned out to be
