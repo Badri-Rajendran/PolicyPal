@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Harden the generation prompt against prompt injection (CLAUDE.md's LLM
+  Top 10 mandate: treat model input as untrusted). The user's question and
+  retrieved context are now wrapped in `<user_question>`/`<retrieved_context>`
+  tags, the system prompt explicitly tells the model that content inside
+  them is data to read and never instructions to follow (even instructions
+  to ignore prior rules or reveal the system prompt), and any literal
+  occurrence of those exact delimiter tags inside the question or context
+  is stripped before insertion, so a message can't forge a fake closing tag
+  and inject its own turn.
 - Add `scripts/eval_retrieval.py`: a small golden set of insurance
   questions (one per ingested article) run against the real corpus and
   real models, reporting top-5/top-1 accuracy. Unlike the mocked unit
