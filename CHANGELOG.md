@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Replace the dead-end "I don't have enough information" reply with one that
+  gives the user somewhere to go: what PolicyPal covers, and the state
+  insurance department as the authority for the state-regulated procedural
+  questions it deliberately doesn't hold. This fires for both genuine corpus
+  gaps and the questions PolicyPal should decline, so it had to serve both.
+- Investigate and reject state insurance departments as a source for auto
+  claims procedure — the last coverage gap, and a category rather than one
+  question (four of ten claims questions unanswered, every auto-specific one
+  among them). Rejected on two grounds: California's guides assert
+  "Copyright © California Department of Insurance", so the 17 U.S.C. § 105
+  reasoning behind HealthCare.gov doesn't transfer; and more importantly,
+  auto claims procedure varies by state, so ingesting one state's guide into
+  an assistant that doesn't know where the user lives would give confident,
+  specific, wrong advice to most of them. Recorded in ADR 0003.
+
 - Fix a whole class of silently-failing queries: a compound question scored
   far lower than either of its halves, because a cross-encoder asks "does
   this passage answer the *whole* query" and no single chunk answers both

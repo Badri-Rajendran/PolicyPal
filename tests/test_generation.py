@@ -3,7 +3,12 @@ from unittest.mock import MagicMock, patch
 import torch
 
 from src.policypal.config import settings
-from src.services.generation import _build_user_prompt, answer, answer_query
+from src.services.generation import (
+    NO_ANSWER_RESPONSE,
+    _build_user_prompt,
+    answer,
+    answer_query,
+)
 from src.services.retrieval import RetrievedChunk
 
 
@@ -24,8 +29,25 @@ def _make_chunk(chunk_id="c1", score=0.9):
 
 
 def test_answer_returns_fallback_when_no_chunks():
-    result = answer("what is a deductible", [])
-    assert "don't have enough information" in result.lower()
+    assert answer("what is a deductible", []) == NO_ANSWER_RESPONSE
+
+
+def test_fallback_gives_the_user_somewhere_to_go():
+    """A bare "I don't know" is a dead end. Retrieval returns nothing both for
+    genuine corpus gaps and for questions PolicyPal should decline, so the
+    message has to say what is covered and name the authority for what isn't."""
+    result = answer("How do I file a claim after a car accident?", []).lower()
+
+    assert "state insurance department" in result
+    assert "couldn't find" in result
+
+
+def test_fallback_does_not_load_the_model():
+    """No chunks means no generation — the fallback must be a cheap early exit."""
+    with patch("src.services.generation._llm") as mock_llm:
+        answer("anything", [])
+
+    mock_llm.assert_not_called()
 
 
 def test_build_user_prompt_includes_question_context_and_source():

@@ -104,6 +104,39 @@ the old eval marked as a loss.
 | **NAIC consumer guides** | — | No clear reuse license. Not worth the ambiguity given the project ingests and redistributes text. |
 | **DOL / EBSA** (COBRA, ERISA) | — | PDF-only, no API. Real value, but adds a PDF-extraction dependency for content HealthCare.gov already largely covers. Revisit if the remaining gaps justify it. |
 | **Medicare.gov** | Returns 404 | No public content API. |
+| **State insurance departments** (CA DOI, TX TDI) | CA guides reachable | Rejected on two independent grounds — see below. |
+
+### Why no source was added for auto claims procedure
+
+The coverage eval's last gap is claims procedure, and it is a category rather
+than one question: of ten claims questions probed, four returned nothing, and
+every auto-specific one failed ("How do I file a claim after a car accident?",
+"Do I need a police report?", "How do I dispute a low settlement offer?").
+
+There is no federal equivalent of HealthCare.gov here, because auto insurance
+is state-regulated. That leaves state insurance departments, and they fail on
+two counts:
+
+1. **Licensing.** California's guides carry an explicit "Copyright ©
+   California Department of Insurance" notice. State works get no equivalent
+   of 17 U.S.C. § 105, so the public-domain reasoning that justifies
+   HealthCare.gov does not transfer. This is the same bar that ruled out NAIC.
+2. **Correctness, which matters more.** Auto claims procedure varies
+   materially by state — no-fault versus tort, statutory response deadlines,
+   mediation rights. Ingesting one state's guide into an assistant with no
+   notion of where the user lives would produce confident, specific, and
+   wrong procedural advice for most of them. That is worse than returning
+   nothing, and it is the same principle as the abstention set in ADR 0004.
+
+Wikipedia does not fill the gap either: `Claims adjuster` documents the
+profession, not the policyholder's process — no steps, documentation,
+deadlines, or dispute guidance.
+
+So the gap stays open deliberately. What changed instead is the response the
+user gets: `NO_ANSWER_RESPONSE` now says what PolicyPal covers and names the
+state insurance department as the authority for exactly these questions,
+rather than dead-ending on "I don't know". Closing the gap properly needs
+either state-aware retrieval or a nationwide source that does not yet exist.
 
 ## Consequences
 

@@ -33,6 +33,22 @@ SYSTEM_PROMPT = (
 
 _DELIMITER_TAGS = re.compile(r"</?(?:user_question|retrieved_context)>", re.IGNORECASE)
 
+# Shown whenever retrieval returns nothing above the relevance gate. That is
+# not always a failure: the eval's abstention set covers questions this
+# assistant *should* decline (which policy is better for you, what a premium
+# will be), alongside genuine corpus gaps like auto claims procedure. Either
+# way a bare "I don't know" leaves the user with nowhere to go, so this says
+# what is covered and names the authority for what isn't — state insurance
+# departments regulate the procedural, state-varying matters the corpus
+# deliberately doesn't hold (ADR 0003).
+NO_ANSWER_RESPONSE = (
+    "I couldn't find an answer to that in my sources. I cover general insurance "
+    "concepts and US health coverage rules — not company-specific details, "
+    "policy recommendations, or what a premium will cost. For state-regulated "
+    "matters such as filing an auto claim or disputing a settlement, your state "
+    "insurance department is the authoritative source."
+)
+
 
 def _neutralize_delimiters(text: str) -> str:
     """Strip literal occurrences of our own prompt delimiters from untrusted text."""
@@ -77,8 +93,7 @@ def _build_user_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
 def answer(query: str, chunks: list[RetrievedChunk]) -> str:
     
     if not chunks:
-        return ("I don't have enough information in my knowledge base "
-                "to answer that question.")
+        return NO_ANSWER_RESPONSE
     
     tokenizer, model, device = _llm()
 
