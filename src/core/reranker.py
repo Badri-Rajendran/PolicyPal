@@ -1,10 +1,10 @@
 from functools import lru_cache
+
 from sentence_transformers import CrossEncoder
 
-from .logging import get_logger
 from src.policypal.config import settings
 
-
+from .logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 @lru_cache
 def _reranker() -> CrossEncoder:
     logger.info("loading reranker %s", settings.reranker_model)
-    return CrossEncoder(settings.reranker_model)
+    return CrossEncoder(settings.reranker_model, revision=settings.reranker_model_revision)
 
 
 def rerank(query: str, candidates: list[tuple[str, str]], top_k: int) -> list[tuple[str, float]]:

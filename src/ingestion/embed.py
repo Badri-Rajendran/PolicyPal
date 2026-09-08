@@ -1,15 +1,16 @@
-from pathlib import Path
 import json
-from src.core.logging import get_logger
-from .constants import CHUNKS_DIR
-from src.core.db import get_session
+from pathlib import Path
+
 from sqlalchemy import delete, insert
-from src.models.chunk import Chunk
 from tqdm import tqdm
 
+from src.core.db import get_session
 from src.core.embedding import embed_texts
-
+from src.core.logging import get_logger
+from src.models.chunk import Chunk
 from src.policypal.config import settings
+
+from .constants import CHUNKS_DIR
 
 CHUNKS_PATH = CHUNKS_DIR / "all_chunks.jsonl"
 BATCH_SIZE = 64
@@ -56,7 +57,10 @@ def execute(chunks_path: Path=CHUNKS_PATH, batch_size: int=BATCH_SIZE, rebuild: 
         for start in tqdm(range(0, len(chunks), batch_size), desc="Embedding"):
             curr_chunks = chunks[start: start + batch_size]
 
-            texts = [chunk["text"] for chunk in curr_chunks]
+            # Embed the contextualized text (title/section-prefixed) so
+            # semantic search can find a chunk even when it never names the
+            # broader topic itself; the DB still stores the raw chunk text.
+            texts = [chunk["contextualized_text"] for chunk in curr_chunks]
 
             embedded_vectors = embed_texts(texts)
 
