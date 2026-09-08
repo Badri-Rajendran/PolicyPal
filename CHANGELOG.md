@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- Fix a whole class of silently-failing queries: a compound question scored
+  far lower than either of its halves, because a cross-encoder asks "does
+  this passage answer the *whole* query" and no single chunk answers both
+  intents. "What does 'in-network' mean and why does it matter?" scored 0.487
+  and returned nothing, while "What does in-network mean?" scored 0.993 — the
+  corpus had held an authoritative definition the entire time. `search()` now
+  reranks against a compound query's parts and keeps each chunk's best score,
+  but only when the query as a whole matched nothing, so every query that
+  already worked is untouched and the relevance gate isn't weakened (ADR 0004).
+- Lower `rerank_top_k` from 15 to 5. Measured across 5/8/10/15: answered,
+  evidence, and routing are identical at every value, so the extra ten chunks
+  bought only citation noise (9.8 sources shown per answer versus 4.4) and 3x
+  the context a small model has to stay grounded in.
+- Fix the coverage eval measuring retrieval the application never performed:
+  it called `search(top_k=5)` while the API resolved to `rerank_top_k` (15).
+  Coverage now runs the configured production path.
+- Add an abstention eval with its own floor. "Term life or whole life — which
+  is better for a young family?" was listed as a corpus gap; it is not — the
+  corpus answers the factual comparison at 1.00, and correctly returns nothing
+  for a request for personalized advice. That eval case was wrong, and the
+  abstention it was misreading is now asserted as a property, guarding the
+  exact regression a widened retrieval would cause. Known limitation recorded
+  in ADR 0004: abstention is not reliable for every advice-shaped question.
+- Add `Umbrella insurance`, `Term life insurance`, and `Whole life insurance`
+  to the Wikipedia corpus, closing gaps the coverage eval named.
+
+Coverage: 16/20 -> 19/20 answered and with evidence; routing unchanged at
+25/25. The one remaining gap is filing an auto claim.
+
 - Add HealthCare.gov as a second corpus source and restructure ingestion
   around a `Source` abstraction (ADR 0003). The Wikipedia-only corpus scored
   25/25 on the retrieval eval while failing to answer 12 of 20 questions a

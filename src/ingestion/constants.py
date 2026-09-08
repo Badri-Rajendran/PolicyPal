@@ -25,7 +25,13 @@ WIKI_ARTICLES = [
     "Cyber insurance",
     "Marine insurance",
     "Aviation insurance",
-    "Crop insurance"
+    "Crop insurance",
+    # Added to close gaps the coverage eval named: users ask whether they need
+    # umbrella cover, and how term compares to whole life. Neither Wikipedia's
+    # other articles nor HealthCare.gov (health-only) answered these.
+    "Umbrella insurance",
+    "Term life insurance",
+    "Whole life insurance",
 ]
 
 # HealthCare.gov publishes its consumer education content as JSON for reuse

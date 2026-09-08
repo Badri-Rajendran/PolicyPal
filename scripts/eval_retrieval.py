@@ -32,15 +32,20 @@ from dataclasses import dataclass, field
 
 from src.services.retrieval import search
 
-TOP_K = 5
+# Routing is scored by rank, so it asks for a fixed window. Coverage passes
+# top_k=None so it measures exactly what the API serves (settings.rerank_top_k)
+# rather than a number chosen by the eval — an eval that measures different
+# retrieval than production is measuring the wrong thing.
+ROUTING_TOP_K = 5
 
 # Regression floors, set at the measured baseline. Retrieval is deterministic
 # (no sampling anywhere in the path), so a drop below these means a change
 # made real answers worse rather than a flaky run. Raise them as the corpus
 # grows and the known gaps below get filled.
-MIN_ANSWERED = 16
-MIN_WITH_EVIDENCE = 16
+MIN_ANSWERED = 19
+MIN_WITH_EVIDENCE = 19
 MIN_ROUTING_TOP5 = 25
+MIN_ABSTENTIONS = 4
 
 
 # Routing: does the topic's own document come back?
@@ -168,11 +173,54 @@ COVERAGE_SET = [
                  ("deductible",)),
     CoverageCase("How much life insurance coverage do I actually need?", "decision",
                  ("life insurance",)),
-    CoverageCase("Term life or whole life — which is better for a young family?", "decision",
-                 ("term life", "whole life")),
+    CoverageCase("What is the difference between term life and whole life insurance?",
+                 "decision", ("term life", "whole life")),
     CoverageCase("Do I need umbrella insurance?", "decision",
                  ("umbrella",)),
 ]
+
+
+# Abstention: questions the corpus should NOT answer
+
+# Asking which product is better *for you*, which company to buy from, or what
+# a future premium will be is a request for personalized advice or a
+# prediction. A grounded assistant returning nothing is the correct outcome —
+# and it is a property worth protecting. Widening retrieval (a lower relevance
+# gate, or applying the subquery best-of score to every query instead of only
+# to ones that matched nothing) would quietly start answering these from
+# whatever chunk happened to be topically nearby.
+#
+# Only questions verified to abstain today are listed. Some advice-shaped
+# questions do still return a confidently-scored but irrelevant source; see
+# ADR 0004 — that is a known cross-encoder limitation, not something this set
+# pretends is solved.
+ABSTENTION_SET = [
+    "Term life or whole life — which is better for a young family?",
+    "Will my car insurance premium go up next year?",
+    "Is State Farm better than Geico?",
+    "How much will my policy cost me?",
+]
+
+
+def run_abstention() -> int:
+    print("\n" + "=" * 78)
+    print("ABSTENTION — advice and prediction questions must return nothing")
+    print("=" * 78)
+
+    abstained = 0
+
+    for query in ABSTENTION_SET:
+        results = search(query)
+
+        if results:
+            print(f"  [ANSWERED]   {query}")
+            print(f"                {results[0].score:.2f} {results[0].source}")
+        else:
+            abstained += 1
+            print(f"  [abstained]  {query}")
+
+    print(f"\n  {abstained}/{len(ABSTENTION_SET)} correctly returned nothing")
+    return abstained
 
 
 def run_routing() -> int:
@@ -183,7 +231,7 @@ def run_routing() -> int:
     in_top5 = top1 = 0
 
     for case in ROUTING_SET:
-        results = search(case.query, top_k=TOP_K)
+        results = search(case.query, top_k=ROUTING_TOP_K)
         rank = next(
             (i for i, r in enumerate(results, start=1) if r.source in case.acceptable), None
         )
@@ -200,7 +248,7 @@ def run_routing() -> int:
         else:
             print(f"  [rank {rank}]  {case.query!r} (top was {results[0].source})")
 
-    print(f"\n  {in_top5}/{len(ROUTING_SET)} in top {TOP_K}, {top1}/{len(ROUTING_SET)} ranked first")
+    print(f"\n  {in_top5}/{len(ROUTING_SET)} in top {ROUTING_TOP_K}, {top1}/{len(ROUTING_SET)} ranked first")
     return in_top5
 
 
@@ -214,7 +262,8 @@ def run_coverage() -> tuple[int, int]:
     thin: list[CoverageCase] = []
 
     for case in COVERAGE_SET:
-        results = search(case.query, top_k=TOP_K)
+        # top_k=None -> production's configured rerank_top_k
+        results = search(case.query)
 
         if not results:
             gaps.append(case)
@@ -255,16 +304,24 @@ def run_coverage() -> tuple[int, int]:
 def main() -> int:
     routing_top5 = run_routing()
     answered, with_evidence = run_coverage()
+    abstained = run_abstention()
 
     print("\n" + "=" * 78)
     failures = []
 
     if routing_top5 < MIN_ROUTING_TOP5:
-        failures.append(f"routing top-{TOP_K} {routing_top5} < floor {MIN_ROUTING_TOP5}")
+        failures.append(
+            f"routing top-{ROUTING_TOP_K} {routing_top5} < floor {MIN_ROUTING_TOP5}"
+        )
     if answered < MIN_ANSWERED:
         failures.append(f"coverage answered {answered} < floor {MIN_ANSWERED}")
     if with_evidence < MIN_WITH_EVIDENCE:
         failures.append(f"coverage with evidence {with_evidence} < floor {MIN_WITH_EVIDENCE}")
+    if abstained < MIN_ABSTENTIONS:
+        failures.append(
+            f"abstentions {abstained} < floor {MIN_ABSTENTIONS} — retrieval started "
+            "answering questions it cannot ground"
+        )
 
     if failures:
         print("REGRESSION: " + "; ".join(failures))

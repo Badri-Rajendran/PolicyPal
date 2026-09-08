@@ -1,5 +1,6 @@
 import math
 import pickle as pkl
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -50,6 +51,45 @@ def _sparse_search(query: str, top_k: int) -> list[str]:
     return [chunk_id for chunk_id, score in ranked[:top_k] if score > 0]
 
 
+# A question joined by a conjunction carries more than one intent.
+_CONJUNCTION_RE = re.compile(r"\s+(?:and|or)\s+|\s*[;?]\s+", re.IGNORECASE)
+
+# Below this a fragment is a connective ("why does it matter"), not a question
+# worth reranking on its own.
+_MIN_SUBQUERY_WORDS = 3
+
+
+def _subqueries(query: str) -> list[str]:
+    """Split a multi-intent question into its parts, or return [] if it isn't one.
+
+    A cross-encoder scores one (query, passage) pair, so it asks "does this
+    passage answer the *whole* query". No single chunk answers both halves of
+    "What does in-network mean and why does it matter?", and the score
+    collapses far enough to fall below the relevance gate — measured at 0.99
+    for the first half alone versus 0.49 for the pair. Scoring the parts
+    separately lets a chunk that fully answers one intent be found.
+    """
+    parts = [part.strip(" ,;?!") for part in _CONJUNCTION_RE.split(query)]
+    parts = [part for part in parts if len(part.split()) >= _MIN_SUBQUERY_WORDS]
+
+    return parts if len(parts) >= 2 else []
+
+
+def _best_scores_across(subqueries: list[str], pairs: list[tuple[str, str]],
+                        top_k: int) -> list[tuple[str, float]]:
+    """Rerank against each subquery, keeping each chunk's best score."""
+    best: dict[str, float] = {}
+
+    for subquery in subqueries:
+        for chunk_id, raw_score in rerank(subquery, pairs, len(pairs)):
+            score = float(raw_score)
+            if chunk_id not in best or score > best[chunk_id]:
+                best[chunk_id] = score
+
+    ranked = sorted(best.items(), key=lambda item: item[1], reverse=True)
+    return ranked[:top_k]
+
+
 def _dense_search(query: str, top_k: int) -> list[str]:
     query_vector = embed_query(query)
 
@@ -96,7 +136,33 @@ def search(query: str, top_k: int | None = None) -> list[RetrievedChunk]:
 
     pairs = [(cid, rows[cid].content) for cid in rows]
     ranked = rerank(query, pairs, required_top_k_chunks)
+    relevant = self_relevant = _above_gate(ranked, rows)
 
+    # Only if the query as a whole matched nothing: retry against its parts.
+    # Making this a fallback rather than the default keeps every currently
+    # working query byte-for-byte unchanged — taking a best-of score across
+    # subqueries can only raise scores, which would otherwise let weak chunks
+    # past the relevance gate that guards against hallucination.
+    decomposed = []
+    if not relevant:
+        decomposed = _subqueries(query)
+        if decomposed:
+            relevant = _above_gate(
+                _best_scores_across(decomposed, pairs, required_top_k_chunks), rows
+            )
+
+    logger.info(
+        "hybrid search: %d sparse + %d dense -> %d candidates -> %d reranked -> "
+        "%d relevant (%d subqueries tried)",
+        len(sparse_ids), len(dense_ids), len(candidate_ids), len(ranked),
+        len(relevant), len(decomposed) if not self_relevant else 0,
+    )
+
+    return relevant
+
+
+def _above_gate(ranked: list[tuple[str, float]], rows: dict) -> list[RetrievedChunk]:
+    """Convert reranker logits to (0,1) relevance and drop anything below the gate."""
     results = [
         RetrievedChunk(
             chunk_id=cid,
@@ -107,11 +173,4 @@ def search(query: str, top_k: int | None = None) -> list[RetrievedChunk]:
         for cid, raw_score in ranked
     ]
 
-    relevant = [r for r in results if r.score >= settings.min_relevance_score]
-
-    logger.info(
-        "hybrid search: %d sparse + %d dense -> %d candidates -> %d reranked -> %d relevant",
-        len(sparse_ids), len(dense_ids), len(candidate_ids), len(results), len(relevant),
-    )
-
-    return relevant
+    return [r for r in results if r.score >= settings.min_relevance_score]

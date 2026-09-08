@@ -56,7 +56,11 @@ class Settings(BaseSettings):
 
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     reranker_model_revision: str = "233902d25c440f23af6f7d6e94d2946bac0bee0a"
-    rerank_top_k: int = 15
+    # Measured across 5/8/10/15 on the coverage eval: answered, evidence, and
+    # routing are identical at every value — the extra chunks add no retrieval
+    # quality, only citation noise (9.8 sources shown per answer at 15 vs 4.4
+    # at 5) and 3x the context a small LLM has to stay grounded in.
+    rerank_top_k: int = 5
 
     # Minimum reranker relevance (sigmoid of cross-encoder logit, 0-1) a chunk
     # must clear to be used as context. Below this the match is treated as
