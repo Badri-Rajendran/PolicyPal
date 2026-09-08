@@ -39,14 +39,14 @@ and shouldn't fabricate.
   don't exist in this project yet. Configuring cloud deployment
   infrastructure isn't something to set up unprompted or with placeholder
   credentials.
-- ~~**Coverage thresholds.**~~ Resolved: `pytest --cov=src --cov-fail-under=80`
-  is now the backend test step. 80% is a regression floor set just under
-  the measured baseline (81%, concentrated in the API/service layer that
-  matters most — infrastructure glue wrapping torch/sentence-transformers
-  sits lower by design, since testing it meaningfully would mean asserting
-  mocks were called rather than catching real bugs; that surface is
-  exercised by `scripts/ask.py` and `scripts/eval_retrieval.py` instead),
-  not an arbitrary target. Ratchet it up as real coverage grows.
+- ~~**Coverage thresholds.**~~ Resolved: `pytest --cov=src --cov-fail-under=85`
+  is now the backend test step. It is a regression floor set just under the
+  measured baseline, not an arbitrary target — infrastructure glue wrapping
+  torch/sentence-transformers sits lower by design, since testing it
+  meaningfully would mean asserting mocks were called rather than catching
+  real bugs; that surface is exercised by `scripts/ask.py` and
+  `scripts/eval_retrieval.py` instead. Ratcheted from 80% to 85% when the
+  ingestion restructure (ADR 0003) brought the baseline to 88%.
 
 ## Consequences
 

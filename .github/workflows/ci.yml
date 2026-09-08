@@ -47,7 +47,7 @@ jobs:
         run: uv run alembic check
 
       - name: Test (with coverage floor)
-        run: uv run pytest -q --cov=src --cov-report=term-missing --cov-fail-under=80
+        run: uv run pytest -q --cov=src --cov-report=term-missing --cov-fail-under=85
 
       - name: SAST (bandit)
         run: uv run bandit -r src -ll

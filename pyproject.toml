@@ -24,6 +24,7 @@ dependencies = [
     "torch>=2.12.1",
     "tqdm>=4.68.3",
     "transformers>=5.12.1",
+    "requests>=2.32.0",
     "wikipedia-api>=0.15.0",
 ]
 

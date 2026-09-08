@@ -1,194 +1,42 @@
-"""Phase 3: Chunking Pipeline — LangChain-based chunking for all document types.
+"""Phase 3: chunk every registered source and build the shared BM25 index.
 
-Strategy per document type:
-  Wikipedia        → RecursiveCharacterTextSplitter (paragraph-first,
-                       size/overlap from settings.chunk_size/chunk_overlap),
-                       each chunk indexed under a title/section-prefixed
-                       "contextualized_text" (see chunk_wikipedia).
+Chunking *strategy* belongs to each source (see `sources/`), because it
+depends on document shape — an atomic glossary definition and a long prose
+article want different treatment. This module only orchestrates: collect
+chunks from each source, write them to one JSONL file, and index them
+together so retrieval searches the whole corpus at once.
 """
 import json
-import pickle
-import re
-from pathlib import Path
-
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from rank_bm25 import BM25Okapi
+from collections import Counter
 
 from src.core.logging import get_logger
-from src.policypal.config import settings
 
-from .constants import CHUNKS_DIR, INDEX_DIR, MARKDOWN, WIKI_ARTICLES
+from .chunking import build_and_store_index
+from .constants import CHUNKS_DIR
+from .sources import SOURCES
 
 logger = get_logger(__name__)
 
-# Token counting
-
-def count_tokens(text: str) -> int:
-    '''Here token count is approximately taken as 1.35 times the word count in a text'''
-    no_of_words = len(text.split())
-    return int(no_of_words * 1.35)
-
-
-# Content feature detection
-
-def detect_has_math(text: str) -> bool:
-    return bool(re.search(
-        r'\$|\\\w+\{|\\frac|\\sum|\\int|\\alpha|\\beta|\\theta|\\sigma|\\nabla',
-        text,
-    ))
-
-def detect_has_code(text: str) -> bool:
-    return "```" in text
-
-
-def detect_has_table(text: str) -> bool:
-    lines = text.split("\n")
-    pipe_lines = [l for l in lines if "|" in l and l.strip().startswith("|")]
-    sep_lines  = [l for l in lines if re.match(r"^\s*\|[-: |]+\|\s*$", l)]
-    return len(pipe_lines) >= 2 and len(sep_lines) >= 1
-
-
-
-# Splitter factories
-
-def make_recursive_splitter(
-    chunk_size: int,
-    chunk_overlap: int,
-    separators: list[str] | None = None,
-) -> RecursiveCharacterTextSplitter:
-    """Build a token-aware RecursiveCharacterTextSplitter."""
-    
-    if separators is None:
-        # Markdown-appropriate order: headings, code fences, blank lines, sentences
-        separators = ["\n#{1,6} ", "```\n", "\n\n", "\n", "\\. ", " ", ""]
-
-    return RecursiveCharacterTextSplitter(
-        separators=separators,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        length_function=count_tokens,
-        is_separator_regex=True,
-    )
-
-def _make_chunk_id(sanitized_title: str, chunk_idx: int) -> str:
-    chunk_id = f"wikipedia_{sanitized_title}_s0_c{chunk_idx:02d}"
-    if len(chunk_id) > 255:
-        raise ValueError(f"chunk_id too long ({len(chunk_id)} chars): {chunk_id}")
-    return chunk_id
-
-# Wikipedia article chunking
-
-def chunk_wikipedia(filepath: Path, title: str) -> list[dict]:
-    """
-    RecursiveCharacterTextSplitter with paragraph-first separators.
-    Lead paragraph (first block before any section) kept as own chunk.
-    """
-    text = filepath.read_text(encoding="utf-8")
-    sanitized_title = re.sub(r"[^\w]+", "_", title).strip("_")
-
-    # Remove the top-level # heading added in Phase 2
-    text = re.sub(r"^#\s+.+\n+", "", text, count=1).strip()
-
-    splitter = make_recursive_splitter(
-        chunk_size=settings.chunk_size,
-        chunk_overlap=settings.chunk_overlap,
-        separators=["\n\n", "\\. ", "\n", " ", ""],
-    )
-
-    raw_chunks = splitter.split_text(text)
-
-    # Simple section tracker: short lines with no terminal punctuation
-    # (Wikipedia section titles are plain-text lines in the processed files)
-
-    _section_title_re = re.compile(r"^[A-Z][^\n.!?]{2,80}$")
-    cur_section = title
-
-    chunks: list[dict] = []
-    
-    for c_idx, chunk_text in enumerate(raw_chunks):
-        chunk_text = chunk_text.strip()
-
-        # Update section name if chunk starts with a short title-like line
-        first_line = chunk_text.split("\n")[0].strip()
-
-        if count_tokens(first_line) < 15 and _section_title_re.match(first_line):
-            cur_section = first_line
-
-        chunk_id = _make_chunk_id(sanitized_title, c_idx)
-
-        # Prepend the article title (and section, if we're past the lead) so
-        # BM25 and the embedding model both see context a mid-article chunk
-        # wouldn't otherwise mention by name — e.g. a chunk that just says
-        # "the deductible is..." still matches a "health insurance deductible"
-        # query. A cheap, template-based stand-in for full contextual
-        # retrieval (no per-chunk LLM call needed for a corpus this size).
-        contextualized_text = (
-            f"{title}\n{chunk_text}" if cur_section == title else f"{title}\n{cur_section}\n{chunk_text}"
-        )
-
-        chunks.append({
-            "text": chunk_text,
-            "contextualized_text": contextualized_text,
-            "metadata": {
-                "chunk_id":    chunk_id,
-                "source_file": f"wiki_{sanitized_title}.txt",
-                "doc_type":    "wikipedia",
-                "title":       title,
-                "language":    "en",
-                "section":     cur_section,
-                "chunk_index": c_idx,
-                "token_count": count_tokens(chunk_text),
-                "is_abstract": False,
-                "has_math":    detect_has_math(chunk_text),
-                "has_code":    detect_has_code(chunk_text),
-                "has_table":   detect_has_table(chunk_text),
-            },
-        })
-
-    return chunks
-
-
-def _build_and_store_index(texts: list[str], chunk_ids: list[str]) -> None:
-    INDEX_DIR.mkdir(parents = True, exist_ok = True)
-
-    index_file_path = INDEX_DIR / "bm25.pkl"
-
-    tokenized_texts = [text.lower().split() for text in texts]
-
-    bm25 = BM25Okapi(tokenized_texts)
-
-    with index_file_path.open("wb") as file:
-        pickle.dump({
-            "bm25": bm25,
-            "chunk_ids" : chunk_ids,
-            "texts": texts
-        }, 
-        file)
-    
-    logger.info(f"BM25 index -> {len(tokenized_texts)} docs saved.")
-
-
-# Executor
 
 def execute() -> None:
-    CHUNKS_DIR.mkdir(exist_ok=True)
+    CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 
     all_chunks: list[dict] = []
 
-    print("\n=== Chunking Wikipedia articles ===")
-    
-    for title in WIKI_ARTICLES:
-        sanitized = re.sub(r"[^\w]+", "_", title).strip("_")
-        md_path = MARKDOWN / f"wiki_{sanitized}.md"
-        
-        if not md_path.exists():
-            print(f"  {title}: markdown not found, skipping")
-            continue
+    for source in SOURCES:
+        all_chunks.extend(source.chunk_documents())
 
-        chunks = chunk_wikipedia(md_path, title)
-        
-        print(f"  {title}: {len(chunks)} chunks")
-        all_chunks.extend(chunks)
+    if not all_chunks:
+        # BM25Okapi raises an opaque division error on an empty corpus. Fail
+        # here with something actionable instead: this means the fetch or
+        # normalize phase produced nothing, not that chunking is broken.
+        raise ValueError(
+            "No chunks produced by any source — run the fetch and normalize "
+            "phases first (`make ingest`), or check that data/corpus/markdown "
+            "is populated."
+        )
+
+    _assert_unique_chunk_ids(all_chunks)
 
     output_path = CHUNKS_DIR / "all_chunks.jsonl"
 
@@ -197,39 +45,50 @@ def execute() -> None:
 
     with output_path.open("w", encoding="utf-8") as f:
         for chunk in all_chunks:
-            # BM25 indexes the contextualized text (see chunk_wikipedia); the
-            # raw chunk["text"] is what gets stored and shown as the source.
+            # BM25 indexes the contextualized text (title/section-prefixed);
+            # the raw chunk["text"] is what gets stored and shown as the source.
             chunk_texts.append(chunk["contextualized_text"])
             chunk_ids.append(chunk["metadata"]["chunk_id"])
             f.write(json.dumps(chunk, ensure_ascii=False) + "\n")
 
-    _build_and_store_index(chunk_texts, chunk_ids)
+    build_and_store_index(chunk_texts, chunk_ids)
 
     print(f"\nWrote {len(all_chunks)} chunks to {output_path}")
-    
+
     _print_summary(all_chunks)
 
 
+def _assert_unique_chunk_ids(chunks: list[dict]) -> None:
+    """Fail before embedding rather than on the unique index mid-insert.
+
+    Embedding the corpus is the slow part of ingestion; a duplicate id caught
+    here costs seconds, the same one caught by Postgres costs the whole run.
+    """
+    counts = Counter(c["metadata"]["chunk_id"] for c in chunks)
+    duplicates = [chunk_id for chunk_id, n in counts.items() if n > 1]
+
+    if duplicates:
+        raise ValueError(
+            f"{len(duplicates)} duplicate chunk_id(s) across sources, "
+            f"first few: {duplicates[:5]}"
+        )
+
+
 def _print_summary(chunks: list[dict]) -> None:
-    token_counts: list[int] = []
-    document_count = 0
-    
-    for c in chunks:
-        m = c["metadata"]
-        
-        document_count += 1
-        
-        token_counts.append(m["token_count"])
-    
-    avg = sum(token_counts) / len(token_counts) if token_counts else 0
-    
+    if not chunks:
+        print("\n=== Chunking Summary ===\nNo chunks produced.")
+        return
+
+    token_counts = [c["metadata"]["token_count"] for c in chunks]
+    by_type = Counter(c["metadata"]["doc_type"] for c in chunks)
+
     print("\n=== Chunking Summary ===")
-    
     print(f"Total chunks:           {len(chunks)}")
-    
-    print(f"  {"wikipedia":<22} {document_count}")
-    
-    print(f"Average token count:    {avg:.1f}")
+
+    for doc_type, count in sorted(by_type.items()):
+        print(f"  {doc_type:<28} {count}")
+
+    print(f"Average token count:    {sum(token_counts) / len(token_counts):.1f}")
     print(f"Min / Max token count:  {min(token_counts)} / {max(token_counts)}")
 
 

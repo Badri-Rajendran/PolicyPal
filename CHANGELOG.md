@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+- Add HealthCare.gov as a second corpus source and restructure ingestion
+  around a `Source` abstraction (ADR 0003). The Wikipedia-only corpus scored
+  25/25 on the retrieval eval while failing to answer 12 of 20 questions a
+  real user would ask — the eval derived one question per ingested article,
+  so it could only ever pass. It measured routing, never coverage.
+  HealthCare.gov's content API (256 CMS Uniform Glossary terms + 436
+  consumer articles, public domain under 17 U.S.C. § 105) covers what a
+  policyholder *does*, where Wikipedia covers what insurance *is*.
+  Unanswered consumer questions dropped from 12/20 to 4/20, with routing
+  unchanged at 25/25 — so the ~4x larger, health-weighted corpus does not
+  crowd out retrieval for the other lines.
+- Rewrite `scripts/eval_retrieval.py` to measure coverage alongside routing,
+  both with regression floors. Routing expectations now accept a set of
+  acceptable sources: the old single-article form scored a real improvement
+  as a regression, marking the authoritative glossary definition of
+  "deductible" wrong for not being the Wikipedia article.
+- Filter dated HealthCare.gov content on a moving cutoff — the feed still
+  serves "Health coverage exemptions for the 2016 tax year only", and
+  answering a live question with expired rules is worse than returning
+  nothing. The cutoff is relative to the current date so it doesn't rot.
+- Replace `download.py`/`clean.py` with `sources/wikipedia.py` and
+  `sources/healthcare_gov.py` behind a common `Source` interface, and move
+  shared chunking helpers to `chunking.py`. Adding a corpus is now one
+  module plus one registry line; chunking, embedding, and the pipeline are
+  untouched. Chunking strategy belongs to the source because shape differs —
+  a glossary term is one atomic chunk (half a definition answers nothing),
+  an article is split recursively.
+- Add `html_text.py`: HTML→markdown via stdlib `HTMLParser`, so ingesting a
+  content API adds no parsing dependency.
+- Fix `chunk_id` collisions that the unique index would have caught mid-run:
+  ids are now namespaced by source, and a title long enough to be truncated
+  gets a digest suffix so two documents sharing a prefix can't clash.
+- Fail with an actionable message when no source produces chunks, instead of
+  an opaque division error from inside BM25Okapi.
+- Raise the backend coverage floor from 80% to 85% (measured baseline is now
+  88%), per ADR 0002's note to ratchet it as real coverage grows.
+
 - Add a backend coverage floor to CI (`--cov-fail-under=80`), resolving the
   one item ADR 0002 had left deliberately open pending a baseline. Measured
   baseline is 81%, concentrated in the API/service layer; infrastructure
