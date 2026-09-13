@@ -24,7 +24,10 @@ describe("sending the first message in a new thread", () => {
     chatService.listMessages.mockResolvedValue([]);
     chatService.createThread.mockResolvedValue({ id: "t2", title: null });
     chatService.sendMessage.mockResolvedValue({
-      message: { id: "m2", role: "assistant", content: "A deductible is what you pay first.", created_at: "" },
+      id: "m2",
+      role: "assistant",
+      content: "A deductible is what you pay first.",
+      created_at: "",
       sources: [],
     });
   });

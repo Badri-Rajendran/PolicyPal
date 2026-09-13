@@ -60,8 +60,8 @@ export function useMessages(threadId, onThreadTitled) {
     setIsSending(true);
 
     try {
-      const data = await chatService.sendMessage(token, threadId, content);
-      setMessages((prev) => [...prev, { ...data.message, sources: data.sources }]);
+      const message = await chatService.sendMessage(token, threadId, content);
+      setMessages((prev) => [...prev, message]);
       if (isFirstMessage) onThreadTitled?.(threadId, content.slice(0, 80));
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== optimisticMessage.id));

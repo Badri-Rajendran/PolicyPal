@@ -19,19 +19,17 @@ class MessageCreateRequest(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
 
 
-class MessageResponse(BaseModel):
-    id: uuid.UUID
-    role: str
-    content: str
-    created_at: datetime
-
-
 class SourceResponse(BaseModel):
     source: str
     chunk_id: str
     relevance: float
 
 
-class MessageWithSourcesResponse(BaseModel):
-    message: MessageResponse
-    sources: list[SourceResponse]
+class MessageResponse(BaseModel):
+    id: uuid.UUID
+    role: str
+    content: str
+    created_at: datetime
+    sources: list[SourceResponse] = []
+
+

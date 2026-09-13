@@ -3,15 +3,14 @@ import uuid
 from flask import Blueprint, abort, jsonify
 from flask_jwt_extended import jwt_required
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from src.api.deps import get_current_user, get_db, parse_body
 from src.api.limiter import limiter
-from src.models.chat import Message, Thread
+from src.models.chat import Message, MessageSource, Thread
 from src.schemas.chat import (
     MessageCreateRequest,
     MessageResponse,
-    MessageWithSourcesResponse,
-    SourceResponse,
     ThreadCreateRequest,
     ThreadResponse,
 )
@@ -80,7 +79,13 @@ def delete_thread(thread_id: str):
 def list_messages(thread_id: str):
     db, thread = _get_owned_thread(thread_id)
 
-    stmt = select(Message).where(Message.thread_id == thread.id).order_by(Message.created_at)
+    # Eager-load citations: without this the transcript is one query per message.
+    stmt = (
+        select(Message)
+        .where(Message.thread_id == thread.id)
+        .options(selectinload(Message.sources))
+        .order_by(Message.created_at)
+    )
     messages = db.execute(stmt).scalars().all()
 
     return jsonify([MessageResponse.model_validate(m, from_attributes=True).model_dump(mode="json") for m in messages])
@@ -105,15 +110,19 @@ def create_message(thread_id: str):
 
     answer_text, chunks = answer_query(body.content, history)
 
-    assistant_message = Message(thread_id=thread.id, role="assistant", content=answer_text)
+    assistant_message = Message(
+        thread_id=thread.id,
+        role="assistant",
+        content=answer_text,
+        sources=[
+            MessageSource(chunk_id=c.chunk_id, source=c.source, relevance=c.score) for c in chunks
+        ],
+    )
     db.add(assistant_message)
     db.flush()
 
     if thread.title is None:
         thread.title = body.content[:80]
 
-    response = MessageWithSourcesResponse(
-        message=MessageResponse.model_validate(assistant_message, from_attributes=True),
-        sources=[SourceResponse(source=c.source, chunk_id=c.chunk_id, relevance=c.score) for c in chunks],
-    )
+    response = MessageResponse.model_validate(assistant_message, from_attributes=True)
     return jsonify(response.model_dump(mode="json")), 201

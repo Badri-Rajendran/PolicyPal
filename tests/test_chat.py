@@ -83,10 +83,67 @@ def test_send_message_returns_grounded_answer_with_sources(mock_answer_query, cl
 
     assert resp.status_code == 201
     body = resp.get_json()
-    assert body["message"]["role"] == "assistant"
-    assert "deductible" in body["message"]["content"]
+    assert body["role"] == "assistant"
+    assert "deductible" in body["content"]
     assert body["sources"][0]["source"] == "wiki_Health.txt"
     mock_answer_query.assert_called_once_with("What is a deductible?", [])
+
+
+@patch("src.api.routes.chat.answer_query")
+def test_citations_survive_reopening_the_thread(mock_answer_query, client):
+    """The reason this table exists: a restored transcript has to keep its
+    grounding, or an answer reads as an ungrounded assertion (ADR 0007)."""
+    mock_answer_query.return_value = ("A deductible is what you pay first.", _fake_chunks())
+    headers = _auth_headers(client)
+    thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+
+    client.post(
+        f"/api/chat/threads/{thread_id}/messages", json={"content": "What is a deductible?"}, headers=headers
+    )
+
+    reopened = client.get(f"/api/chat/threads/{thread_id}/messages", headers=headers).get_json()
+    assistant = next(m for m in reopened if m["role"] == "assistant")
+
+    assert assistant["sources"][0]["source"] == "wiki_Health.txt"
+    assert assistant["sources"][0]["chunk_id"]
+    assert 0 < assistant["sources"][0]["relevance"] <= 1
+
+
+@patch("src.api.routes.chat.answer_query")
+def test_a_user_question_carries_no_citations(mock_answer_query, client):
+    mock_answer_query.return_value = ("answer", _fake_chunks())
+    headers = _auth_headers(client)
+    thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+
+    client.post(f"/api/chat/threads/{thread_id}/messages", json={"content": "hello"}, headers=headers)
+
+    reopened = client.get(f"/api/chat/threads/{thread_id}/messages", headers=headers).get_json()
+
+    assert next(m for m in reopened if m["role"] == "user")["sources"] == []
+
+
+@patch("src.api.routes.chat.answer_query")
+def test_deleting_a_thread_takes_its_citations(mock_answer_query, client):
+    mock_answer_query.return_value = ("answer", _fake_chunks())
+    headers = _auth_headers(client)
+    thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+    client.post(f"/api/chat/threads/{thread_id}/messages", json={"content": "hello"}, headers=headers)
+
+    assert client.delete(f"/api/chat/threads/{thread_id}", headers=headers).status_code == 204
+    assert client.get(f"/api/chat/threads/{thread_id}/messages", headers=headers).status_code == 404
+
+
+@patch("src.api.routes.chat.answer_query")
+def test_an_answer_with_no_retrieved_context_stores_no_citations(mock_answer_query, client):
+    mock_answer_query.return_value = ("I couldn't find an answer to that.", [])
+    headers = _auth_headers(client)
+    thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+
+    body = client.post(
+        f"/api/chat/threads/{thread_id}/messages", json={"content": "unanswerable"}, headers=headers
+    ).get_json()
+
+    assert body["sources"] == []
 
 
 @patch("src.api.routes.chat.answer_query")
