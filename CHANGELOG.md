@@ -4,6 +4,16 @@
 
 ### Added
 
+- Conversation history, so a follow-up question means something. A follow-up
+  is rewritten into a standalone question before retrieval — putting prior
+  turns in the prompt alone does nothing, because retrieval runs first and the
+  refusal fires before history is read (ADR 0005).
+- Routes for every screen — `/login`, `/register`, `/chat`, `/chat/:threadId`
+  — behind an auth guard, so a conversation is linkable and browser back works
+  (ADR 0006).
+- Session survives a reload: the token persists to `sessionStorage`, which
+  keeps it out of disk storage and ends it with the tab.
+- Multi-turn cases in `scripts/eval_generation.py`, with a floor of 2/3.
 - Flask API with JWT auth (`register`/`login`/`me`) and chat endpoints for
   threads and messages, running the RAG pipeline and persisting the
   conversation (ADR 0001).
@@ -91,6 +101,11 @@
 
 ### Fixed
 
+- An expired token surfaced as "Something went wrong." mid-conversation. A
+  401, or a 422 carrying a JWT `msg`, on a request that sent a token now signs
+  the user out and says why; a 401 without one stays a credentials failure.
+- The frontend called `localhost:5000`, which on macOS resolves to `::1` and
+  reaches AirPlay Receiver rather than Flask. It calls `127.0.0.1:5000` now.
 - Comparison questions retrieved only one side, producing fabricated
   contrasts; a cross-encoder scores each chunk against the whole query, so one
   side took every slot. Now retrieved per intent (ADR 0004).

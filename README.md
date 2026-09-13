@@ -101,10 +101,12 @@ npm run dev
 
 Copy the required variables below into a `.env` file at the repo root before running the API.
 
-> **macOS note:** port 5000 is often claimed by AirPlay Receiver (Control Center). If `make api`
-> fails to bind or the frontend can't reach it, run Flask on another port
-> (`uv run flask --app src.api.main run --port 5050`) and set `frontend/.env`'s
-> `VITE_API_BASE_URL` to match.
+> **macOS note:** AirPlay Receiver (Control Center) listens on `*:5000`. Flask still binds
+> `127.0.0.1:5000` alongside it, but `localhost` can resolve to `::1` and reach AirPlay instead —
+> which answers `403` and looks like the API is broken. The frontend therefore calls
+> `127.0.0.1:5000`, not `localhost:5000`. Only if `make api` genuinely fails to bind do you need
+> another port (`uv run flask --app src.api.main run --port 5050`), with `frontend/.env`'s
+> `VITE_API_BASE_URL` set to match.
 
 ## Environment Variables
 
@@ -120,7 +122,7 @@ Copy the required variables below into a `.env` file at the repo root before run
 See `src/policypal/config.py` for the full list, including retrieval, reranking, and LLM tuning
 defaults (chunk size, top-k, relevance threshold, model name, temperature).
 
-The frontend reads `VITE_API_BASE_URL` (defaults to `http://localhost:5000`) from `frontend/.env`.
+The frontend reads `VITE_API_BASE_URL` (defaults to `http://127.0.0.1:5000`) from `frontend/.env`.
 
 ## Ingestion Pipeline
 

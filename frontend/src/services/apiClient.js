@@ -1,4 +1,6 @@
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+// 127.0.0.1, not localhost: macOS AirPlay Receiver listens on *:5000, and
+// localhost resolving to ::1 reaches it instead of Flask, which binds IPv4.
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000";
 
 export class ApiError extends Error {
   constructor(message, status, details) {
@@ -34,9 +36,13 @@ export async function apiFetch(path, { method = "GET", token, body } = {}) {
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    // Only a request that carried a token can have an expired one. A 401 from
+    // Only a request that carried a token can have a dead one. A 401 from
     // login means the credentials were wrong, which is a different message.
-    if (response.status === 401 && token) {
+    // flask-jwt-extended answers 401 for an expired token and 422 for an
+    // unusable one, both under "msg"; the API's own 422 carries "error"
+    // instead, so a validation failure is never mistaken for a dead session.
+    const rejectedTheToken = response.status === 401 || (response.status === 422 && data?.msg);
+    if (rejectedTheToken && token) {
       throw new SessionExpiredError();
     }
     if (response.status === 429) {

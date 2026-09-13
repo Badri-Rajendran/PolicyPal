@@ -74,4 +74,20 @@ describe("apiFetch", () => {
     expect(error).not.toBeInstanceOf(SessionExpiredError);
     expect(error.message).toBe("invalid email or password");
   });
+
+  it("treats an unusable token as an expired session", async () => {
+    // flask-jwt-extended answers 422 for a token it cannot decode.
+    mockFetchOnce(422, { msg: "Not enough segments" });
+    const error = await apiFetch("/api/chat/threads", { token: "corrupted" }).catch((e) => e);
+    expect(error).toBeInstanceOf(SessionExpiredError);
+  });
+
+  it("keeps a validation failure distinct from a dead session", async () => {
+    // The API's own 422 carries "error"/"details", never "msg".
+    mockFetchOnce(422, { error: "validation failed", details: [{ field: "title" }] });
+    const error = await apiFetch("/api/chat/threads", { method: "POST", token: "tok123" }).catch((e) => e);
+    expect(error).not.toBeInstanceOf(SessionExpiredError);
+    expect(error.message).toBe("validation failed");
+    expect(error.details).toEqual([{ field: "title" }]);
+  });
 });
