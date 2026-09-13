@@ -8,6 +8,12 @@ export class ApiError extends Error {
   }
 }
 
+export class SessionExpiredError extends ApiError {
+  constructor() {
+    super("Your session has expired. Sign in again to pick up where you left off.", 401);
+  }
+}
+
 export async function apiFetch(path, { method = "GET", token, body } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -28,6 +34,11 @@ export async function apiFetch(path, { method = "GET", token, body } = {}) {
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
+    // Only a request that carried a token can have an expired one. A 401 from
+    // login means the credentials were wrong, which is a different message.
+    if (response.status === 401 && token) {
+      throw new SessionExpiredError();
+    }
     if (response.status === 429) {
       throw new ApiError("You're sending requests too quickly. Wait a moment and try again.", 429);
     }

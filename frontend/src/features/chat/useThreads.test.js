@@ -1,15 +1,19 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth } from "../../hooks/useAuth";
+import { SessionExpiredError } from "../../services/apiClient";
 import * as chatService from "../../services/chatService";
 import { useThreads } from "./useThreads";
 
 vi.mock("../../hooks/useAuth");
 vi.mock("../../services/chatService");
 
+let expireSession;
+
 beforeEach(() => {
   vi.clearAllMocks();
-  useAuth.mockReturnValue({ token: "tok123" });
+  expireSession = vi.fn();
+  useAuth.mockReturnValue({ token: "tok123", expireSession });
 });
 
 describe("useThreads", () => {
@@ -82,5 +86,14 @@ describe("useThreads", () => {
 
     await waitFor(() => expect(result.current.status).toBe("ready"));
     expect(result.current.threads).toHaveLength(1);
+  });
+
+  it("signs out instead of showing an error when the token has expired", async () => {
+    chatService.listThreads.mockRejectedValue(new SessionExpiredError());
+    const { result } = renderHook(() => useThreads());
+
+    await waitFor(() => expect(expireSession).toHaveBeenCalled());
+    // The user goes back to sign-in; an error banner here would be noise.
+    expect(result.current.status).not.toBe("error");
   });
 });

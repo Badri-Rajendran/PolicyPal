@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { SessionExpiredError } from "../../services/apiClient";
 import * as chatService from "../../services/chatService";
 
 let tempIdCounter = 0;
 
 export function useMessages(threadId, onThreadTitled) {
-  const { token } = useAuth();
+  const { token, expireSession } = useAuth();
   const [messages, setMessages] = useState([]);
   const [status, setStatus] = useState(threadId ? "loading" : "idle");
   const [loadedThreadId, setLoadedThreadId] = useState(threadId);
@@ -33,15 +34,17 @@ export function useMessages(threadId, onThreadTitled) {
           setStatus("ready");
         }
       },
-      () => {
-        if (!ignore) setStatus("error");
+      (err) => {
+        if (ignore) return;
+        if (err instanceof SessionExpiredError) return expireSession();
+        setStatus("error");
       },
     );
 
     return () => {
       ignore = true;
     };
-  }, [threadId, token]);
+  }, [threadId, token, expireSession]);
 
   async function send(content) {
     const isFirstMessage = messages.length === 0;
@@ -62,7 +65,8 @@ export function useMessages(threadId, onThreadTitled) {
       if (isFirstMessage) onThreadTitled?.(threadId, content.slice(0, 80));
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== optimisticMessage.id));
-      setSendError(err.message);
+      if (err instanceof SessionExpiredError) expireSession();
+      else setSendError(err.message);
     } finally {
       setIsSending(false);
     }

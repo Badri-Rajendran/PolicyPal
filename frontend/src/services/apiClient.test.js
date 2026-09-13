@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { apiFetch, ApiError } from "./apiClient";
+import { apiFetch, ApiError, SessionExpiredError } from "./apiClient";
 
 function mockFetchOnce(status, body) {
   vi.stubGlobal(
@@ -59,5 +59,19 @@ describe("apiFetch", () => {
       vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
     );
     await expect(apiFetch("/api/auth/me", { token: "tok123" })).rejects.toThrow(/Can't reach PolicyPal/);
+  });
+
+  it("treats a 401 on a token-bearing request as an expired session", async () => {
+    mockFetchOnce(401, { error: "Token has expired" });
+    const error = await apiFetch("/api/chat/threads", { token: "tok123" }).catch((e) => e);
+    expect(error).toBeInstanceOf(SessionExpiredError);
+    expect(error.message).toMatch(/session has expired/i);
+  });
+
+  it("leaves a 401 without a token as a credentials failure", async () => {
+    mockFetchOnce(401, { error: "invalid email or password" });
+    const error = await apiFetch("/api/auth/login", { method: "POST" }).catch((e) => e);
+    expect(error).not.toBeInstanceOf(SessionExpiredError);
+    expect(error.message).toBe("invalid email or password");
   });
 });

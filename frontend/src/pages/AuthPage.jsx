@@ -1,8 +1,10 @@
 import { useState } from "react";
 import AuthForm from "../features/auth/AuthForm";
+import { useAuth } from "../hooks/useAuth";
 import "../features/auth/auth.css";
 
 export default function AuthPage() {
+  const { status } = useAuth();
   const [mode, setMode] = useState("login");
 
   return (
@@ -12,6 +14,11 @@ export default function AuthPage() {
           <h1>PolicyPal</h1>
         </div>
         <p className="auth-tagline">Ask about your policy. Get answers with sources, not guesses.</p>
+        {status === "expired" && (
+          <p className="auth-notice" role="status">
+            Your session has expired. Sign in again to pick up where you left off.
+          </p>
+        )}
         <AuthForm mode={mode} onModeChange={setMode} />
       </div>
     </div>

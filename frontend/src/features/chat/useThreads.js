@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { SessionExpiredError } from "../../services/apiClient";
 import * as chatService from "../../services/chatService";
 
 export function useThreads() {
-  const { token } = useAuth();
+  const { token, expireSession } = useAuth();
   const [threads, setThreads] = useState([]);
   const [status, setStatus] = useState("loading");
   const [error, setError] = useState("");
@@ -16,11 +17,12 @@ export function useThreads() {
         setStatus("ready");
       },
       (err) => {
+        if (err instanceof SessionExpiredError) return expireSession();
         setError(err.message);
         setStatus("error");
       },
     );
-  }, [token]);
+  }, [token, expireSession]);
 
   useEffect(() => {
     fetchThreads();
