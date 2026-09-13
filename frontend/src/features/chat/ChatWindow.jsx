@@ -36,7 +36,7 @@ export default function ChatWindow({ threadId, threadTitle, onCreateThread, onTh
   }
 
   return (
-    <section className="chat-window">
+    <main className="chat-window">
       <header className="chat-window-header">
         <h2>{threadTitle || "New question"}</h2>
       </header>
@@ -47,6 +47,6 @@ export default function ChatWindow({ threadId, threadTitle, onCreateThread, onTh
         <ErrorBanner>{sendError}</ErrorBanner>
         <Composer value={draft} onChange={setDraft} onSubmit={() => handleSubmit(draft)} disabled={isSending} />
       </div>
-    </section>
+    </main>
   );
 }

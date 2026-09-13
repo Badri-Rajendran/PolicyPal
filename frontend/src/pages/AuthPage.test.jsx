@@ -28,6 +28,11 @@ describe("AuthPage", () => {
     expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
   });
 
+  it("exposes the card as the main landmark", () => {
+    renderAt("/login");
+    expect(screen.getByRole("main")).toBeInTheDocument();
+  });
+
   it("registers on the register route", () => {
     renderAt("/register");
     expect(screen.getByRole("button", { name: "Create account" })).toBeInTheDocument();

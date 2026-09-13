@@ -9,7 +9,7 @@ export default function AuthPage({ mode = "login" }) {
 
   return (
     <div className="auth-screen">
-      <div className="auth-card">
+      <main className="auth-card">
         <div className="auth-brand">
           <h1>PolicyPal</h1>
         </div>
@@ -20,7 +20,7 @@ export default function AuthPage({ mode = "login" }) {
           </p>
         )}
         <AuthForm mode={mode} onModeChange={(next) => navigate(`/${next}`)} />
-      </div>
+      </main>
     </div>
   );
 }

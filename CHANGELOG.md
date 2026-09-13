@@ -106,6 +106,8 @@
 
 - Citations vanished when a conversation was reopened — they were returned
   by `POST /messages` and never stored.
+- The chat pane and the auth card were plain `div`/`section` elements, so
+  neither page exposed a `main` landmark to skip to.
 - An expired token surfaced as "Something went wrong." mid-conversation. A
   401, or a 422 carrying a JWT `msg`, on a request that sent a token now signs
   the user out and says why; a 401 without one stays a credentials failure.
