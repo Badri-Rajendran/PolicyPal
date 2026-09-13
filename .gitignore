@@ -49,3 +49,10 @@ data/
 logs/
 
 node_modules/
+
+# OS noise
+.DS_Store
+
+# Claude Code local tooling state. The CLAUDE.md instruction files at the
+# repo root and in frontend/ are committed; this directory is per-developer.
+.claude/

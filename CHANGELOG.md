@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Clear out config that had drifted from reality. `[tool.hatch.build]` pointed
+  its wheel target at a `utils` package that does not exist, so `uv sync` was
+  building an empty wheel — it now points at `src`. The Alembic ruff hook was
+  commented out "until ruff is installed"; ruff has gated CI since the lint
+  commit, so it is enabled. `src/core/chunking.py` was a 0-byte file shadowing
+  the real `src/ingestion/chunking.py` and is deleted. `.DS_Store` and
+  `.claude/` are now ignored, and the two `CLAUDE.md` instruction files —
+  which the repo's own docs link to — are finally tracked, with three stale
+  claims in the frontend one corrected (Vitest is installed, the feature
+  folders exist, lint is eslint not oxlint).
+
 - Add `scripts/eval_generation.py`, closing the measurement gap every other
   eval in this repo shares: they grade retrieved *context*, never the
   *answer*. That gap was not theoretical — coverage read 19/20 while a
