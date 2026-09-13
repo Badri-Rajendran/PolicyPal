@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useNavigate } from "react-router";
 import AuthForm from "../features/auth/AuthForm";
 import { useAuth } from "../hooks/useAuth";
 import "../features/auth/auth.css";
 
-export default function AuthPage() {
+export default function AuthPage({ mode = "login" }) {
   const { status } = useAuth();
-  const [mode, setMode] = useState("login");
+  const navigate = useNavigate();
 
   return (
     <div className="auth-screen">
@@ -19,7 +19,7 @@ export default function AuthPage() {
             Your session has expired. Sign in again to pick up where you left off.
           </p>
         )}
-        <AuthForm mode={mode} onModeChange={setMode} />
+        <AuthForm mode={mode} onModeChange={(next) => navigate(`/${next}`)} />
       </div>
     </div>
   );

@@ -8,7 +8,6 @@ export function useThreads() {
   const [threads, setThreads] = useState([]);
   const [status, setStatus] = useState("loading");
   const [error, setError] = useState("");
-  const [selectedThreadId, setSelectedThreadId] = useState(null);
 
   const fetchThreads = useCallback(() => {
     return chatService.listThreads(token).then(
@@ -37,14 +36,12 @@ export function useThreads() {
   async function createThread() {
     const thread = await chatService.createThread(token, null);
     setThreads((prev) => [thread, ...prev]);
-    setSelectedThreadId(thread.id);
     return thread;
   }
 
   async function removeThread(threadId) {
     await chatService.deleteThread(token, threadId);
     setThreads((prev) => prev.filter((t) => t.id !== threadId));
-    setSelectedThreadId((current) => (current === threadId ? null : current));
   }
 
   function touchThread(threadId, title) {
@@ -55,15 +52,5 @@ export function useThreads() {
     });
   }
 
-  return {
-    threads,
-    status,
-    error,
-    selectedThreadId,
-    selectThread: setSelectedThreadId,
-    createThread,
-    removeThread,
-    touchThread,
-    retry,
-  };
+  return { threads, status, error, createThread, removeThread, touchThread, retry };
 }

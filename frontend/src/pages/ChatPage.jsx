@@ -1,3 +1,4 @@
+import { useNavigate, useParams } from "react-router";
 import ErrorBanner from "../components/ErrorBanner";
 import ChatWindow from "../features/chat/ChatWindow";
 import Sidebar from "../features/chat/Sidebar";
@@ -5,19 +6,22 @@ import "../features/chat/chat.css";
 import { useThreads } from "../features/chat/useThreads";
 
 export default function ChatPage() {
-  const {
-    threads,
-    status,
-    error,
-    selectedThreadId,
-    selectThread,
-    createThread,
-    removeThread,
-    touchThread,
-    retry,
-  } = useThreads();
+  const { threadId } = useParams();
+  const navigate = useNavigate();
+  const { threads, status, error, createThread, removeThread, touchThread, retry } = useThreads();
 
-  const selectedThread = threads.find((t) => t.id === selectedThreadId);
+  const selectedThread = threads.find((t) => t.id === threadId);
+
+  async function startThread() {
+    const thread = await createThread();
+    navigate(`/chat/${thread.id}`);
+    return thread;
+  }
+
+  async function deleteThread(id) {
+    await removeThread(id);
+    if (id === threadId) navigate("/chat", { replace: true });
+  }
 
   if (status === "error") {
     return (
@@ -35,15 +39,15 @@ export default function ChatPage() {
       <Sidebar
         threads={threads}
         status={status}
-        selectedThreadId={selectedThreadId}
-        onSelect={selectThread}
-        onDelete={removeThread}
-        onCreate={createThread}
+        selectedThreadId={threadId ?? null}
+        onSelect={(id) => navigate(`/chat/${id}`)}
+        onDelete={deleteThread}
+        onCreate={startThread}
       />
       <ChatWindow
-        threadId={selectedThreadId}
+        threadId={threadId ?? null}
         threadTitle={selectedThread?.title}
-        onCreateThread={createThread}
+        onCreateThread={startThread}
         onThreadTitled={touchThread}
       />
     </div>

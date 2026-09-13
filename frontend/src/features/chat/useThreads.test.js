@@ -45,22 +45,33 @@ describe("useThreads", () => {
     });
 
     expect(result.current.threads[0].id).toBe("t2");
-    expect(result.current.selectedThreadId).toBe("t2");
   });
 
-  it("removes a thread and clears selection if it was selected", async () => {
+  it("returns the created thread so the caller can navigate to it", async () => {
+    chatService.listThreads.mockResolvedValue([]);
+    chatService.createThread.mockResolvedValue({ id: "t2", title: null });
+    const { result } = renderHook(() => useThreads());
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+
+    let created;
+    await act(async () => {
+      created = await result.current.createThread();
+    });
+
+    expect(created.id).toBe("t2");
+  });
+
+  it("removes a thread from the list", async () => {
     chatService.listThreads.mockResolvedValue([{ id: "t1", title: "Deductibles" }]);
     chatService.deleteThread.mockResolvedValue(null);
     const { result } = renderHook(() => useThreads());
     await waitFor(() => expect(result.current.status).toBe("ready"));
 
-    act(() => result.current.selectThread("t1"));
     await act(async () => {
       await result.current.removeThread("t1");
     });
 
     expect(result.current.threads).toEqual([]);
-    expect(result.current.selectedThreadId).toBeNull();
   });
 
   it("moves a titled thread to the top of the list", async () => {
