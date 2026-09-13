@@ -1,11 +1,11 @@
-from src.policypal.config import settings
-from .logging import get_logger
-from .device import resolve_device
+from functools import lru_cache
 
 from sentence_transformers import SentenceTransformer
 
-from functools import lru_cache
+from src.policypal.config import settings
 
+from .device import resolve_device
+from .logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -14,7 +14,7 @@ def _model():
     '''Load the embedding model once per process (cached).'''
     device = resolve_device()
     logger.info("loading embedding model %s on %s", settings.embedding_model, device)
-    return SentenceTransformer(settings.embedding_model, device=device)
+    return SentenceTransformer(settings.embedding_model, device=device, revision=settings.embedding_model_revision)
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:

@@ -1,10 +1,15 @@
-from src.policypal.config import settings
-from src.core.db import Base
+from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from logging.config import fileConfig
+from src.core.db import Base
+from src.models import (  # noqa: F401 — register models on Base.metadata
+    chat,
+    chunk,
+    user,
+)
+from src.policypal.config import settings
 
 config = context.config
 

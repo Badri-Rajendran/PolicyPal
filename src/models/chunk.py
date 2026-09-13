@@ -1,11 +1,10 @@
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Integer, String, Text
-
 from sqlalchemy.orm import Mapped, mapped_column
 
+from src.core.db import Base
 from src.policypal.config import settings
 
-from src.core.db import Base
 
 class Chunk(Base):
     __tablename__ = "chunks"
