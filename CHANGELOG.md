@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Fix the frontend CI job, which had been failing on every run. It pinned Node
+  20, but jsdom 30 and vitest 5 require Node >= 22.13, so all 20 test files
+  died at worker startup with `webidl.util.markAsUncloneable is not a
+  function` — an API that landed in Node 22. The suite passed locally the
+  whole time (local dev is on Node 26), which is exactly why this went
+  unnoticed: the failure existed only at the pinned version. Bumped to Node
+  24, the current LTS and the lowest version every dependency's `engines`
+  field accepts.
+
 - Clear out config that had drifted from reality. `[tool.hatch.build]` pointed
   its wheel target at a `utils` package that does not exist, so `uv sync` was
   building an empty wheel — it now points at `src`. The Alembic ruff hook was
