@@ -76,6 +76,16 @@ class Settings(BaseSettings):
     # Low temperature keeps grounded QA deterministic and reduces hallucination.
     temperature: float = 0.2
 
+    # Conversation history (ADR 0005)
+
+    # Prior turns are filled newest-first until this many tokens are used. A
+    # turn count behaves badly at both extremes: three long turns crowd out
+    # the retrieved context, three one-line turns waste the window.
+    history_token_budget: int = 1024
+    # A rewritten follow-up is one short question, never prose. Capping the
+    # generation is the first of the guards that keep a bad rewrite cheap.
+    rewrite_max_new_tokens: int = 48
+
     # API / Auth
 
     jwt_secret_key: SecretStr = Field(..., description="Signing key for access tokens.")

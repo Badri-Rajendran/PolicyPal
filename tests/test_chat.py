@@ -86,7 +86,39 @@ def test_send_message_returns_grounded_answer_with_sources(mock_answer_query, cl
     assert body["message"]["role"] == "assistant"
     assert "deductible" in body["message"]["content"]
     assert body["sources"][0]["source"] == "wiki_Health.txt"
-    mock_answer_query.assert_called_once_with("What is a deductible?")
+    mock_answer_query.assert_called_once_with("What is a deductible?", [])
+
+
+@patch("src.api.routes.chat.answer_query")
+def test_follow_up_receives_the_earlier_turns(mock_answer_query, client):
+    mock_answer_query.return_value = ("answer", _fake_chunks())
+    headers = _auth_headers(client)
+    thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+    url = f"/api/chat/threads/{thread_id}/messages"
+
+    client.post(url, json={"content": "What is a deductible?"}, headers=headers)
+    client.post(url, json={"content": "What about for auto?"}, headers=headers)
+
+    question, history = mock_answer_query.call_args[0]
+
+    assert question == "What about for auto?"
+    # The earlier exchange, and not the question that is being asked right now.
+    assert [turn["role"] for turn in history] == ["user", "assistant"]
+    assert history[0]["content"] == "What is a deductible?"
+    assert "What about for auto?" not in [turn["content"] for turn in history]
+
+
+@patch("src.api.routes.chat.answer_query")
+def test_history_is_scoped_to_its_own_thread(mock_answer_query, client):
+    mock_answer_query.return_value = ("answer", _fake_chunks())
+    headers = _auth_headers(client)
+    first = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+    second = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+
+    client.post(f"/api/chat/threads/{first}/messages", json={"content": "in thread one"}, headers=headers)
+    client.post(f"/api/chat/threads/{second}/messages", json={"content": "in thread two"}, headers=headers)
+
+    assert mock_answer_query.call_args[0][1] == []
 
 
 @patch("src.api.routes.chat.answer_query")

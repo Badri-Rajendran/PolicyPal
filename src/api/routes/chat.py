@@ -93,11 +93,17 @@ def create_message(thread_id: str):
     body = parse_body(MessageCreateRequest)
     db, thread = _get_owned_thread(thread_id)
 
+    # Read before adding the new message, so the question isn't its own history.
+    prior = db.execute(
+        select(Message).where(Message.thread_id == thread.id).order_by(Message.created_at)
+    ).scalars().all()
+    history = [{"role": m.role, "content": m.content} for m in prior]
+
     user_message = Message(thread_id=thread.id, role="user", content=body.content)
     db.add(user_message)
     db.flush()
 
-    answer_text, chunks = answer_query(body.content)
+    answer_text, chunks = answer_query(body.content, history)
 
     assistant_message = Message(thread_id=thread.id, role="assistant", content=answer_text)
     db.add(assistant_message)

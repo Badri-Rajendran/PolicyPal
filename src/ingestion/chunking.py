@@ -12,6 +12,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from rank_bm25 import BM25Okapi
 
 from src.core.logging import get_logger
+from src.core.text import count_tokens
 
 from .constants import INDEX_DIR
 
@@ -21,14 +22,6 @@ logger = get_logger(__name__)
 # truncated well below that so the suffix always fits.
 _MAX_CHUNK_ID = 255
 _MAX_TITLE_IN_ID = 180
-
-
-# Token counting
-
-def count_tokens(text: str) -> int:
-    '''Here token count is approximately taken as 1.35 times the word count in a text'''
-    no_of_words = len(text.split())
-    return int(no_of_words * 1.35)
 
 
 # Content feature detection
