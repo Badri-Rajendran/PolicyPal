@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add `scripts/eval_generation.py`, closing the measurement gap every other
+  eval in this repo shares: they grade retrieved *context*, never the
+  *answer*. That gap was not theoretical — coverage read 19/20 while a
+  question inside that 19 returned a fabricated comparison, and no retrieval
+  metric could have seen it. The new eval runs the full `answer_query()` path
+  and grades two things: whether an answer states the facts it must, and
+  whether an ungrounded question is refused rather than invented. The refusal
+  half is the hallucination guard. Manual tool, not a CI gate — it generates
+  once per question.
+
 - Fix comparison questions retrieving only one side of the comparison. Asked
   "What's the difference between a copay and coinsurance?", the model replied
   that "coinsurance is higher than in-network coinsurance because it allows

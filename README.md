@@ -60,7 +60,8 @@ PolicyPal/
 ├── migrations/         # Alembic revisions
 ├── docs/decisions/     # ADRs for material architectural choices
 ├── frontend/           # React + Vite chat UI
-├── scripts/            # ask.py (manual RAG smoke test), eval_retrieval.py
+├── scripts/            # ask.py (manual RAG smoke test),
+│                     # eval_retrieval.py, eval_generation.py
 ├── tests/
 ├── docker-compose.yml  # PostgreSQL + pgvector
 └── pyproject.toml
@@ -183,6 +184,26 @@ uv run python -m scripts.eval_retrieval
 
 Not a CI gate — it needs the corpus already ingested and loads real models,
 so it's slow and environment-dependent by nature.
+
+### Generation quality eval
+
+Retrieval metrics grade *context*, never *answers*, and the gap between them
+is not theoretical: coverage once read 19/20 while one of the questions
+inside that 19 was returning a fabricated comparison, because the context
+held only one of the two concepts being compared. No retrieval metric could
+have seen it.
+
+`scripts/eval_generation.py` runs the full `answer_query()` path and grades
+the generated text: whether an answer states the facts it must, and whether
+an ungrounded question is refused rather than invented. The refusal half is
+the hallucination guard.
+
+```bash
+uv run python -m scripts.eval_generation
+```
+
+Slower still than the retrieval eval — it generates once per question — and
+likewise a manual tool rather than a CI gate.
 
 ## License
 
