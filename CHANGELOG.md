@@ -4,6 +4,9 @@
 
 ### Added
 
+- `docs/plans/`: phased roadmap for plan comparison — hosted LLM, Marketplace
+  API catalog, then SBC ingestion. Records that the API covers ~7% of insured
+  Americans, and that EOCs are unobtainable pre-purchase so SBCs replace them.
 - Conversation history, so a follow-up question means something. It is
   rewritten into a standalone question *before* retrieval — history in the
   prompt alone changes nothing, since retrieval runs first (ADR 0005).
