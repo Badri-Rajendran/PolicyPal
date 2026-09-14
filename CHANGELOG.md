@@ -16,6 +16,9 @@
 - `message_sources` table, so an answer keeps its citations when a
   conversation is reopened. `chunk_id` carries no foreign key — `make ingest`
   rebuilds the chunks table and would cascade the history away (ADR 0007).
+- `make ui-dev`, `ui-build`, `ui-lint`, `ui-preview` and `ui-test`, wrapping
+  every `frontend/package.json` script. Prefixed so a bare `make test` can't
+  mean "Vitest only, pytest untouched".
 - Flask API with JWT auth (`register`/`login`/`me`) and chat endpoints for
   threads and messages, running the RAG pipeline and persisting the
   conversation (ADR 0001).
