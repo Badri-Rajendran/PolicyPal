@@ -94,10 +94,20 @@ make ingest
 make api
 
 # 6. In a separate terminal, install and start the frontend (http://localhost:5173)
-cd frontend
-npm install
-npm run dev
+cd frontend && npm install && cd ..
+make ui-dev
 ```
+
+The rest of `frontend/package.json` is wrapped the same way, so the UI can be
+driven from the repo root:
+
+| Target | Runs |
+| --- | --- |
+| `make ui-dev` | Vite dev server |
+| `make ui-build` | production build into `frontend/dist` |
+| `make ui-lint` | ESLint |
+| `make ui-test` | Vitest |
+| `make ui-preview` | serves `frontend/dist` — run `make ui-build` first |
 
 Copy the required variables below into a `.env` file at the repo root before running the API.
 
