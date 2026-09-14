@@ -59,6 +59,7 @@ PolicyPal/
 │   └── policypal/      # settings (config.py)
 ├── migrations/         # Alembic revisions
 ├── docs/decisions/     # ADRs for material architectural choices
+├── docs/plans/         # phased roadmap for the plan-comparison expansion
 ├── frontend/           # React + Vite chat UI
 ├── scripts/            # ask.py (manual RAG smoke test),
 │                     # eval_retrieval.py, eval_generation.py
