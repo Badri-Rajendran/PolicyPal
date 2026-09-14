@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { SessionExpiredError } from "../../services/apiClient";
 import * as chatService from "../../services/chatService";
 
 export function useThreads() {
-  const { token } = useAuth();
+  const { token, expireSession } = useAuth();
   const [threads, setThreads] = useState([]);
   const [status, setStatus] = useState("loading");
   const [error, setError] = useState("");
-  const [selectedThreadId, setSelectedThreadId] = useState(null);
 
   const fetchThreads = useCallback(() => {
     return chatService.listThreads(token).then(
@@ -16,11 +16,12 @@ export function useThreads() {
         setStatus("ready");
       },
       (err) => {
+        if (err instanceof SessionExpiredError) return expireSession();
         setError(err.message);
         setStatus("error");
       },
     );
-  }, [token]);
+  }, [token, expireSession]);
 
   useEffect(() => {
     fetchThreads();
@@ -35,14 +36,12 @@ export function useThreads() {
   async function createThread() {
     const thread = await chatService.createThread(token, null);
     setThreads((prev) => [thread, ...prev]);
-    setSelectedThreadId(thread.id);
     return thread;
   }
 
   async function removeThread(threadId) {
     await chatService.deleteThread(token, threadId);
     setThreads((prev) => prev.filter((t) => t.id !== threadId));
-    setSelectedThreadId((current) => (current === threadId ? null : current));
   }
 
   function touchThread(threadId, title) {
@@ -53,15 +52,5 @@ export function useThreads() {
     });
   }
 
-  return {
-    threads,
-    status,
-    error,
-    selectedThreadId,
-    selectThread: setSelectedThreadId,
-    createThread,
-    removeThread,
-    touchThread,
-    retry,
-  };
+  return { threads, status, error, createThread, removeThread, touchThread, retry };
 }

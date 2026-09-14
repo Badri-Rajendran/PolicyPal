@@ -67,7 +67,9 @@ describe("useMessages", () => {
   it("appends the assistant reply and titles a first message", async () => {
     chatService.listMessages.mockResolvedValue([]);
     chatService.sendMessage.mockResolvedValue({
-      message: { id: "m2", role: "assistant", content: "It's the amount you pay first." },
+      id: "m2",
+      role: "assistant",
+      content: "It's the amount you pay first.",
       sources: [{ source: "wiki_Health.txt", chunk_id: "c1", relevance: 0.9 }],
     });
     const onThreadTitled = vi.fn();

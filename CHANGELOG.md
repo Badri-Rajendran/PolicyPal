@@ -4,6 +4,18 @@
 
 ### Added
 
+- Conversation history, so a follow-up question means something. It is
+  rewritten into a standalone question *before* retrieval — history in the
+  prompt alone changes nothing, since retrieval runs first (ADR 0005).
+- Routes for every screen — `/login`, `/register`, `/chat`, `/chat/:threadId`
+  — behind an auth guard, so a conversation is linkable and back works
+  (ADR 0006).
+- Session survives a reload: the token persists to `sessionStorage`, which
+  keeps it out of disk storage and ends it with the tab.
+- Multi-turn cases in `scripts/eval_generation.py`, with a floor of 2/3.
+- `message_sources` table, so an answer keeps its citations when a
+  conversation is reopened. `chunk_id` carries no foreign key — `make ingest`
+  rebuilds the chunks table and would cascade the history away (ADR 0007).
 - Flask API with JWT auth (`register`/`login`/`me`) and chat endpoints for
   threads and messages, running the RAG pipeline and persisting the
   conversation (ADR 0001).
@@ -82,7 +94,8 @@
 - Renamed `self_relevant` to `matched_as_whole` in `search()` so the fallback
   condition reads plainly.
 - Enabled the Alembic ruff post-write hook, commented out since before ruff
-  was installed.
+  was installed, as an `exec` hook — ruff is a compiled binary and exposes no
+  `console_scripts` entrypoint to discover.
 - Pointed the hatch wheel target at `src` instead of a `utils` package that
   never existed; `uv sync` was building an empty wheel.
 - Rewrote the README to match the real stack — it had drifted to describe an
@@ -91,6 +104,15 @@
 
 ### Fixed
 
+- Citations vanished when a conversation was reopened — they were returned
+  by `POST /messages` and never stored.
+- The chat pane and the auth card were plain `div`/`section` elements, so
+  neither page exposed a `main` landmark to skip to.
+- An expired token surfaced as "Something went wrong." mid-conversation. A
+  401, or a 422 carrying a JWT `msg`, on a request that sent a token now signs
+  the user out and says why; a 401 without one stays a credentials failure.
+- The frontend called `localhost:5000`, which on macOS resolves to `::1` and
+  reaches AirPlay Receiver rather than Flask. It calls `127.0.0.1:5000` now.
 - Comparison questions retrieved only one side, producing fabricated
   contrasts; a cross-encoder scores each chunk against the whole query, so one
   side took every slot. Now retrieved per intent (ADR 0004).

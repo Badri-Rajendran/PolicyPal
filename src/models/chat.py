@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -49,3 +49,28 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     thread: Mapped["Thread"] = relationship(back_populates="messages")
+    sources: Mapped[list["MessageSource"]] = relationship(
+        back_populates="message", cascade="all, delete-orphan", order_by="MessageSource.relevance.desc()"
+    )
+
+
+class MessageSource(Base):
+    """What an answer was grounded in, as it stood when the answer was given.
+
+    `chunk_id` is deliberately not a foreign key: `make ingest` rebuilds the
+    chunks table wholesale, which would either block re-ingestion or cascade
+    away every citation ever recorded (ADR 0007).
+    """
+
+    __tablename__ = "message_sources"
+    __table_args__ = (Index("ix_message_sources_message_id", "message_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("messages.id", ondelete="CASCADE"), nullable=False
+    )
+    chunk_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    source: Mapped[str] = mapped_column(String(300), nullable=False)
+    relevance: Mapped[float] = mapped_column(Float, nullable=False)
+
+    message: Mapped["Message"] = relationship(back_populates="sources")

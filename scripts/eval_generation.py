@@ -35,6 +35,7 @@ from src.services.generation import NO_ANSWER_RESPONSE, answer_query
 # before treating it as a regression.
 MIN_CORRECT = 7
 MIN_REFUSED = 4
+MIN_FOLLOW_UPS = 2
 
 
 @dataclass
@@ -67,6 +68,15 @@ REFUSAL_SET = [
     "How much will my policy cost me?",
     "Will my car insurance premium go up next year?",
     "What is the capital of France?",
+]
+
+# Follow-ups: the second question is meaningless on its own, so it only works
+# if the rewrite resolves it against the first (ADR 0005). Before that landed,
+# every one of these returned NO_ANSWER_RESPONSE.
+FOLLOW_UP_SET = [
+    ("What is a deductible?", AnswerCase("What about for auto insurance?", ("deductible",))),
+    ("What is a copay?", AnswerCase("How is that different from coinsurance?", ("coinsurance",))),
+    ("What is an out-of-pocket maximum?", AnswerCase("Does it include my premium?", ("premium",))),
 ]
 
 
@@ -121,9 +131,44 @@ def run_refusals() -> int:
     return refused
 
 
+def run_follow_ups() -> int:
+    print("\n" + "=" * 78)
+    print("FOLLOW-UPS — does a question that needs the conversation get answered?")
+    print("=" * 78)
+
+    answered = 0
+
+    for opener, case in FOLLOW_UP_SET:
+        first, _ = answer_query(opener)
+        history = [
+            {"role": "user", "content": opener},
+            {"role": "assistant", "content": first},
+        ]
+        text, _ = answer_query(case.query, history)
+
+        if text == NO_ANSWER_RESPONSE:
+            print(f"  [NO ANSWER]  {opener} -> {case.query}")
+            continue
+
+        missing = [term for term in case.must_state if term.lower() not in text.lower()]
+
+        if missing:
+            print(f"  [INCOMPLETE] {opener} -> {case.query}")
+            print(f"               did not state {missing}")
+        else:
+            answered += 1
+            print(f"  [ok]         {opener} -> {case.query}")
+
+        print(f"               -> {text.strip()[:220]}")
+
+    print(f"\n  {answered}/{len(FOLLOW_UP_SET)} follow-ups resolved against the conversation")
+    return answered
+
+
 def main() -> int:
     correct = run_answers()
     refused = run_refusals()
+    followed = run_follow_ups()
 
     print("\n" + "=" * 78)
     failures = []
@@ -134,6 +179,11 @@ def main() -> int:
         failures.append(
             f"refusals {refused} < floor {MIN_REFUSED} — the pipeline answered "
             "something it cannot ground"
+        )
+    if followed < MIN_FOLLOW_UPS:
+        failures.append(
+            f"follow-ups {followed} < floor {MIN_FOLLOW_UPS} — the rewrite stopped "
+            "resolving questions against their conversation"
         )
 
     if failures:

@@ -62,4 +62,10 @@ describe("ChatWindow", () => {
     render(<ChatWindow threadId="t1" threadTitle="Deductibles" onCreateThread={() => {}} onThreadTitled={() => {}} />);
     expect(screen.getByRole("alert")).toHaveTextContent("too quickly");
   });
+
+  it("is the main landmark, so it can be reached without tabbing the sidebar", () => {
+    mockMessagesState();
+    render(<ChatWindow threadId="t1" threadTitle="Deductibles" onCreateThread={() => {}} onThreadTitled={() => {}} />);
+    expect(screen.getByRole("main")).toBeInTheDocument();
+  });
 });
