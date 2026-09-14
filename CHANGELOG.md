@@ -77,9 +77,14 @@
 - `rerank_top_k` 15 → 5. Retrieval quality was identical at 5/8/10/15, so the
   extra chunks bought only citation noise — 9.8 sources per answer down to
   4.4 (ADR 0004).
-- Switched the local LLM to `Qwen/Qwen2.5-0.5B-Instruct` and capped
-  `max_new_tokens` at 256; the previous 1.5B model exceeded available RAM and
-  thrashed swap.
+- Answer generation runs on hosted `gpt-5-mini`, so Phase 1 can use tool
+  calling. Embeddings and the reranker stay local, so ingestion and retrieval
+  still cost nothing and work offline (ADR 0008).
+- `max_output_tokens` is 512 and the rewrite cap 192: the cap bounds reasoning
+  tokens as well as the reply, and at 48 the rewrite spent its whole budget
+  reasoning and silently returned an empty string.
+- No `temperature` — `gpt-5-mini` rejects it. Grounding rests on the system
+  prompt and the 0.5 relevance gate.
 - Replaced the dead-end "not enough information" reply with one naming what
   PolicyPal covers and pointing to state insurance departments for what it
   deliberately doesn't.

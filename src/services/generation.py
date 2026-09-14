@@ -1,10 +1,8 @@
 import re
 from functools import lru_cache
 
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from openai import OpenAI
 
-from src.core.device import resolve_device
 from src.core.logging import get_logger
 from src.core.text import count_tokens
 from src.policypal.config import settings
@@ -78,23 +76,11 @@ def _neutralize_delimiters(text: str) -> str:
 
 @lru_cache
 def _llm():
-    '''Load model + tokenizer once per process'''
-    device = resolve_device()
-
-    logger.info("LLM will be run on: %s", device)
-
-    tokenizer = AutoTokenizer.from_pretrained(settings.llm_model, revision=settings.llm_model_revision)
-    model = AutoModelForCausalLM.from_pretrained(
-        settings.llm_model,
-        revision=settings.llm_model_revision,
-        # fp16 is only reliable on CUDA; MPS's fp16 kernels are known to
-        # stall/misbehave on generation ops, so fall back to fp32 there.
-        dtype=torch.float16 if device == "cuda" else torch.float32
-    ).to(device)
-
-    model.eval() # Switching to Inference mode.
-
-    return tokenizer, model, device
+    '''Build the API client once per process'''
+    return OpenAI(
+        api_key=settings.openai_api_key.get_secret_value(),
+        timeout=settings.llm_request_timeout,
+    )
 
 
 def _build_user_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
@@ -111,27 +97,15 @@ def _build_user_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
     )
 
 
-def _generate(messages: list[dict], max_new_tokens: int) -> str:
-    tokenizer, model, device = _llm()
+def _generate(messages: list[dict], max_output_tokens: int) -> str:
+    completion = _llm().chat.completions.create(
+        model=settings.llm_model,
+        messages=messages,
+        max_completion_tokens=max_output_tokens,
+        reasoning_effort=settings.reasoning_effort,
+    )
 
-    inputs = tokenizer.apply_chat_template(
-        messages, add_generation_prompt=True, return_tensors="pt",
-        enable_thinking=False, return_dict=True,
-    ).to(device)
-
-    with torch.no_grad():
-        output = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            temperature=settings.temperature,
-            do_sample=settings.temperature > 0,
-            pad_token_id=tokenizer.eos_token_id,
-        )
-
-    # slice off the prompt tokens; decode only the newly generated ones
-    return tokenizer.decode(
-        output[0][inputs.input_ids.shape[1]:], skip_special_tokens=True
-    ).strip()
+    return (completion.choices[0].message.content or "").strip()
 
 
 def select_history(turns: list[dict], budget: int | None = None) -> list[dict]:
@@ -173,7 +147,7 @@ def rewrite_query(query: str, history: list[dict]) -> str:
         },
     ]
 
-    generated = _generate(messages, settings.rewrite_max_new_tokens)
+    generated = _generate(messages, settings.rewrite_max_output_tokens)
     rewritten = generated.splitlines()[0].strip().strip('"').strip() if generated else ""
 
     if not rewritten or len(rewritten) > _MAX_REWRITE_CHARS:
@@ -198,7 +172,7 @@ def answer(query: str, chunks: list[RetrievedChunk],
     ]
     messages.append({"role": "user", "content": _build_user_prompt(query, chunks)})
 
-    answer_text = _generate(messages, settings.max_new_tokens)
+    answer_text = _generate(messages, settings.max_output_tokens)
 
     logger.info("generated answer (%d chars) for question (len=%d, %d prior turns)",
                 len(answer_text), len(query), len(history or []))

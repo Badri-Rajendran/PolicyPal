@@ -125,13 +125,22 @@ Copy the required variables below into a `.env` file at the repo root before run
 | ---------------------------------- | ---------------------------------------------------------- |
 | `DATABASE_URL`                     | SQLAlchemy Postgres connection string                     |
 | `JWT_SECRET_KEY`                   | Signing key for access tokens                              |
+| `OPENAI_API_KEY`                   | **Required.** Answer generation runs on a hosted model (ADR 0008) |
 | `HF_API_KEY`                       | Optional Hugging Face token (for gated models)              |
-| `DEVICE`                           | `auto` \| `cpu` \| `mps` \| `cuda` — inference device      |
+| `DEVICE`                           | `auto` \| `cpu` \| `mps` \| `cuda` — device for the *local* embedding and reranker models |
 | `ENVIRONMENT`                      | `development` \| `production`                               |
 | `LOG_LEVEL`                        | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` \| `CRITICAL`     |
 
 See `src/policypal/config.py` for the full list, including retrieval, reranking, and LLM tuning
-defaults (chunk size, top-k, relevance threshold, model name, temperature).
+defaults (chunk size, top-k, relevance threshold, model name, output cap, reasoning effort).
+
+Only answer generation is hosted. Embeddings (`bge-small-en-v1.5`) and the reranker
+(`ms-marco-MiniLM-L-6-v2`) still run locally, so ingestion and retrieval cost nothing and
+work offline.
+
+> **Note on the output cap:** `max_output_tokens` bounds reasoning tokens *and* the reply
+> together. Set it too low and the model spends the whole budget reasoning and returns an
+> empty string — `finish_reason` is `length` and no error is raised.
 
 The frontend reads `VITE_API_BASE_URL` (defaults to `http://127.0.0.1:5000`) from `frontend/.env`.
 

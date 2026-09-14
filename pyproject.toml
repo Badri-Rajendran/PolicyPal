@@ -13,6 +13,7 @@ dependencies = [
     "flask-jwt-extended>=4.7.4",
     "flask-limiter>=4.1.1",
     "langchain-text-splitters>=1.1.2",
+    "openai>=3.13.0",
     "pgvector>=0.4.2",
     "psycopg[binary]>=3.3.4",
     "pydantic>=2.13.4",

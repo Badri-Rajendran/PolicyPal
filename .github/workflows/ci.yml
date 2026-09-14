@@ -26,6 +26,9 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://policypal:policypal@localhost:5432/policypal
       JWT_SECRET_KEY: ci-only-secret-never-used-outside-this-workflow
+      # Settings require this to construct. No test may reach the API, so a
+      # placeholder is correct here — a real key would mean CI can spend money.
+      OPENAI_API_KEY: ci-only-placeholder-no-test-may-call-the-api
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

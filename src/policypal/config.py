@@ -69,12 +69,20 @@ class Settings(BaseSettings):
 
     # LLM
 
-    llm_model: str = "Qwen/Qwen2.5-0.5B-Instruct"
-    llm_model_revision: str = "7ae557604adf67be50417f59c2c2f167def9a775"
-    # Grounded answers should be short; this also bounds worst-case latency.
-    max_new_tokens: int = 256
-    # Low temperature keeps grounded QA deterministic and reduces hallucination.
-    temperature: float = 0.2
+    # Hosted (ADR 0008), so there is no revision to pin — the embedding and
+    # reranker models above stay local and keep theirs.
+    openai_api_key: SecretStr = Field(..., description="OpenAI API key.")
+    llm_model: str = "gpt-5-mini"
+    # This model reasons before it answers, and the cap covers BOTH the
+    # reasoning and the reply — spend it all thinking and the reply comes back
+    # empty, with finish_reason "length" and no error. Measured at 64-128
+    # reasoning tokens for "low", so these leave room for the reply on top.
+    max_output_tokens: int = 512
+    # "low" produced the same answers as "medium" for half the reasoning
+    # tokens; grounded extraction from supplied context is not a hard problem.
+    reasoning_effort: str = "low"
+    # A hosted call can hang where an in-process one could not.
+    llm_request_timeout: float = 30.0
 
     # Conversation history (ADR 0005)
 
@@ -83,8 +91,10 @@ class Settings(BaseSettings):
     # the retrieved context, three one-line turns waste the window.
     history_token_budget: int = 1024
     # A rewritten follow-up is one short question, never prose. Capping the
-    # generation is the first of the guards that keep a bad rewrite cheap.
-    rewrite_max_new_tokens: int = 48
+    # generation is the first of the guards that keep a bad rewrite cheap —
+    # but the cap also has to cover reasoning tokens (see max_output_tokens),
+    # and _MAX_REWRITE_CHARS is what actually bounds the question's length.
+    rewrite_max_output_tokens: int = 192
 
     # API / Auth
 
