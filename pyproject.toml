@@ -1,7 +1,7 @@
 [project]
 name = "policypal"
 version = "0.1.0"
-description = "Add your description here"
+description = "Cited answers for US health coverage, over a curated insurance corpus and live CMS Marketplace data"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
