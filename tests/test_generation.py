@@ -165,6 +165,21 @@ def test_rewrite_replaces_a_follow_up_with_a_standalone_question():
     assert result == "What is a deductible in auto insurance?"
 
 
+def test_rewrite_uses_the_cheaper_model_and_answering_does_not():
+    """The two call sites must not silently collapse back onto one model."""
+    client = _fake_llm("What is a deductible in auto insurance?")
+
+    with patch("src.services.generation._llm", return_value=client):
+        rewrite_query("What about for auto?", [_OLDER])
+        answer("What about for auto?", [_make_chunk()], [_OLDER])
+
+    rewrite_call, answer_call = client.chat.completions.create.call_args_list
+
+    assert rewrite_call.kwargs["model"] == settings.openai_rewrite_model
+    assert answer_call.kwargs["model"] == settings.llm_model
+    assert settings.openai_rewrite_model != settings.llm_model
+
+
 def test_rewrite_falls_back_to_the_raw_query_when_empty():
     client = _fake_llm("   ")
 

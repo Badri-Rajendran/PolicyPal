@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     # reranker models above stay local and keep theirs.
     openai_api_key: SecretStr = Field(..., description="OpenAI API key.")
     llm_model: str = "gpt-5-mini"
+    # Rewriting is a one-line reformulation with no grounding requirement, so
+    # it does not need the answer model. Measured equivalent on follow-up
+    # resolution; nano reasons more per call, so the saving is smaller than
+    # the per-token prices suggest.
+    openai_rewrite_model: str = "gpt-5-nano"
     # This model reasons before it answers, and the cap covers BOTH the
     # reasoning and the reply — spend it all thinking and the reply comes back
     # empty, with finish_reason "length" and no error. Measured at 64-128

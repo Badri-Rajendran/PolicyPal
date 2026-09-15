@@ -97,9 +97,9 @@ def _build_user_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
     )
 
 
-def _generate(messages: list[dict], max_output_tokens: int) -> str:
+def _generate(messages: list[dict], max_output_tokens: int, model: str) -> str:
     completion = _llm().chat.completions.create(
-        model=settings.llm_model,
+        model=model,
         messages=messages,
         max_completion_tokens=max_output_tokens,
         reasoning_effort=settings.reasoning_effort,
@@ -147,7 +147,9 @@ def rewrite_query(query: str, history: list[dict]) -> str:
         },
     ]
 
-    generated = _generate(messages, settings.rewrite_max_output_tokens)
+    generated = _generate(
+        messages, settings.rewrite_max_output_tokens, settings.openai_rewrite_model
+    )
     rewritten = generated.splitlines()[0].strip().strip('"').strip() if generated else ""
 
     if not rewritten or len(rewritten) > _MAX_REWRITE_CHARS:
@@ -172,7 +174,7 @@ def answer(query: str, chunks: list[RetrievedChunk],
     ]
     messages.append({"role": "user", "content": _build_user_prompt(query, chunks)})
 
-    answer_text = _generate(messages, settings.max_output_tokens)
+    answer_text = _generate(messages, settings.max_output_tokens, settings.llm_model)
 
     logger.info("generated answer (%d chars) for question (len=%d, %d prior turns)",
                 len(answer_text), len(query), len(history or []))

@@ -85,6 +85,9 @@
   reasoning and silently returned an empty string.
 - No `temperature` — `gpt-5-mini` rejects it. Grounding rests on the system
   prompt and the 0.5 relevance gate.
+- Query rewriting runs on `gpt-5-nano`, leaving `gpt-5-mini` for answering.
+  Measured equivalent on follow-up resolution; nano reasons more per call, so
+  it saves less than the per-token prices suggest.
 - Replaced the dead-end "not enough information" reply with one naming what
   PolicyPal covers and pointing to state insurance departments for what it
   deliberately doesn't.
