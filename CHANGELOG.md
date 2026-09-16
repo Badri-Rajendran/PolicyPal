@@ -4,6 +4,9 @@
 
 ### Added
 
+- ADR 0008: hosted LLM. Records why tool calling forced the move off Qwen
+  0.5B, what stays local, and the costs — lost temperature control, pinned
+  revisions, and PII egress — accepted along the way.
 - Per-user daily token budget on generation. Flask-Limiter caps how many
   requests arrive, not what each one costs; an exhausted budget returns 429
   with `Retry-After` and an error string distinct from a rate limit.
@@ -173,6 +176,8 @@
 
 ### Security
 
+- Composer discloses that messages and retrieved sources are sent to
+  OpenAI, and asks users to avoid sharing identifying details (ADR 0008).
 - Hardened the generation prompt against prompt injection (OWASP LLM Top 10):
   question and context are wrapped in tags the system prompt declares as
   data, and literal delimiter tags are stripped so a message can't forge one.

@@ -30,4 +30,9 @@ describe("Composer", () => {
     expect(screen.getByLabelText("Ask about your policy")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
   });
+
+  it("discloses that messages are sent to OpenAI", () => {
+    render(<Composer value="" onChange={() => {}} onSubmit={() => {}} disabled={false} />);
+    expect(screen.getByText(/sent to OpenAI/i)).toBeInTheDocument();
+  });
 });

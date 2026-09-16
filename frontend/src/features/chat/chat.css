@@ -296,6 +296,12 @@
   field-sizing: content;
 }
 
+.composer-note {
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  margin: 0;
+}
+
 @media (max-width: 720px) {
   .chat-shell {
     grid-template-columns: 1fr;
