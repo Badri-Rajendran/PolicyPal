@@ -91,6 +91,9 @@
 - Query rewriting runs on `gpt-5-nano`, leaving `gpt-5-mini` for answering.
   Measured equivalent on follow-up resolution; nano reasons more per call, so
   it saves less than the per-token prices suggest.
+- Generation eval floors raised to full marks — answers 7 → 8, follow-ups
+  2 → 3, refusals unchanged at 4. Measured on the new models across three
+  identical runs; retrieval floors were re-run and did not move.
 - Replaced the dead-end "not enough information" reply with one naming what
   PolicyPal covers and pointing to state insurance departments for what it
   deliberately doesn't.

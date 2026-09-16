@@ -229,7 +229,11 @@ uv run python -m scripts.eval_generation
 ```
 
 Slower still than the retrieval eval — it generates once per question — and
-likewise a manual tool rather than a CI gate.
+likewise a manual tool rather than a CI gate. Unlike the retrieval eval it
+also **costs money**: generation is hosted, so one run is roughly 17k tokens,
+a cent or two at current `gpt-5-mini` rates. The per-user daily token budget
+does not apply here — it is enforced at the API layer, and this calls
+`answer_query()` directly.
 
 ## License
 
