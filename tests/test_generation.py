@@ -15,11 +15,13 @@ from src.services.generation import (
 from src.services.retrieval import RetrievedChunk
 
 
-def _fake_client(generated, total_tokens=0):
+def _fake_client(generated, total_tokens=0, finish_reason="stop"):
     """A stand-in OpenAI client whose one completion returns `generated`."""
     client = MagicMock()
     client.chat.completions.create.return_value = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=generated))],
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(content=generated), finish_reason=finish_reason
+        )],
         usage=SimpleNamespace(total_tokens=total_tokens),
     )
     return client
@@ -54,6 +56,18 @@ def test_fallback_does_not_load_the_model():
         answer("anything", [])
 
     mock_llm.assert_not_called()
+
+
+def test_answer_falls_back_when_the_model_returns_nothing():
+    """The output cap can be spent entirely on reasoning (ADR 0008): the reply
+    comes back empty with no error. A blank string must never reach the user
+    as if it were a real answer."""
+    client = _fake_client("", finish_reason="length")
+
+    with patch("src.services.generation._llm", return_value=client):
+        result = answer("what is a deductible", [_make_chunk()])
+
+    assert result == NO_ANSWER_RESPONSE
 
 
 def test_build_user_prompt_includes_question_context_and_source():

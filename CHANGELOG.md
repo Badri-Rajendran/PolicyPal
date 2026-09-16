@@ -127,6 +127,13 @@
 
 ### Fixed
 
+- An OpenAI failure mid-request returned an HTML 500, dropped the user's
+  own message, and lost whatever tokens had already billed. Now returns a
+  JSON 502, keeps the message, and records the partial spend.
+- An empty completion (output cap spent entirely on reasoning) was stored
+  and shown as a real, blank answer. Falls back to the refusal message.
+- Daily-budget exhaustion surfaced in the UI as "too quickly" — the same
+  text as a rate limit — instead of the distinct message the API sends.
 - `scripts/ask.py -t N` crashed with `'int' object is not reversible`. ADR
   0005 added `history` in the middle of `answer_query()`'s signature and this
   caller still passed `top_k` positionally into it.

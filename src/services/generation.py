@@ -71,9 +71,10 @@ NO_ANSWER_RESPONSE = (
 
 
 # Real token spend for the request in flight. A ContextVar rather than a
-# wider return type: answer_query() has a dozen callers and only the API one
-# cares what a call cost, so this stays out of every other signature. Counts
-# both models, since the rewrite bills too.
+# wider return type: answer_query() has three callers (the API route,
+# scripts/ask.py, scripts/eval_generation.py) and only the API one cares
+# what a call cost, so this stays out of every other signature. Counts both
+# models, since the rewrite bills too.
 _tokens_used: ContextVar[int] = ContextVar("llm_tokens_used", default=0)
 
 
@@ -98,6 +99,7 @@ def _llm():
     return OpenAI(
         api_key=settings.openai_api_key.get_secret_value(),
         timeout=settings.llm_request_timeout,
+        max_retries=settings.llm_max_retries,
     )
 
 
@@ -116,6 +118,8 @@ def _build_user_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
 
 
 def _generate(messages: list[dict], max_output_tokens: int, model: str) -> str:
+    """Call the model and return its text. Raises openai.OpenAIError on failure —
+    callers that must survive a hosted outage (the API route) catch it there."""
     completion = _llm().chat.completions.create(
         model=model,
         messages=messages,
@@ -125,8 +129,19 @@ def _generate(messages: list[dict], max_output_tokens: int, model: str) -> str:
 
     if completion.usage:
         _tokens_used.set(_tokens_used.get() + completion.usage.total_tokens)
+    else:
+        # Would otherwise spend real money while the budget counts nothing.
+        logger.warning("completion for %s returned no usage; spend uncounted", model)
 
-    return (completion.choices[0].message.content or "").strip()
+    choice = completion.choices[0]
+    if choice.finish_reason != "stop":
+        # Most often "length": the output cap was spent on reasoning before
+        # any reply, or a reply was cut off mid-sentence. Either way the
+        # text below may be incomplete or empty.
+        logger.warning("completion for %s finished with reason %r, not 'stop'",
+                        model, choice.finish_reason)
+
+    return (choice.message.content or "").strip()
 
 
 def select_history(turns: list[dict], budget: int | None = None) -> list[dict]:
@@ -196,6 +211,13 @@ def answer(query: str, chunks: list[RetrievedChunk],
     messages.append({"role": "user", "content": _build_user_prompt(query, chunks)})
 
     answer_text = _generate(messages, settings.max_output_tokens, settings.llm_model)
+
+    if not answer_text:
+        # The output cap was spent entirely on reasoning (see max_output_tokens);
+        # _generate already warned why. Never persist a blank assistant reply.
+        logger.warning("empty answer for question (len=%d, %d prior turns); falling back",
+                        len(query), len(history or []))
+        return NO_ANSWER_RESPONSE
 
     logger.info("generated answer (%d chars) for question (len=%d, %d prior turns)",
                 len(answer_text), len(query), len(history or []))

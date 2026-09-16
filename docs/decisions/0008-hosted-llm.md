@@ -81,14 +81,24 @@ this ADR — see `frontend/src/features/chat/Composer.jsx`).
 
 An unmetered hosted call is a cost the local model never had, so a per-user
 daily token budget (`llm_usage` table, `src/services/usage.py`) now gates
-generation, returning 429 with `Retry-After` once exhausted. Two limits are
-already known and accepted rather than fixed:
+generation, returning 429 with `Retry-After` once exhausted. A hosted call
+that fails mid-request (timeout, upstream error) records whatever it billed
+before the failure and keeps the user's message — see `create_message` in
+`src/api/routes/chat.py` — so the budget stays accurate on the error path,
+not just the success path. Limits still known and accepted rather than
+fixed:
 
 - one request can overshoot the budget, since the check happens before the
   call and the spend is recorded after it — the budget bounds the *next*
   request, not the one in flight;
 - the budget is per-user, so `N` accounts means `N` independent budgets;
-  there is no account-wide ceiling.
+  there is no account-wide ceiling — this is the priority gap before the
+  application is exposed publicly;
+- a failure *after* generation succeeds (a database constraint violation,
+  a serialization error while persisting the assistant message) still rolls
+  the recorded spend back with the rest of the transaction, since it shares
+  the request's session. Narrower than it was — only failures past the
+  billed call are affected now — but not eliminated.
 
 ### Eval floors moved up, measured not assumed
 

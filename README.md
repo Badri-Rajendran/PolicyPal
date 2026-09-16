@@ -146,6 +146,15 @@ work offline.
 > together. Set it too low and the model spends the whole budget reasoning and returns an
 > empty string — `finish_reason` is `length` and no error is raised.
 
+Every user gets a daily generation budget (`llm_daily_token_budget`, default 200,000
+tokens — roughly 65 messages a day at current usage). Once spent, `POST
+/messages` answers `429` with a `Retry-After` header and an error string
+distinct from the rate limiter's, so the UI can tell "slow down" apart from
+"come back tomorrow" (ADR 0008). A hosted call is bounded by
+`llm_request_timeout` per attempt and `llm_max_retries` retries on top of
+that, so the real worst case is the two multiplied together, not the
+timeout alone.
+
 The frontend reads `VITE_API_BASE_URL` (defaults to `http://127.0.0.1:5000`) from `frontend/.env`.
 
 ## Ingestion Pipeline

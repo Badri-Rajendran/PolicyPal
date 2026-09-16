@@ -86,8 +86,16 @@ class Settings(BaseSettings):
     # "low" produced the same answers as "medium" for half the reasoning
     # tokens; grounded extraction from supplied context is not a hard problem.
     reasoning_effort: str = "low"
-    # A hosted call can hang where an in-process one could not.
+    # A hosted call can hang where an in-process one could not. The SDK
+    # retries on top of this, so the real worst case per generation call is
+    # llm_request_timeout * (llm_max_retries + 1), plus backoff between
+    # attempts — not this value alone.
     llm_request_timeout: float = 30.0
+    # The SDK default is 2. A retried attempt that the server already began
+    # generating is billed by OpenAI but its usage is discarded (only the
+    # final response's usage is read), so a lower retry count keeps both
+    # worst-case latency and unaccounted spend smaller.
+    llm_max_retries: int = 1
     # Flask-Limiter caps how many requests arrive, not what each one costs.
     # At roughly 3k tokens a message this is ~65 messages a day, well under
     # a dollar at current rates.
