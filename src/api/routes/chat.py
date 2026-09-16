@@ -5,7 +5,7 @@ from flask_jwt_extended import jwt_required
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from src.api.deps import get_current_user, get_db, parse_body
+from src.api.deps import TokenBudgetExhaustedError, get_current_user, get_db, parse_body
 from src.api.limiter import limiter
 from src.models.chat import Message, MessageSource, Thread
 from src.schemas.chat import (
@@ -14,7 +14,12 @@ from src.schemas.chat import (
     ThreadCreateRequest,
     ThreadResponse,
 )
-from src.services.generation import answer_query
+from src.services.generation import answer_query, reset_token_usage, token_usage
+from src.services.usage import (
+    budget_exhausted,
+    record_tokens,
+    seconds_until_budget_resets,
+)
 
 bp = Blueprint("chat", __name__, url_prefix="/api/chat")
 
@@ -97,6 +102,10 @@ def list_messages(thread_id: str):
 def create_message(thread_id: str):
     body = parse_body(MessageCreateRequest)
     db, thread = _get_owned_thread(thread_id)
+    user = get_current_user()
+
+    if budget_exhausted(db, user.id):
+        raise TokenBudgetExhaustedError(seconds_until_budget_resets())
 
     # Read before adding the new message, so the question isn't its own history.
     prior = db.execute(
@@ -108,7 +117,9 @@ def create_message(thread_id: str):
     db.add(user_message)
     db.flush()
 
+    reset_token_usage()
     answer_text, chunks = answer_query(body.content, history)
+    record_tokens(db, user.id, token_usage())
 
     assistant_message = Message(
         thread_id=thread.id,

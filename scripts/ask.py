@@ -15,7 +15,7 @@ def parse_args(args):
 
 def main(args=sys.argv[1:]):
     parsed = parse_args(args)
-    response, chunks = answer_query(parsed.query, parsed.top_k)
+    response, chunks = answer_query(parsed.query, top_k=parsed.top_k)
 
     print(response)
 

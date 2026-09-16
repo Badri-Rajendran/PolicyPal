@@ -1,4 +1,5 @@
 import re
+from contextvars import ContextVar
 from functools import lru_cache
 
 from openai import OpenAI
@@ -69,6 +70,23 @@ NO_ANSWER_RESPONSE = (
 )
 
 
+# Real token spend for the request in flight. A ContextVar rather than a
+# wider return type: answer_query() has a dozen callers and only the API one
+# cares what a call cost, so this stays out of every other signature. Counts
+# both models, since the rewrite bills too.
+_tokens_used: ContextVar[int] = ContextVar("llm_tokens_used", default=0)
+
+
+def reset_token_usage() -> None:
+    """Start a fresh count. Call before generation, or a request inherits the last one's total."""
+    _tokens_used.set(0)
+
+
+def token_usage() -> int:
+    """Tokens billed since the last reset."""
+    return _tokens_used.get()
+
+
 def _neutralize_delimiters(text: str) -> str:
     """Strip literal occurrences of our own prompt delimiters from untrusted text."""
     return _DELIMITER_TAGS.sub("", text)
@@ -104,6 +122,9 @@ def _generate(messages: list[dict], max_output_tokens: int, model: str) -> str:
         max_completion_tokens=max_output_tokens,
         reasoning_effort=settings.reasoning_effort,
     )
+
+    if completion.usage:
+        _tokens_used.set(_tokens_used.get() + completion.usage.total_tokens)
 
     return (completion.choices[0].message.content or "").strip()
 

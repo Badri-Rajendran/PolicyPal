@@ -4,7 +4,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 
-from src.api.deps import ValidationFailedError, close_db
+from src.api.deps import TokenBudgetExhaustedError, ValidationFailedError, close_db
 from src.api.limiter import limiter
 from src.api.routes.auth import bp as auth_bp
 from src.api.routes.chat import bp as chat_bp
@@ -31,6 +31,14 @@ def create_app() -> Flask:
     @app.errorhandler(ValidationFailedError)
     def _handle_validation_error(exc: ValidationFailedError):
         return jsonify(error="validation failed", details=exc.errors), 422
+
+    @app.errorhandler(TokenBudgetExhaustedError)
+    def _handle_token_budget(exc: TokenBudgetExhaustedError):
+        # 429 like the rate limiter, but a distinct error string: "slow down"
+        # and "you are done until tomorrow" need different handling client-side.
+        response = jsonify(error="daily token budget exhausted")
+        response.headers["Retry-After"] = str(exc.retry_after)
+        return response, 429
 
     @app.after_request
     def _security_headers(response):

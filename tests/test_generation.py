@@ -7,17 +7,20 @@ from src.services.generation import (
     _build_user_prompt,
     answer,
     answer_query,
+    reset_token_usage,
     rewrite_query,
     select_history,
+    token_usage,
 )
 from src.services.retrieval import RetrievedChunk
 
 
-def _fake_client(generated):
+def _fake_client(generated, total_tokens=0):
     """A stand-in OpenAI client whose one completion returns `generated`."""
     client = MagicMock()
     client.chat.completions.create.return_value = SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=generated))]
+        choices=[SimpleNamespace(message=SimpleNamespace(content=generated))],
+        usage=SimpleNamespace(total_tokens=total_tokens),
     )
     return client
 
@@ -264,3 +267,51 @@ def test_answer_query_runs_retrieval_then_generation():
     mock_answer.assert_called_once_with("what is a deductible", [chunk], [])
     assert result == "text"
     assert chunks == [chunk]
+
+
+# Cost accounting (Iteration 3)
+
+def test_token_usage_comes_from_the_response_not_an_estimate():
+    """The budget is only as good as the number it counts, so it has to be the
+    billed figure rather than count_tokens()' 1.35x word-count guess."""
+    client = _fake_client("an answer", total_tokens=1_234)
+    reset_token_usage()
+
+    with patch("src.services.generation._llm", return_value=client):
+        answer("What is a deductible?", [_make_chunk()])
+
+    assert token_usage() == 1_234
+
+
+def test_token_usage_counts_the_rewrite_as_well_as_the_answer():
+    """Both models bill, so both have to be counted against the budget."""
+    client = _fake_client("standalone question", total_tokens=100)
+    reset_token_usage()
+
+    with patch("src.services.generation._llm", return_value=client):
+        rewrite_query("What about for auto?", [_OLDER])
+        answer("What about for auto?", [_make_chunk()], [_OLDER])
+
+    assert token_usage() == 200
+
+
+def test_resetting_clears_a_previous_requests_total():
+    client = _fake_client("an answer", total_tokens=500)
+
+    with patch("src.services.generation._llm", return_value=client):
+        reset_token_usage()
+        answer("q", [_make_chunk()])
+        reset_token_usage()
+
+    assert token_usage() == 0
+
+
+def test_the_fallback_path_spends_nothing():
+    """No chunks means no paid call, so the budget must be untouched."""
+    reset_token_usage()
+
+    with patch("src.services.generation._llm") as mock_llm:
+        answer("anything", [])
+
+    mock_llm.assert_not_called()
+    assert token_usage() == 0

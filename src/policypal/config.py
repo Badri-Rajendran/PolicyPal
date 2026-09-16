@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     reasoning_effort: str = "low"
     # A hosted call can hang where an in-process one could not.
     llm_request_timeout: float = 30.0
+    # Flask-Limiter caps how many requests arrive, not what each one costs.
+    # At roughly 3k tokens a message this is ~65 messages a day, well under
+    # a dollar at current rates.
+    llm_daily_token_budget: int = 200_000
 
     # Conversation history (ADR 0005)
 

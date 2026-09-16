@@ -4,6 +4,9 @@
 
 ### Added
 
+- Per-user daily token budget on generation. Flask-Limiter caps how many
+  requests arrive, not what each one costs; an exhausted budget returns 429
+  with `Retry-After` and an error string distinct from a rate limit.
 - `docs/plans/`: phased roadmap for plan comparison — hosted LLM, Marketplace
   API catalog, then SBC ingestion. Records that the API covers ~7% of insured
   Americans, and that EOCs are unobtainable pre-purchase so SBCs replace them.
@@ -118,6 +121,9 @@
 
 ### Fixed
 
+- `scripts/ask.py -t N` crashed with `'int' object is not reversible`. ADR
+  0005 added `history` in the middle of `answer_query()`'s signature and this
+  caller still passed `top_k` positionally into it.
 - Citations vanished when a conversation was reopened — they were returned
   by `POST /messages` and never stored.
 - The chat pane and the auth card were plain `div`/`section` elements, so
