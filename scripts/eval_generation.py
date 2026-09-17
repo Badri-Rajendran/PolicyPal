@@ -29,13 +29,20 @@ from dataclasses import dataclass
 
 from src.services.generation import NO_ANSWER_RESPONSE, answer_query
 
-# Floors, set at the measured baseline. Generation samples at
-# settings.temperature (0.2), so unlike retrieval this is not perfectly
-# deterministic — a single-question miss on a re-run is worth re-checking
-# before treating it as a regression.
-MIN_CORRECT = 7
+# Floors, set at the measured baseline — every set scored full marks on
+# gpt-5-mini (rewrites on gpt-5-nano), up from 7/8 and 2/3 under the local
+# Qwen 0.5B, so the floors are the scores.
+#
+# There is no temperature to steady this: gpt-5-mini accepts only the default,
+# so run-to-run variance is a property of the model rather than something the
+# config bounds. Three consecutive runs were identical, which is what makes
+# full-marks floors safe to commit; re-check a single-question miss against a
+# second run before treating it as a regression.
+#
+# One run is ~17k tokens, a cent or two.
+MIN_CORRECT = 8
 MIN_REFUSED = 4
-MIN_FOLLOW_UPS = 2
+MIN_FOLLOW_UPS = 3
 
 
 @dataclass

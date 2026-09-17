@@ -1,10 +1,9 @@
 import re
+from contextvars import ContextVar
 from functools import lru_cache
 
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from openai import OpenAI
 
-from src.core.device import resolve_device
 from src.core.logging import get_logger
 from src.core.text import count_tokens
 from src.policypal.config import settings
@@ -71,6 +70,24 @@ NO_ANSWER_RESPONSE = (
 )
 
 
+# Real token spend for the request in flight. A ContextVar rather than a
+# wider return type: answer_query() has three callers (the API route,
+# scripts/ask.py, scripts/eval_generation.py) and only the API one cares
+# what a call cost, so this stays out of every other signature. Counts both
+# models, since the rewrite bills too.
+_tokens_used: ContextVar[int] = ContextVar("llm_tokens_used", default=0)
+
+
+def reset_token_usage() -> None:
+    """Start a fresh count. Call before generation, or a request inherits the last one's total."""
+    _tokens_used.set(0)
+
+
+def token_usage() -> int:
+    """Tokens billed since the last reset."""
+    return _tokens_used.get()
+
+
 def _neutralize_delimiters(text: str) -> str:
     """Strip literal occurrences of our own prompt delimiters from untrusted text."""
     return _DELIMITER_TAGS.sub("", text)
@@ -78,23 +95,12 @@ def _neutralize_delimiters(text: str) -> str:
 
 @lru_cache
 def _llm():
-    '''Load model + tokenizer once per process'''
-    device = resolve_device()
-
-    logger.info("LLM will be run on: %s", device)
-
-    tokenizer = AutoTokenizer.from_pretrained(settings.llm_model, revision=settings.llm_model_revision)
-    model = AutoModelForCausalLM.from_pretrained(
-        settings.llm_model,
-        revision=settings.llm_model_revision,
-        # fp16 is only reliable on CUDA; MPS's fp16 kernels are known to
-        # stall/misbehave on generation ops, so fall back to fp32 there.
-        dtype=torch.float16 if device == "cuda" else torch.float32
-    ).to(device)
-
-    model.eval() # Switching to Inference mode.
-
-    return tokenizer, model, device
+    '''Build the API client once per process'''
+    return OpenAI(
+        api_key=settings.openai_api_key.get_secret_value(),
+        timeout=settings.llm_request_timeout,
+        max_retries=settings.llm_max_retries,
+    )
 
 
 def _build_user_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
@@ -111,27 +117,31 @@ def _build_user_prompt(query: str, chunks: list[RetrievedChunk]) -> str:
     )
 
 
-def _generate(messages: list[dict], max_new_tokens: int) -> str:
-    tokenizer, model, device = _llm()
+def _generate(messages: list[dict], max_output_tokens: int, model: str) -> str:
+    """Call the model and return its text. Raises openai.OpenAIError on failure —
+    callers that must survive a hosted outage (the API route) catch it there."""
+    completion = _llm().chat.completions.create(
+        model=model,
+        messages=messages,
+        max_completion_tokens=max_output_tokens,
+        reasoning_effort=settings.reasoning_effort,
+    )
 
-    inputs = tokenizer.apply_chat_template(
-        messages, add_generation_prompt=True, return_tensors="pt",
-        enable_thinking=False, return_dict=True,
-    ).to(device)
+    if completion.usage:
+        _tokens_used.set(_tokens_used.get() + completion.usage.total_tokens)
+    else:
+        # Would otherwise spend real money while the budget counts nothing.
+        logger.warning("completion for %s returned no usage; spend uncounted", model)
 
-    with torch.no_grad():
-        output = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            temperature=settings.temperature,
-            do_sample=settings.temperature > 0,
-            pad_token_id=tokenizer.eos_token_id,
-        )
+    choice = completion.choices[0]
+    if choice.finish_reason != "stop":
+        # Most often "length": the output cap was spent on reasoning before
+        # any reply, or a reply was cut off mid-sentence. Either way the
+        # text below may be incomplete or empty.
+        logger.warning("completion for %s finished with reason %r, not 'stop'",
+                        model, choice.finish_reason)
 
-    # slice off the prompt tokens; decode only the newly generated ones
-    return tokenizer.decode(
-        output[0][inputs.input_ids.shape[1]:], skip_special_tokens=True
-    ).strip()
+    return (choice.message.content or "").strip()
 
 
 def select_history(turns: list[dict], budget: int | None = None) -> list[dict]:
@@ -173,7 +183,9 @@ def rewrite_query(query: str, history: list[dict]) -> str:
         },
     ]
 
-    generated = _generate(messages, settings.rewrite_max_new_tokens)
+    generated = _generate(
+        messages, settings.rewrite_max_output_tokens, settings.openai_rewrite_model
+    )
     rewritten = generated.splitlines()[0].strip().strip('"').strip() if generated else ""
 
     if not rewritten or len(rewritten) > _MAX_REWRITE_CHARS:
@@ -198,7 +210,14 @@ def answer(query: str, chunks: list[RetrievedChunk],
     ]
     messages.append({"role": "user", "content": _build_user_prompt(query, chunks)})
 
-    answer_text = _generate(messages, settings.max_new_tokens)
+    answer_text = _generate(messages, settings.max_output_tokens, settings.llm_model)
+
+    if not answer_text:
+        # The output cap was spent entirely on reasoning (see max_output_tokens);
+        # _generate already warned why. Never persist a blank assistant reply.
+        logger.warning("empty answer for question (len=%d, %d prior turns); falling back",
+                        len(query), len(history or []))
+        return NO_ANSWER_RESPONSE
 
     logger.info("generated answer (%d chars) for question (len=%d, %d prior turns)",
                 len(answer_text), len(query), len(history or []))

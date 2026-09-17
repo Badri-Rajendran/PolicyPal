@@ -46,7 +46,14 @@ export async function apiFetch(path, { method = "GET", token, body } = {}) {
       throw new SessionExpiredError();
     }
     if (response.status === 429) {
-      throw new ApiError("You're sending requests too quickly. Wait a moment and try again.", 429);
+      // Two different 429s (src/api/main.py): the rate limiter means "slow
+      // down", the daily budget means "come back tomorrow" — telling a
+      // budget-exhausted user to wait a moment just gets them the same
+      // error again the moment they retry.
+      const message = data?.error === "daily token budget exhausted"
+        ? "You've reached today's limit for asking questions. Try again tomorrow."
+        : "You're sending requests too quickly. Wait a moment and try again.";
+      throw new ApiError(message, 429);
     }
     throw new ApiError(data?.error || "Something went wrong.", response.status, data?.details);
   }

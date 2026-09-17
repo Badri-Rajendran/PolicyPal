@@ -45,6 +45,13 @@ describe("apiFetch", () => {
     await expect(apiFetch("/api/auth/login", { method: "POST" })).rejects.toThrow(/too quickly/);
   });
 
+  it("distinguishes an exhausted daily budget from a rate limit", async () => {
+    mockFetchOnce(429, { error: "daily token budget exhausted" });
+    const error = await apiFetch("/api/chat/threads/t1/messages", { method: "POST" }).catch((e) => e);
+    expect(error.message).toMatch(/today's limit/i);
+    expect(error.message).not.toMatch(/too quickly/);
+  });
+
   it("raises the server's error message on other failures", async () => {
     mockFetchOnce(409, { error: "an account with this email already exists" });
     const error = await apiFetch("/api/auth/register", { method: "POST" }).catch((e) => e);

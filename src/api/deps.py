@@ -16,6 +16,13 @@ class ValidationFailedError(Exception):
         self.errors = errors
 
 
+class TokenBudgetExhaustedError(Exception):
+    """Raised when a user has spent their daily generation budget (429)."""
+
+    def __init__(self, retry_after: int):
+        self.retry_after = retry_after
+
+
 def get_db() -> Session:
     """One SQLAlchemy session per request, reused across the request via flask.g."""
     if "db" not in g:

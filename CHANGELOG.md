@@ -4,6 +4,12 @@
 
 ### Added
 
+- ADR 0008: hosted LLM. Records why tool calling forced the move off Qwen
+  0.5B, what stays local, and the costs — lost temperature control, pinned
+  revisions, and PII egress — accepted along the way.
+- Per-user daily token budget on generation. Flask-Limiter caps how many
+  requests arrive, not what each one costs; an exhausted budget returns 429
+  with `Retry-After` and an error string distinct from a rate limit.
 - `docs/plans/`: phased roadmap for plan comparison — hosted LLM, Marketplace
   API catalog, then SBC ingestion. Records that the API covers ~7% of insured
   Americans, and that EOCs are unobtainable pre-purchase so SBCs replace them.
@@ -77,9 +83,20 @@
 - `rerank_top_k` 15 → 5. Retrieval quality was identical at 5/8/10/15, so the
   extra chunks bought only citation noise — 9.8 sources per answer down to
   4.4 (ADR 0004).
-- Switched the local LLM to `Qwen/Qwen2.5-0.5B-Instruct` and capped
-  `max_new_tokens` at 256; the previous 1.5B model exceeded available RAM and
-  thrashed swap.
+- Answer generation runs on hosted `gpt-5-mini`, so Phase 1 can use tool
+  calling. Embeddings and the reranker stay local, so ingestion and retrieval
+  still cost nothing and work offline (ADR 0008).
+- `max_output_tokens` is 512 and the rewrite cap 192: the cap bounds reasoning
+  tokens as well as the reply, and at 48 the rewrite spent its whole budget
+  reasoning and silently returned an empty string.
+- No `temperature` — `gpt-5-mini` rejects it. Grounding rests on the system
+  prompt and the 0.5 relevance gate.
+- Query rewriting runs on `gpt-5-nano`, leaving `gpt-5-mini` for answering.
+  Measured equivalent on follow-up resolution; nano reasons more per call, so
+  it saves less than the per-token prices suggest.
+- Generation eval floors raised to full marks — answers 7 → 8, follow-ups
+  2 → 3, refusals unchanged at 4. Measured on the new models across three
+  identical runs; retrieval floors were re-run and did not move.
 - Replaced the dead-end "not enough information" reply with one naming what
   PolicyPal covers and pointing to state insurance departments for what it
   deliberately doesn't.
@@ -110,6 +127,16 @@
 
 ### Fixed
 
+- An OpenAI failure mid-request returned an HTML 500, dropped the user's
+  own message, and lost whatever tokens had already billed. Now returns a
+  JSON 502, keeps the message, and records the partial spend.
+- An empty completion (output cap spent entirely on reasoning) was stored
+  and shown as a real, blank answer. Falls back to the refusal message.
+- Daily-budget exhaustion surfaced in the UI as "too quickly" — the same
+  text as a rate limit — instead of the distinct message the API sends.
+- `scripts/ask.py -t N` crashed with `'int' object is not reversible`. ADR
+  0005 added `history` in the middle of `answer_query()`'s signature and this
+  caller still passed `top_k` positionally into it.
 - Citations vanished when a conversation was reopened — they were returned
   by `POST /messages` and never stored.
 - The chat pane and the auth card were plain `div`/`section` elements, so
@@ -156,6 +183,8 @@
 
 ### Security
 
+- Composer discloses that messages and retrieved sources are sent to
+  OpenAI, and asks users to avoid sharing identifying details (ADR 0008).
 - Hardened the generation prompt against prompt injection (OWASP LLM Top 10):
   question and context are wrapped in tags the system prompt declares as
   data, and literal delimiter tags are stripped so a message can't forge one.
