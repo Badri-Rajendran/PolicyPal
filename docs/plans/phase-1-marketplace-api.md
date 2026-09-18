@@ -1,8 +1,9 @@
 # Phase 1 — Marketplace API catalog and plan comparison
 
-**Status:** not started
+**Status:** Step 1 (verification spike) complete; Step 2 not started
 **Depends on:** [Phase 0](phase-0-hosted-llm.md) shipped green
-**Blocks:** Phases 2–4 (SBC collection needs plan IDs and document URLs)
+**Blocks:** Phases 2–4 (SBC collection needs plan IDs and document URLs) — and
+Step 1 found the API hands us candidate SBC URLs directly; see below
 
 ## Goal
 
@@ -21,44 +22,161 @@ copays and coinsurance, essential health benefit detail, drug formulary
 coverage, provider network inclusion, issuer details, quality star ratings,
 and standard vs. non-standard plan design.
 
-**Does not return:** plan documents, SBCs, or any contract language.
+**Correction from the spike:** this line originally said the API "does not
+return plan documents, SBCs, or any contract language." That is wrong for
+one field. `GET /plans/{id}` (and the plan objects inside `/plans/search`)
+include `benefits_url`, and for a real plan checked during the spike it was
+a direct link to the plan's actual Summary of Benefits and Coverage PDF —
+not a landing page, the PDF itself
+(`https://sbc.wellpoint.com/dpsdeeplink/deepLink/.../DG166708945620.pdf`).
+`brochure_url`, `formulary_url` and `network_url` are also real document/page
+links per plan. This does not shrink Phases 2–4's work — downloading,
+parsing and chunking SBCs is still out of scope for Phase 1 — but it means
+Phase 1 can capture the URL now, for free, as a plain column, and Phase 2 can
+start from "fetch this known URL" instead of "find this plan's SBC." Whether
+to capture it in Step 2's schema now is called out there.
+
+Also found: the field named `sbcs` on a plan is **not** a document link. It
+is the standardized coverage-example cost estimates (e.g. `baby`, `diabetes`,
+`fracture` scenarios) that a printed SBC also carries, as numbers, not a
+file — named the same, does a different job. `benefits_url` is the actual
+document.
 
 **Covers:** 28 FFM states + 2 SBM-FP (AR, OR) = 30. ACA individual/family
-only — 24.2M people. Not Medicare, Medicaid, or employer coverage.
+only — 24.2M people. Not Medicare, Medicaid, or employer coverage. Verified
+directly: `IL` (no longer an FFM state — it runs its own exchange) returns
+`{"message":"state is not a valid marketplace state"}` from `/plans/search`,
+while `TX` returns real data. The 30-state boundary is enforced by the API
+itself, not just documented.
 
 Scale for context: 183 QHP issuers on HealthCare.gov for plan year 2026.
 
-## Step 1 — verification spike, before any schema work
+## Step 1 — verification spike (complete)
 
-**The live request/response shape has not been verified against a real key.**
-Everything below is designed from documented capabilities, which is not the
-same thing. Do this first and let the findings correct the schema:
+Run via `scripts/verify_marketplace_api.py` against a real key, state `TX`,
+ZIP `75001` (Dallas County, FIPS `48113`). Findings below correct the
+schema in Step 2.
 
-1. Request a key at [developer.cms.gov/marketplace-api/key-request.html](https://developer.cms.gov/marketplace-api/key-request.html)
-2. Call the plan-search and issuer endpoints; record actual field names,
-   types, nullability, and pagination behaviour
-3. **Answer the open question:** can plan catalog data (benefits, deductibles,
-   plan metadata) be fetched per state independently of rate quoting, or does
-   every response require a household context? This decides whether ingestion
-   is a nightly batch or a live per-request call with aggressive caching —
-   a fork that changes the whole pipeline design
-4. Record rate limits and whether they permit bulk ingestion at all
+**Auth & base URL.** `https://marketplace.api.healthcare.gov/api/v1`,
+`?apikey=` query param on every call — matches the docs.
 
-Write the findings into this document before continuing. The spike is throwaway
-code; nothing from it is kept.
+**The open question (item 3) is answered: catalog data does NOT require a
+household.** `POST /plans/search` with `household` omitted entirely still
+returns `200` with the full plan list for the county — same `total` (138)
+as with a dummy household. A household only changes `premium` and
+`premium_w_credit` (confirmed: age 25 → `$323.30`, age 55 → `$718.08`, same
+plan, same county — real, large age-rating). Everything else — `benefits`,
+`deductibles`, `moops`, `issuer`, `quality_rating`, the document URLs — is
+identical regardless of household. **This means nightly batch ingestion is
+fully viable**: enumerate county → call `/plans/search` with no household
+(or one fixed reference household) → store everything except premium as the
+catalog, and treat premium as an indicative reference figure, consistent
+with the existing "Out of scope: subsidized premiums, income, tobacco,
+household size" line below — that line was already the right call, and the
+spike confirms it doesn't cost us catalog completeness.
+
+**`place.countyfips` is required and not derivable from state alone.** A
+bare `{"state": "TX", "zipcode": "75001", "countyfips": null}` fails with
+`"place: (countyfips: cannot be blank.)"`. Resolve it first via
+`GET /counties/by/zip/{zipcode}` (confirmed working, e.g. ZIP `75001` →
+`{"fips": "48113", "name": "Dallas County", "state": "TX"}`). Real ingestion
+needs to enumerate ZIP→county (or county directly) per state, not just
+iterate states — `GET /data/county-zips` (documented, not yet called) is
+the likely bulk source for that crosswalk rather than one ZIP at a time.
+
+**Pagination: fixed page size of 10, `limit` is ignored, `offset` works.**
+Confirmed: `limit: 50` in the request body still returned 10 results;
+`offset: 10` returned a genuinely different first plan. Dallas County alone
+had 138 plans — 14 requests to enumerate one county. Combined with 30
+states' worth of counties, full ingestion is many thousands of requests,
+which the rate limit (below) comfortably allows, but the ingestion loop
+must page on `offset` correctly and probably de-duplicate plans shared
+across counties in the same rating area.
+
+**Rate limits, from real response headers — not documented as a number
+anywhere on the site, exactly as suspected:**
+`RateLimit-Limit: 200` (per second), `X-RateLimit-Limit-minute: 1000`.
+Generous relative to the pagination volume above; a straightforward
+sequential batch job does not need aggressive backoff to stay under it, but
+should still request politely (a small delay between calls, not a tight
+loop) rather than run at the ceiling — courteous API use, and it stays
+robust if CMS tightens the limit later without warning.
+
+**Plan object — real top-level fields** (`GET /plans/{id}`, no household
+needed, confirmed `200`): `id, name, premium, premium_w_credit,
+aptc_eligible_premium, ehb_premium, pediatric_ehb_premium, metal_level,
+type, design_type, is_standardized_plan, state, market, insurance_market,
+max_age_child, service_area_id, product_division, simple_choice,
+specialist_referral_required, waiting_period_duration,
+covers_nonhyde_abortion, tobacco_lookback, guaranteed_rate,
+suppression_state, is_ineligible, has_national_network, hsa_eligible,
+rx_3mo_mail_order, benefits[], deductibles[], moops[], tiered_deductibles,
+tiered_moops, disease_mgmt_programs[], quality_rating{}, issuer{}, sbcs{},
+benefits_url, brochure_url, formulary_url, network_url`. (`GET /plans/{id}`
+additionally has `pc_deductible_visits` over the `/plans/search` shape.)
+
+**The two fields Step 2's original sketch got wrong, materially:**
+
+- **`deductibles` and `moops` are arrays, not scalars.** The draft schema
+  had `deductible_individual`, `deductible_family`,
+  `oop_max_individual`, `oop_max_family` as four flat columns. The real
+  shape is a list of objects — `{type, amount, csr, network_tier,
+  family_cost, individual, family, display_string}` — with one entry per
+  **CSR variant** (`"Exchange variant (no CSR)"`, plus the 73%/87%/94%
+  cost-sharing-reduction variants a silver plan actually has), per network
+  tier, and per individual-vs-family. A single plan carried more than four
+  deductible rows in the spike. This needs a child table shaped like
+  `plan_benefits`, not four columns on `plans`.
+- **`issuer` and `quality_rating` are nested objects, not plan-row
+  strings/scalars.** `issuer` carries its own `id, name, address,
+  individual_url, shop_url, toll_free, tty` — the same shape the
+  `/issuers` endpoint returns directly. `quality_rating` carries four
+  separate 0-5 sub-ratings plus a `*_not_rated_reason` per one (most 2026
+  plans in the spike were simply unrated — `"New-Ineligible for Scoring"`).
+
+Step 2's schema below is corrected for both. Whether to also add
+`benefits_url` as a stored column (cheap, and sets up Phase 2) is flagged
+there rather than decided silently.
 
 ## Step 2 — plan data is relational, not vector
 
-New tables, entirely separate from `chunks`, carrying no embeddings:
+New tables, entirely separate from `chunks`, carrying no embeddings.
+Corrected against Step 1's verified shape — `deductibles`/`moops` are
+multi-row (per CSR variant, network tier, individual/family), not scalar
+columns, and `issuer`/`quality_rating` are nested objects:
 
 ```
-plans          plan_id (HIOS), plan_year, issuer_name, marketing_name,
-               metal_level, plan_type, state, premium_base,
-               deductible_individual, deductible_family,
-               oop_max_individual, oop_max_family, quality_rating
+issuers        issuer_id (HIOS), name, address, individual_url, shop_url,
+               toll_free, tty
+
+plans          plan_id (HIOS), plan_year, issuer_fk, marketing_name,
+               metal_level, plan_type, state, premium_reference
+               (the catalog premium from Step 1's no-household call —
+               indicative, never a personalized quote; see Security below),
+               hsa_eligible, has_national_network,
+               quality_rating_global, quality_rating_clinical,
+               quality_rating_enrollee, quality_rating_efficiency
+               (nullable — most 2026 plans are simply unrated),
+               benefits_url (flagged below, not yet decided)
 
 plan_benefits  plan_fk, benefit_name, covered, copay, coinsurance, limits
+
+plan_cost_shares  plan_fk, kind ("deductible" | "moop"), csr_variant,
+                  network_tier, family_cost, individual, family, amount
 ```
+
+`plan_cost_shares` is the schema correction: one row per
+`(plan, kind, csr_variant, network_tier, family_cost)`, matching the array
+the API actually returns instead of assuming one deductible per plan.
+
+**Flagged, not decided here:** whether `plans.benefits_url` (the real SBC
+PDF link Step 1 found) belongs in this phase's schema. Capturing it costs
+one column and no extra ingestion complexity — it's already in every plan
+response. Storing it does not pull SBC *download or parsing* into this
+phase; that stays Phase 2's job per "Out of scope" below. Recommend
+capturing it now since it's free and de-risks Phase 2, but flagging rather
+than deciding unilaterally, since it does touch the Phase 1/2 boundary the
+roadmap deliberately drew.
 
 Unique on `(plan_id, plan_year)`. Idempotent upsert, so a re-run changes no
 row count.
@@ -78,6 +196,12 @@ New pipeline `src/ingestion/plans.py` plus a `make ingest-plans` target. It is
 deliberately **not** a `Source` subclass: that ABC in
 `src/ingestion/sources/base.py` produces chunks, and this produces rows. Do not
 force it into an interface that does not fit.
+
+Shaped by Step 1's findings: per state, resolve counties (`/data/county-zips`
+or per-ZIP `/counties/by/zip`), call `/plans/search` with no household per
+county, and page on `offset` in steps of 10 until `offset >= total` — `limit`
+does not change the page size. A small delay between calls, not a tight
+loop, even though the 200/sec-1000/min limit would technically allow one.
 
 ## Step 3 — fix the `answer()` short-circuit first
 
