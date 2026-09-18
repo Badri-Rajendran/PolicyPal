@@ -80,6 +80,9 @@
 
 ### Changed
 
+- The Claude review workflow is advisory (`continue-on-error`), not a merge
+  gate. It authenticates through an external app-token exchange, so an
+  expired token fails a PR whose lint, tests and scans are all green.
 - `rerank_top_k` 15 → 5. Retrieval quality was identical at 5/8/10/15, so the
   extra chunks bought only citation noise — 9.8 sources per answer down to
   4.4 (ADR 0004).
