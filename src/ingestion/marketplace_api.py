@@ -103,7 +103,12 @@ def counties_by_state(year: int) -> dict[str, list[tuple[str, str]]]:
     """
     cache = PLANS_RAW / f"county_zips_{year}.json"
     if cache.exists():
-        return _parse_county_zips(json.loads(cache.read_text(encoding="utf-8")))
+        try:
+            return _parse_county_zips(json.loads(cache.read_text(encoding="utf-8")))
+        except ValueError:
+            # Unreadable cache means refetch, not a run that fails forever
+            # until someone finds and deletes the file.
+            logger.warning("county-zips cache %s is unreadable; refetching", cache)
 
     payload = _request(
         "GET", "/data/county-zips", params={"year": year}, timeout=_BULK_REQUEST_TIMEOUT_SECONDS
@@ -111,7 +116,11 @@ def counties_by_state(year: int) -> dict[str, list[tuple[str, str]]]:
     # Parsed before writing, so a malformed response never becomes the cache.
     counties = _parse_county_zips(payload)
     cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps(payload), encoding="utf-8")
+    # Written aside and renamed into place: a run killed mid-write leaves the
+    # old file or none, never a truncated one.
+    partial = cache.with_suffix(".tmp")
+    partial.write_text(json.dumps(payload), encoding="utf-8")
+    partial.replace(cache)
     return counties
 
 

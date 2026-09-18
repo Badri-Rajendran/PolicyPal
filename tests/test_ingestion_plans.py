@@ -4,10 +4,13 @@ The roadmap's acceptance criterion is that a re-run changes no row count.
 These run against real Postgres through the `session` fixture, and use plan
 year 1999 so a locally ingested catalog cannot skew the counts.
 """
+from contextlib import contextmanager
+
 import pytest
+import requests
 from sqlalchemy import func, select
 
-from src.ingestion.plans import _write_county, resolve_states
+from src.ingestion.plans import _write_county, execute, resolve_states
 from src.models.plan import Issuer, Plan, PlanCostShare, PlanCounty
 
 YEAR = 1999
@@ -135,6 +138,30 @@ def test_an_incomplete_plan_is_skipped_without_blocking_the_rest(session):
 
     assert written == 1
     assert session.scalars(select(Plan.hios_plan_id).where(Plan.plan_year == YEAR)).all() == ["11111TX0010001"]
+
+
+def test_one_failing_county_does_not_stop_the_run(session, monkeypatch, capsys):
+    """A full run is hours of requests, unattended. One county's outage must be
+    reported and skipped, never allowed to end the run for every state after it."""
+
+    def county_plans(state, countyfips, zipcode, year):
+        if countyfips == "48113":
+            raise requests.ConnectionError("down")
+        return [_plan("11111TX0010005")]
+
+    @contextmanager
+    def same_session():
+        yield session
+
+    monkeypatch.setattr("src.ingestion.plans.counties_by_state",
+                        lambda year: {"TX": [("48113", "75001"), ("48439", "76101")]})
+    monkeypatch.setattr("src.ingestion.plans.county_plans", county_plans)
+    monkeypatch.setattr("src.ingestion.plans.get_session", same_session)
+
+    execute(["TX"], YEAR)
+
+    assert session.scalars(select(Plan.hios_plan_id).where(Plan.plan_year == YEAR)).all() == ["11111TX0010005"]
+    assert "1 counties ingested, 1 failed" in capsys.readouterr().out
 
 
 def test_resolve_states_normalizes_and_expands_all():

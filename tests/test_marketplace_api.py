@@ -90,6 +90,24 @@ def test_a_failed_page_fails_the_whole_county():
         marketplace_api.county_plans("TX", "48113", "75001", 2026)
 
 
+def test_a_truncated_cache_is_refetched_not_fatal(tmp_path):
+    """A run killed mid-write must not break every later run: the county list
+    is read before any per-county error handling, so a bad cache would stop
+    the whole ingest until someone found and deleted the file."""
+    cache = tmp_path / "county_zips_2026.json"
+    cache.write_text('[{"state": "TX", "coun')
+    payload = [{"state": "TX", "counties": [{"fips": "48113", "zips": ["75001"]}]}]
+
+    with (
+        patch("src.ingestion.marketplace_api.PLANS_RAW", tmp_path),
+        patch("src.ingestion.marketplace_api.requests.request", return_value=_response(200, payload)),
+    ):
+        assert marketplace_api.counties_by_state(2026) == {"TX": [("48113", "75001")]}
+
+    assert json.loads(cache.read_text()) == payload
+    assert not list(tmp_path.glob("*.tmp"))
+
+
 @pytest.mark.parametrize("key", [None, SecretStr("")])
 def test_a_missing_key_fails_before_any_request(key):
     """A blank `CMS_MARKETPLACE_API_KEY=` line is as missing as an absent one."""
