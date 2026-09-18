@@ -208,14 +208,16 @@ nullable.
 
 ## Confirmed: `IL` is rejected, `TX` is accepted
 
-Direct evidence for the "28 FFM + 2 SBM-FP = 30 states" coverage claim,
-rather than trusting the documentation alone: calling `/plans/search` with
-`state: "IL"` returns `400`,
-`{"message":"state is not a valid marketplace state"}` — Illinois runs its
-own state-based exchange and is no longer on the federal marketplace. The
-identical request shape with `state: "TX"` returns real plan data. The
-30-state boundary is enforced by the API server itself, not just
-documented as a limitation.
+Direct evidence for the 30-state coverage claim, rather than trusting the
+documentation alone: calling `/plans/search` with `state: "IL"` returns
+`400`, `{"message":"state is not a valid marketplace state"}` — Illinois
+runs its own state-based exchange and is no longer on the federal
+marketplace. The identical request shape with `state: "TX"` returns real
+plan data. The 30-state boundary is enforced by the API server itself, not
+just documented as a limitation.
+
+The *composition* of those 30 is corrected below — it is not the
+"28 FFM + 2 SBM-FP (AR, OR)" this project previously recorded.
 
 ## How this was gathered
 
@@ -226,3 +228,98 @@ follow-up ad hoc Python calls to resolve specific questions the first pass
 raised (household-omission, age-sensitivity, `limit` vs. `offset`
 behavior). All calls together numbered well under 25, against a rate limit
 of 200/second — paced deliberately rather than run in a tight loop.
+
+---
+
+# Second pass — 2026-09-18, before building Step 2's ingestion
+
+Four questions the first pass left open, each of which would have shaped
+code written on an assumption. Same key, same pacing discipline (~0.4s
+between calls, roughly 20 calls total).
+
+## The 30 states are 27 FFM + 3 SBM-FP, not 28 + 2
+
+`GET /states?year=2026` returns all 57 jurisdictions, each with a
+`marketplace_model` field — an authoritative, machine-readable answer
+rather than a count repeated from a fact sheet:
+
+| `marketplace_model` | Count | States |
+| --- | --- | --- |
+| `FFM` | 27 | AK, AL, AZ, DE, FL, HI, IA, IN, KS, LA, MI, MO, MS, MT, NC, ND, NE, NH, OH, SC, SD, TN, TX, UT, WI, WV, WY |
+| `SupportedSBM` | 3 | AR, OK, OR |
+| `SBM` | 21 | CA, CO, CT, DC, GA, ID, IL, KY, MA, MD, ME, MN, NJ, NM, NV, NY, PA, RI, VA, VT, WA |
+| `UnknownMarketplaceModel` | 6 | AS, GU, MP, PR, UM, VI |
+
+Usable through this API: `FFM` + `SupportedSBM` = **30**. The total this
+project already recorded is right; the breakdown was not — **OK** belongs
+with AR and OR, and the FFM count is 27. Verified that a `SupportedSBM`
+state really is queryable, not just listed: OK / Tulsa County returned 96
+plans from `/plans/search`.
+
+`GA` is `SBM` — worth noting because it is easy to assume otherwise;
+Georgia moved to its own exchange and this API rejects it.
+
+## `GET /data/county-zips` exists and solves county resolution outright
+
+One call returns ~1.4 MB covering every state:
+
+```json
+[{"state": "AK",
+  "counties": [{"name": "Aleutians East", "fips": "02013",
+                "zips": ["99553", "99571", ...]}, ...]}, ...]
+```
+
+This removes the circular problem the first pass left open — `/counties/by/zip`
+resolves a ZIP you already have, and nothing supplies the ZIP list. One
+bulk call per ingestion run supplies both the county FIPS and a
+representative ZIP for the `/plans/search` body. No external Census/HUD
+crosswalk is needed.
+
+Related: a ZIP can map to **more than one county** (74103 → Tulsa *and*
+Osage). Iterating county→ZIPs from this endpoint avoids that ambiguity
+entirely; resolving ZIP→county would have inherited it.
+
+## The minimal reference household is `{"people": [{"age": 27}]}`
+
+Three request bodies against the same county:
+
+| Household sent | `total` | First plan's `premium` |
+| --- | --- | --- |
+| none at all | 138 | $393.50 |
+| `{"people": [{"age": 27}]}` | 138 | $337.47 |
+| `{"income": 0, "people": [{"age": 27, "aptc_eligible": false, "uses_tobacco": false}]}` | 138 | $337.47 |
+
+`income`, `aptc_eligible` and `uses_tobacco` change nothing — they would
+only move `premium_w_credit`, which this project does not store. So the
+stored `premium_reference` needs exactly one input: the age.
+
+Note the first row: omitting the household does **not** silently mean "age
+27." CMS applies some other default, undocumented and free to change. That
+is the argument for sending an explicit household on every call rather
+than accepting the default — the column's meaning then comes from our
+code, not theirs.
+
+## One plan really can carry two deductibles that differ only by type
+
+This is the finding that changes the schema. Sampling 60 plans in Dallas
+County, plan `20069TX0100005` (Bronze) has two `deductibles` entries with
+**identical** `csr`, `network_tier` and `family_cost`:
+
+```
+('Exchange variant (no CSR)', 'In-Network', 'Individual')
+  → ['Medical EHB Deductible', 'Drug EHB Deductible']
+```
+
+So a uniqueness key of `(plan, kind, csr, network_tier, family_cost)` is
+wrong: ingesting this plan would write one row and silently overwrite it
+with the other, and the table would look correct while holding a drug
+deductible where a medical one belonged. **`type` must be part of the
+key.** No key field was ever `null` or `""` across the sample, which
+matters because a `NULL` in a unique-constraint column makes every row
+distinct in Postgres and would quietly disable the constraint.
+
+Only `"Exchange variant (no CSR)"` appeared in this sample — the 73/87/94%
+CSR variants attach to Silver plans, and the 60 cheapest plans in this
+county are Bronze/Gold/Catastrophic. The key includes `csr` regardless,
+which costs nothing if the variants never appear and is required if they
+do.

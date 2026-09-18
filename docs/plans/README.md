@@ -55,7 +55,7 @@ insurance data from all providers." It does not.
 
 | Dimension | Covered | Missing |
 | --- | --- | --- |
-| Geography | 28 FFM + 2 SBM-FP = **30 states** | 21 states + DC (CA, NY, WA, CO, MA…) |
+| Geography | 27 FFM + 3 SBM-FP (AR, OK, OR) = **30 states** | 21 states + DC (CA, NY, WA, CO, MA…) |
 | Segment | ACA individual/family, **24.2M** people | Employer **164M (53.8%)**, Medicare 19.1%, Medicaid 17.6% |
 | Content | Premiums, deductibles, OOP max, copays, EHB categories, formulary | No contract language, no exclusions, no prior-auth rules |
 

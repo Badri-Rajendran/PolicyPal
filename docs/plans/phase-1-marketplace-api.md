@@ -29,7 +29,7 @@ field — `benefits_url` is a direct link to the plan's real SBC PDF. Full
 detail, including why this doesn't pull SBC parsing into this phase, is in
 [`docs/findings/cms-marketplace-api.md`](../findings/cms-marketplace-api.md).
 
-**Covers:** 28 FFM states + 2 SBM-FP (AR, OR) = 30. ACA individual/family
+**Covers:** 27 FFM states + 3 SBM-FP (AR, OK, OR) = 30. ACA individual/family
 only — 24.2M people. Not Medicare, Medicaid, or employer coverage. Verified
 directly against the live API, not just documentation — see the findings
 doc for the confirmed `IL`-rejected / `TX`-accepted example.
