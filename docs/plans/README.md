@@ -14,8 +14,8 @@ than discovered late.
 
 | Phase | Goal | Status |
 | --- | --- | --- |
-| [0](phase-0-hosted-llm.md) | Swap the local LLM for a hosted one | Not started |
-| [1](phase-1-marketplace-api.md) | Marketplace API catalog + plan comparison | Not started |
+| [0](phase-0-hosted-llm.md) | Swap the local LLM for a hosted one | Complete (ADR 0008) |
+| [1](phase-1-marketplace-api.md) | Marketplace API catalog + plan comparison | In progress — Steps 1–2 of 6 done |
 | [2](phase-2-sbc-narrow-slice.md) | SBC ingestion, one or two states | Documented only |
 | [3](phase-3-sbc-top-issuers.md) | SBC for the largest issuers nationally | Documented only |
 | [4](phase-4-sbc-full-coverage.md) | SBC across all 30 HealthCare.gov states | Documented only |

@@ -1,6 +1,6 @@
 # Phase 0 — swap the local LLM for a hosted one
 
-**Status:** not started
+**Status:** complete — shipped in PR #9; decision recorded in [ADR 0008](../decisions/0008-hosted-llm.md)
 **Depends on:** nothing
 **Blocks:** Phase 1
 

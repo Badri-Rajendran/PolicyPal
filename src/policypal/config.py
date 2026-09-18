@@ -115,9 +115,10 @@ class Settings(BaseSettings):
 
     # CMS Marketplace API (Phase 1, docs/plans/phase-1-marketplace-api.md)
 
-    # Optional rather than Field(...): only scripts/verify_marketplace_api.py
-    # reads this so far, and requiring it would break Settings() — and every
-    # test — for anyone without a key. Promote once real ingestion needs it.
+    # Still optional now that `make ingest-plans` reads it: `settings` is built
+    # at import, and CI runs the suite with no CMS key, so Field(...) would
+    # fail every test over a secret no API request path touches. Ingestion
+    # raises MarketplaceApiKeyMissingError at call time instead.
     cms_marketplace_api_key: SecretStr | None = None
 
     # API / Auth

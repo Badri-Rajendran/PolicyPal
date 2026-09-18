@@ -1,8 +1,15 @@
-.PHONY: ingest migrate api \
+.PHONY: ingest ingest-plans migrate api \
         ui-dev ui-build ui-lint ui-preview ui-test
 
 ingest:
 	uv run python -m src.ingestion.pipeline
+
+# STATES is required: comma-separated codes, or ALL for every HealthCare.gov
+# state. No default, so a bare `make ingest-plans` cannot start thousands of
+# requests. e.g. make ingest-plans STATES=TX,FL
+ingest-plans:
+	@test -n "$(STATES)" || { echo "STATES is required, e.g. make ingest-plans STATES=TX,FL (or STATES=ALL)"; exit 2; }
+	uv run python -m src.ingestion.plans --states $(STATES)
 
 migrate:
 	uv run alembic upgrade head
