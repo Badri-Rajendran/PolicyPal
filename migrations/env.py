@@ -7,6 +7,7 @@ from src.core.db import Base
 from src.models import (  # noqa: F401 — register models on Base.metadata
     chat,
     chunk,
+    plan,
     usage,
     user,
 )

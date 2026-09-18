@@ -131,7 +131,7 @@ Copy the required variables below into a `.env` file at the repo root before run
 | `JWT_SECRET_KEY`                   | Signing key for access tokens                              |
 | `OPENAI_API_KEY`                   | **Required.** Answer generation runs on a hosted model (ADR 0008) |
 | `HF_API_KEY`                       | Optional Hugging Face token (for gated models)              |
-| `CMS_MARKETPLACE_API_KEY`          | Optional. Only used by `scripts/verify_marketplace_api.py` (Phase 1 spike) for now |
+| `CMS_MARKETPLACE_API_KEY`          | Optional. Needed only for `make ingest-plans` ([request one](https://developer.cms.gov/marketplace-api)) |
 | `DEVICE`                           | `auto` \| `cpu` \| `mps` \| `cuda` — device for the *local* embedding and reranker models |
 | `ENVIRONMENT`                      | `development` \| `production`                               |
 | `LOG_LEVEL`                        | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` \| `CRITICAL`     |
@@ -173,6 +173,35 @@ Adding a corpus means writing one `Source` subclass in `src/ingestion/sources/` 
 pipeline, chunking, or embedding code changes. Chunking strategy lives with the source
 because document shape differs: a glossary term is one atomic chunk, while an article is
 split recursively.
+
+### Plan catalog
+
+```bash
+make ingest-plans STATES=TX,FL      # or STATES=ALL for all 30 HealthCare.gov states
+```
+
+Loads real purchasable plans from the CMS Marketplace API into relational tables —
+`issuers`, `plans`, `plan_counties`, `plan_cost_shares` — kept apart from the RAG
+corpus because a deductible is a `WHERE` clause, not a similarity search (ADR 0009).
+Needs `CMS_MARKETPLACE_API_KEY`; `make ingest` does not.
+
+- **Scope is chosen per run.** `STATES` is required, with no default, so a bare
+  `make ingest-plans` cannot start a multi-hour run.
+- **Plans are sold per county**, and each county takes about 14 paged requests. One
+  state is thousands of requests and `ALL` is tens of thousands, paced deliberately
+  against a free public API. For a quick check:
+  `uv run python -m src.ingestion.plans --states TX --max-counties 2`.
+- **Re-runs are safe.** Each county is one transaction and every write is an upsert, so
+  an interrupted run keeps what it finished and a re-run changes no row count. A county
+  that fails is reported and skipped; the run continues.
+- **`premium_reference` is indicative, not a quote**: the unsubsidized premium for a
+  single 27-year-old, CMS's own convention for comparing plans.
+- **Plan year defaults to the current year.** During open enrollment, pass the next one
+  explicitly: `uv run python -m src.ingestion.plans --states TX --year 2027`.
+
+The county list is cached per plan year in `data/plans/raw/`; delete it to refresh.
+Verified API behaviour is recorded in
+[`docs/findings/cms-marketplace-api.md`](docs/findings/cms-marketplace-api.md).
 
 ## Testing
 

@@ -1,6 +1,6 @@
 # Phase 1 — Marketplace API catalog and plan comparison
 
-**Status:** Step 1 (verification spike) complete; Step 2 not started
+**Status:** Steps 1–2 complete (API verified; plan catalog ingested); Step 3 next
 **Depends on:** [Phase 0](phase-0-hosted-llm.md) shipped green
 **Blocks:** Phases 2–4 (SBC collection needs plan IDs and document URLs) — and
 Step 1 found the API hands us candidate SBC URLs directly, see
@@ -73,54 +73,54 @@ detail and exact response shapes in the findings doc):
 - `issuer` and `quality_rating` are **nested objects**, not plan-row
   scalars.
 
-Step 2's schema below is corrected for both. Whether to also add
-`benefits_url` as a stored column (cheap, and sets up Phase 2) is flagged
-there rather than decided silently.
+Step 2's schema below is corrected for both, and stores `benefits_url` too.
 
-## Step 2 — plan data is relational, not vector
+## Step 2 — plan data is relational, not vector (complete)
 
-New tables, entirely separate from `chunks`, carrying no embeddings.
-Corrected against the verified shape in
-[`docs/findings/cms-marketplace-api.md`](../findings/cms-marketplace-api.md)
-— `deductibles`/`moops` are multi-row (per CSR variant, network tier,
-individual/family), not scalar columns, and `issuer`/`quality_rating` are
-nested objects:
+Four tables, entirely separate from `chunks`, carrying no embeddings. What
+shipped, in `src/models/plan.py` and migration `faf714a14048` (ADR 0009):
 
 ```
-issuers        issuer_id (HIOS), name, address, individual_url, shop_url,
-               toll_free, tty
+issuers           hios_issuer_id + plan_year (unique), name, state,
+                  individual_url, toll_free, tty
 
-plans          plan_id (HIOS), plan_year, issuer_fk, marketing_name,
-               metal_level, plan_type, state, premium_reference
-               (the catalog premium from Step 1's no-household call —
-               indicative, never a personalized quote; see Security below),
-               hsa_eligible, has_national_network,
-               quality_rating_global, quality_rating_clinical,
-               quality_rating_enrollee, quality_rating_efficiency
-               (nullable — most 2026 plans are simply unrated),
-               benefits_url (flagged below, not yet decided)
+plans             hios_plan_id + plan_year (unique), issuer_id → issuers,
+                  marketing_name, metal_level, plan_type, state,
+                  premium_reference, hsa_eligible, has_national_network,
+                  is_standardized_plan, four quality_rating_* sub-scores,
+                  quality_not_rated_reason, benefits_url, brochure_url,
+                  formulary_url, network_url
 
-plan_benefits  plan_fk, benefit_name, covered, copay, coinsurance, limits
+plan_counties     plan_id → plans, countyfips (unique together)
 
-plan_cost_shares  plan_fk, kind ("deductible" | "moop"), csr_variant,
-                  network_tier, family_cost, individual, family, amount
+plan_cost_shares  plan_id → plans, kind ('deductible' | 'moop'),
+                  cost_share_type, csr_variant, network_tier, family_cost
+                  (all six unique together), amount
 ```
 
-`plan_cost_shares` is the schema correction: one row per
-`(plan, kind, csr_variant, network_tier, family_cost)`, matching the array
-the API actually returns instead of assuming one deductible per plan.
+How it differs from what this section originally sketched, and why:
 
-**Flagged, not decided here:** whether `plans.benefits_url` (the real SBC
-PDF link Step 1 found) belongs in this phase's schema. Capturing it costs
-one column and no extra ingestion complexity — it's already in every plan
-response. Storing it does not pull SBC *download or parsing* into this
-phase; that stays Phase 2's job per "Out of scope" below. Recommend
-capturing it now since it's free and de-risks Phase 2, but flagging rather
-than deciding unilaterally, since it does touch the Phase 1/2 boundary the
-roadmap deliberately drew.
-
-Unique on `(plan_id, plan_year)`. Idempotent upsert, so a re-run changes no
-row count.
+- **No `plan_benefits`.** Per-service cost sharing (the copay for a specific
+  visit type) is ~50 benefit types × 3 tiers per plan, and nothing in Steps
+  3–6 reads it. Deferred until a feature does.
+- **`plan_counties` added.** Plans are sold per county. With only a state
+  column, Step 4's `search_plans(zip_code, …)` could not narrow below the
+  state and would return plans the caller cannot buy. The county is already
+  known from the request that fetched each plan, so this costs no requests.
+- **`cost_share_type` is in the cost-share unique key.** One real plan
+  carries a $0 medical and a $5,500 drug deductible under an identical
+  CSR/tier/family key. Without the type, one silently overwrites the other.
+- **`premium_reference` is for a single 27-year-old**, sent explicitly on
+  every call — CMS's own comparison convention. Omitting the household does
+  not mean 27; CMS applies an undocumented default.
+- **`benefits_url` is captured** — the SBC PDF, for Phase 2 to fetch
+  directly. Storing a URL is not SBC parsing, which stays in Phase 2.
+- **Quality ratings of `0` are stored as `NULL`.** CMS reports "not rated"
+  as 0 on a 1–5 scale; kept as 0, every unrated plan ranks as worst.
+- **Dropped as empty or redundant against real responses:** issuer address
+  and `shop_url` (small-business market, out of scope); cost-share
+  `display_string` (empty in every row checked) and `individual`/`family`
+  (fully determined by `family_cost`).
 
 Two reasons this does not go in pgvector:
 
@@ -130,20 +130,31 @@ Two reasons this does not go in pgvector:
   by approximate similarity, so there is no way to return Cigna's deductible
   for an Aetna question
 
-Follow the existing model conventions in `src/models/` — SQLAlchemy 2.0
-`Mapped` / `mapped_column`, as in `src/models/chunk.py`.
+The pipeline is `src/ingestion/plans.py` (orchestration and writes) over
+`src/ingestion/marketplace_api.py` (the HTTP client), run as
+`make ingest-plans STATES=TX,FL` or `STATES=ALL`. It is deliberately **not** a
+`Source` subclass: that ABC produces chunks, and this produces rows.
 
-New pipeline `src/ingestion/plans.py` plus a `make ingest-plans` target. It is
-deliberately **not** a `Source` subclass: that ABC in
-`src/ingestion/sources/base.py` produces chunks, and this produces rows. Do not
-force it into an interface that does not fit.
+- **Counties** come from one `/data/county-zips` call per run, cached per plan
+  year in `data/plans/raw/` — the endpoint has taken 86 s to answer.
+- **Paging** is on `offset` in steps of 10 until `offset >= total`; `limit`
+  does not change the page size. Calls are paced at ~0.2 s, well under the
+  verified 200/sec-1000/min limit.
+- **Idempotent**: issuers and plans are upserted on their named unique
+  constraints; cost shares are replaced per plan, so a variant dropped
+  upstream does not linger. Verified by ingesting two TX counties twice —
+  identical row counts and data fingerprints across all four tables.
+- **Tolerant**: each county is one transaction. A county that fails is
+  reported and skipped; the run continues.
+- **The API key never reaches a log.** It travels as a query parameter, and
+  `requests` embeds the full URL in both HTTP and connection errors, so every
+  error is re-raised with method and path only.
 
-Shaped by the verified findings (see the findings doc linked above): per
-state, resolve counties (`/data/county-zips` or per-ZIP
-`/counties/by/zip`), call `/plans/search` with no household per county, and
-page on `offset` in steps of 10 until `offset >= total` — `limit` does not
-change the page size. A small delay between calls, not a tight loop, even
-though the 200/sec-1000/min limit would technically allow one.
+**Known limits.** Plans are county-scoped and each county takes ~14 paged
+requests, so one state is thousands of requests and `ALL` is tens of
+thousands — hours at polite pacing. And an issuer may serve only part of a
+county: searching with one representative ZIP per county can miss such a
+plan, though it never records a plan the county does not sell.
 
 ## Step 3 — fix the `answer()` short-circuit first
 

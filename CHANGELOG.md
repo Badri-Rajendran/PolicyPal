@@ -4,6 +4,11 @@
 
 ### Added
 
+- Plan catalog: `issuers`, `plans`, `plan_counties` and `plan_cost_shares`,
+  loaded by `make ingest-plans STATES=...`. Relational, not vector — a
+  deductible is a `WHERE` clause, not a similarity search (ADR 0009).
+- Plan ingestion is idempotent and county-atomic: a re-run changes no row
+  count, and a failed county is skipped rather than ending the run.
 - ADR 0008: hosted LLM. Records why tool calling forced the move off Qwen
   0.5B, what stays local, and the costs — lost temperature control, pinned
   revisions, and PII egress — accepted along the way.
