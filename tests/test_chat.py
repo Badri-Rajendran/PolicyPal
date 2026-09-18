@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+from src.services.generation import Answer
 from src.services.retrieval import RetrievedChunk
 
 
@@ -73,7 +74,7 @@ def test_cannot_delete_another_users_thread(client):
 
 @patch("src.api.routes.chat.answer_query")
 def test_send_message_returns_grounded_answer_with_sources(mock_answer_query, client):
-    mock_answer_query.return_value = ("A deductible is the amount you pay before coverage kicks in.", _fake_chunks())
+    mock_answer_query.return_value = Answer("A deductible is the amount you pay before coverage kicks in.", _fake_chunks())
     headers = _auth_headers(client)
     thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
 
@@ -93,7 +94,7 @@ def test_send_message_returns_grounded_answer_with_sources(mock_answer_query, cl
 def test_citations_survive_reopening_the_thread(mock_answer_query, client):
     """The reason this table exists: a restored transcript has to keep its
     grounding, or an answer reads as an ungrounded assertion (ADR 0007)."""
-    mock_answer_query.return_value = ("A deductible is what you pay first.", _fake_chunks())
+    mock_answer_query.return_value = Answer("A deductible is what you pay first.", _fake_chunks())
     headers = _auth_headers(client)
     thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
 
@@ -111,7 +112,7 @@ def test_citations_survive_reopening_the_thread(mock_answer_query, client):
 
 @patch("src.api.routes.chat.answer_query")
 def test_a_user_question_carries_no_citations(mock_answer_query, client):
-    mock_answer_query.return_value = ("answer", _fake_chunks())
+    mock_answer_query.return_value = Answer("answer", _fake_chunks())
     headers = _auth_headers(client)
     thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
 
@@ -124,7 +125,7 @@ def test_a_user_question_carries_no_citations(mock_answer_query, client):
 
 @patch("src.api.routes.chat.answer_query")
 def test_deleting_a_thread_takes_its_citations(mock_answer_query, client):
-    mock_answer_query.return_value = ("answer", _fake_chunks())
+    mock_answer_query.return_value = Answer("answer", _fake_chunks())
     headers = _auth_headers(client)
     thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
     client.post(f"/api/chat/threads/{thread_id}/messages", json={"content": "hello"}, headers=headers)
@@ -135,7 +136,7 @@ def test_deleting_a_thread_takes_its_citations(mock_answer_query, client):
 
 @patch("src.api.routes.chat.answer_query")
 def test_an_answer_with_no_retrieved_context_stores_no_citations(mock_answer_query, client):
-    mock_answer_query.return_value = ("I couldn't find an answer to that.", [])
+    mock_answer_query.return_value = Answer("I couldn't find an answer to that.", [])
     headers = _auth_headers(client)
     thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
 
@@ -148,7 +149,7 @@ def test_an_answer_with_no_retrieved_context_stores_no_citations(mock_answer_que
 
 @patch("src.api.routes.chat.answer_query")
 def test_follow_up_receives_the_earlier_turns(mock_answer_query, client):
-    mock_answer_query.return_value = ("answer", _fake_chunks())
+    mock_answer_query.return_value = Answer("answer", _fake_chunks())
     headers = _auth_headers(client)
     thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
     url = f"/api/chat/threads/{thread_id}/messages"
@@ -167,7 +168,7 @@ def test_follow_up_receives_the_earlier_turns(mock_answer_query, client):
 
 @patch("src.api.routes.chat.answer_query")
 def test_history_is_scoped_to_its_own_thread(mock_answer_query, client):
-    mock_answer_query.return_value = ("answer", _fake_chunks())
+    mock_answer_query.return_value = Answer("answer", _fake_chunks())
     headers = _auth_headers(client)
     first = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
     second = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
@@ -180,7 +181,7 @@ def test_history_is_scoped_to_its_own_thread(mock_answer_query, client):
 
 @patch("src.api.routes.chat.answer_query")
 def test_first_message_titles_the_thread(mock_answer_query, client):
-    mock_answer_query.return_value = ("answer", _fake_chunks())
+    mock_answer_query.return_value = Answer("answer", _fake_chunks())
     headers = _auth_headers(client)
     thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
 

@@ -323,3 +323,48 @@ CSR variants attach to Silver plans, and the 60 cheapest plans in this
 county are Bronze/Gold/Catastrophic. The key includes `csr` regardless,
 which costs nothing if the variants never appear and is required if they
 do.
+
+## Third pass: age-rated premiums for known plans (`POST /plans`)
+
+Verified 2026-09-18 for Phase 1 Step 4, with five paced calls against TX /
+Anderson County (`48001`, ZIP `75751`), plan year 2026. This is the call
+behind `search_plans`'s live premium.
+
+**`POST /plans` returns premiums for a list of plan IDs in one call.** Body:
+
+```json
+{"plan_ids": ["66252TX0380010", "..."],
+ "household": {"people": [{"age": 34}]},
+ "place": {"state": "TX", "countyfips": "48001", "zipcode": "75751"},
+ "market": "Individual", "year": 2026}
+```
+
+The response is `{"plans": [...]}`, with no `total`. The plans come back in
+the order requested, and each carries the full plan shape, including
+`premium`.
+
+| Check | Result |
+| --- | --- |
+| Age 27 | Reproduces the stored `premium_reference` exactly (535.35, 551.16) |
+| Age 34 | 620.15 and 638.46, both ×1.1584 of the age-27 figure |
+| 10 IDs, then 30 IDs | All returned, in the requested order |
+| An ID **not sold in that county** | Returned anyway, with **`premium: 0`**. No error, and it is not omitted |
+
+**A premium of 0 means "not priced here", never "free".** A reader that
+takes it at face value would show a plan the user cannot buy as costing
+nothing. Only positive premiums are used.
+
+**Premiums do not all scale by the same factor.** ×1.1584 is exactly the
+federal default age curve (1.214 at 34 ÷ 1.048 at 27), and most plans
+follow it. Plan `40220TX0080045` scaled by ×1.118 instead. So the age-27
+order is **not** guaranteed to hold at other ages. In the 30-plan batch,
+492.77 at age 34 came after 505.32, although it was cheaper at 27. The
+cause is not visible in the response (possibly premium components that
+are not age-rated), and the consequence is what matters:
+
+- Sort on the **live** premium, never on `premium_reference` scaled by age.
+- Pick the candidates by `premium_reference`, but take more than are shown:
+  30 fit in one call, and the 10 cheapest live premiums are shown. A plan
+  ranked beyond 30th at age 27 and cheapest at the user's age would still
+  be missed. In this sample the spread between issuers' age factors was
+  about 3.5%, well short of what that would take.

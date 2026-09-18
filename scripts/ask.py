@@ -15,14 +15,23 @@ def parse_args(args):
 
 def main(args=sys.argv[1:]):
     parsed = parse_args(args)
-    response, chunks = answer_query(parsed.query, top_k=parsed.top_k)
+    result = answer_query(parsed.query, top_k=parsed.top_k)
 
-    print(response)
+    print(result.text)
 
-    if chunks:
+    if result.chunks:
         print("\nSources:")
-        for chunk in chunks:
+        for chunk in result.chunks:
             print(f"  - {chunk.source} (chunk {chunk.chunk_id}, relevance {chunk.score:.2f})")
+
+    if result.plans:
+        print("\nPlans:")
+        for plan in result.plans:
+            premium = f"${plan.monthly_premium}/mo" if plan.premium_is_live else "no live premium"
+            print(f"  - {plan.hios_plan_id} {plan.name} ({plan.metal_level}, {premium})")
+
+    if result.needs_plan_inputs:
+        print(f"\nNeeds: {', '.join(result.needs_plan_inputs)}")
 
 
 if __name__ == "__main__":

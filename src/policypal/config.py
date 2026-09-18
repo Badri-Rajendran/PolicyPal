@@ -120,6 +120,12 @@ class Settings(BaseSettings):
     # fail every test over a secret no API request path touches. Ingestion
     # raises MarketplaceApiKeyMissingError at call time instead.
     cms_marketplace_api_key: SecretStr | None = None
+    # The chat path's live premium call. Short, because a user is waiting and
+    # the answer degrades to the stored age-27 premium rather than failing.
+    cms_live_timeout_seconds: float = 8.0
+    # Output cap for the answer that follows a plan search: a comparison of up
+    # to 10 plans, plus the reasoning ahead of it, does not fit max_output_tokens.
+    plan_answer_max_output_tokens: int = 2048
 
     # API / Auth
 

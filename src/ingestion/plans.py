@@ -26,10 +26,10 @@ from tqdm import tqdm
 from src.core.db import get_session
 from src.core.exceptions import MarketplaceApiKeyMissingError
 from src.core.logging import get_logger
-from src.models.plan import Issuer, Plan, PlanCostShare, PlanCounty
+from src.core.marketplace_api import MARKETPLACE_STATES
+from src.models.plan import Issuer, Plan, PlanCostShare, PlanCounty, ZipCounty
 
-from .constants import MARKETPLACE_STATES
-from .marketplace_api import counties_by_state, county_plans
+from .marketplace_api import County, counties_by_state, county_plans, county_zips
 
 logger = get_logger(__name__)
 
@@ -195,6 +195,30 @@ def _write_county(session, plans: list[dict], countyfips: str, year: int) -> tup
     return len(plan_rows), len(cost_rows)
 
 
+def _write_zip_counties(session, counties: list[County], year: int) -> int:
+    """Replace the year's ZIP-to-county crosswalk; returns the pairs written.
+
+    Every state at once, whatever `--states` says: it is one bulk payload
+    already in hand, and the chat path needs it to reject a ZIP outside the
+    marketplace states as such, not as unknown.
+    """
+    rows = {
+        (zipcode, county.fips): {
+            "zipcode": zipcode,
+            "plan_year": year,
+            "countyfips": county.fips,
+            "county_name": county.name,
+            "state": county.state,
+        }
+        for county in counties
+        for zipcode in county.zips
+    }
+    session.execute(delete(ZipCounty).where(ZipCounty.plan_year == year))
+    if rows:
+        session.execute(insert(ZipCounty), list(rows.values()))
+    return len(rows)
+
+
 def _describe(exc: Exception) -> str:
     # SQLAlchemy errors carry the statement and every bound parameter — one
     # county's worth of rows. The first line says what went wrong.
@@ -202,7 +226,12 @@ def _describe(exc: Exception) -> str:
 
 
 def execute(states: list[str], year: int, max_counties: int | None = None) -> None:
-    counties = counties_by_state(year)
+    crosswalk = county_zips(year)
+    with get_session() as session:
+        pairs = _write_zip_counties(session, crosswalk, year)
+    print(f"{pairs} ZIP-to-county pairs recorded for {year}")
+
+    counties = counties_by_state(crosswalk)
     totals = Counter()
 
     for state in states:

@@ -17,6 +17,7 @@ Because HealthCare.gov is the authoritative consumer source, answers about healt
 - **Conversational Q&A**, organized into threads, over a curated insurance knowledge base
 - **Hybrid RAG pipeline** — BM25 + pgvector semantic search, cross-encoder reranked and relevance-filtered before reaching the LLM, so weakly-relevant matches never become context
 - **Cited answers** — every reply lists the source passages and their relevance score
+- **Real plan comparison** — ask about ACA Marketplace plans by ZIP code and age; the model searches the ingested catalog and prices plans live for that age (ADR 0010). It compares plans and never recommends one
 - **JWT-authenticated API** — only a signed-in user can query, and only ever sees their own threads
 - **Reproducible ingestion** — a single command runs fetch → normalize → chunk → embed → store, across every registered source
 
@@ -39,12 +40,15 @@ Wikipedia ─────┐
 HealthCare.gov ┘                              │
                                               │
 User ──► React UI ──► Flask API ──► Retrieval ──► LLM ──► Cited answer
-                         ▲                                    │
+                         ▲                         │   ▲       │
+                         │            search_plans ▼   │       │
+                         │      plan tables + CMS live premium │
                          └──────────── persisted reply ───────┘
 ```
 
 - **Offline ingestion** (`make ingest`) populates the vector store and BM25 index. Run it once, or again whenever the source corpus changes.
 - **Online serving** (`make api`) retrieves relevant chunks per query, reranks and filters them, and generates a grounded answer, persisting the conversation.
+- **Plan questions** reach the `search_plans` tool, offered whenever the plan catalog is loaded. It resolves the ZIP to its county, filters the catalog, and fetches premiums for the user's age from CMS. A reply that drew on no chunk and no search is refused, not sent (ADR 0010).
 
 Both halves share the same embedding model (`src/core/embedding.py`) so ingestion-time and query-time vectors stay comparable.
 
@@ -131,7 +135,9 @@ Copy the required variables below into a `.env` file at the repo root before run
 | `JWT_SECRET_KEY`                   | Signing key for access tokens                              |
 | `OPENAI_API_KEY`                   | **Required.** Answer generation runs on a hosted model (ADR 0008) |
 | `HF_API_KEY`                       | Optional Hugging Face token (for gated models)              |
-| `CMS_MARKETPLACE_API_KEY`          | Optional. Needed only for `make ingest-plans` ([request one](https://developer.cms.gov/marketplace-api)) |
+| `CMS_MARKETPLACE_API_KEY`          | Optional. Needed for `make ingest-plans`, and for live age-rated premiums in chat ([request one](https://developer.cms.gov/marketplace-api)); without it, chat shows the stored age-27 premium |
+| `CMS_LIVE_TIMEOUT_SECONDS`         | Timeout for the live premium call in chat (default 8); on failure the answer falls back to the age-27 premium |
+| `PLAN_ANSWER_MAX_OUTPUT_TOKENS`    | Output cap for the reply after a plan search (default 2048); a ten-plan comparison does not fit `max_output_tokens` |
 | `DEVICE`                           | `auto` \| `cpu` \| `mps` \| `cuda` — device for the *local* embedding and reranker models |
 | `ENVIRONMENT`                      | `development` \| `production`                               |
 | `LOG_LEVEL`                        | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` \| `CRITICAL`     |
@@ -183,7 +189,10 @@ make ingest-plans STATES=TX,FL      # or STATES=ALL for all 30 HealthCare.gov st
 Loads real purchasable plans from the CMS Marketplace API into relational tables —
 `issuers`, `plans`, `plan_counties`, `plan_cost_shares` — kept apart from the RAG
 corpus because a deductible is a `WHERE` clause, not a similarity search (ADR 0009).
-Needs `CMS_MARKETPLACE_API_KEY`; `make ingest` does not.
+Each run also rewrites `zip_counties`, the ZIP-to-county crosswalk for the plan year
+across every state, which chat uses to resolve a user's ZIP (ADR 0010). On a database
+ingested before that table existed, re-run once. Needs `CMS_MARKETPLACE_API_KEY`;
+`make ingest` does not.
 
 - **Scope is chosen per run.** `STATES` is required, with no default, so a bare
   `make ingest-plans` cannot start a multi-hour run.
@@ -266,6 +275,10 @@ the hallucination guard.
 ```bash
 uv run python -m scripts.eval_generation
 ```
+
+A fourth set checks that plan questions reach `search_plans`. Its ZIP, 75801, lies
+only in Anderson County, TX, so load that county first:
+`uv run python -m src.ingestion.plans --states TX --max-counties 1`.
 
 Slower still than the retrieval eval — it generates once per question — and
 likewise a manual tool rather than a CI gate. Unlike the retrieval eval it

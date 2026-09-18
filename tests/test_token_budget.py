@@ -10,7 +10,7 @@ import openai
 
 from src.models.usage import LlmUsage
 from src.policypal.config import settings
-from src.services.generation import _tokens_used
+from src.services.generation import Answer, _tokens_used
 from src.services.usage import record_tokens, tokens_used_today
 
 
@@ -32,7 +32,7 @@ def _send(client, headers, thread_id, content="What is a deductible?"):
 
 
 @patch("src.api.routes.chat.token_usage", return_value=1_500)
-@patch("src.api.routes.chat.answer_query", return_value=("an answer", []))
+@patch("src.api.routes.chat.answer_query", return_value=Answer("an answer", []))
 def test_a_message_under_budget_is_answered(_query, _usage, client):
     headers = _auth_headers(client, "budget-ok@example.com")
 
@@ -40,7 +40,7 @@ def test_a_message_under_budget_is_answered(_query, _usage, client):
 
 
 @patch("src.api.routes.chat.token_usage", return_value=1_500)
-@patch("src.api.routes.chat.answer_query", return_value=("an answer", []))
+@patch("src.api.routes.chat.answer_query", return_value=Answer("an answer", []))
 def test_spending_the_budget_blocks_the_next_message(_query, _usage, client):
     headers = _auth_headers(client, "budget-out@example.com")
     thread_id = _thread(client, headers)
@@ -59,7 +59,7 @@ def test_spending_the_budget_blocks_the_next_message(_query, _usage, client):
 
 
 @patch("src.api.routes.chat.token_usage", return_value=1_500)
-@patch("src.api.routes.chat.answer_query", return_value=("an answer", []))
+@patch("src.api.routes.chat.answer_query", return_value=Answer("an answer", []))
 def test_exhaustion_is_distinguishable_from_a_rate_limit(_query, _usage, client):
     """The UI has to tell "slow down" apart from "you're done until tomorrow"."""
     headers = _auth_headers(client, "budget-msg@example.com")
@@ -73,7 +73,7 @@ def test_exhaustion_is_distinguishable_from_a_rate_limit(_query, _usage, client)
 
 
 @patch("src.api.routes.chat.token_usage", return_value=1_000)
-@patch("src.api.routes.chat.answer_query", return_value=("an answer", []))
+@patch("src.api.routes.chat.answer_query", return_value=Answer("an answer", []))
 def test_usage_accumulates_across_messages(_query, _usage, client):
     """Each message spends 1000 against a 2500 budget, so the fourth is refused.
     If usage did not accumulate, no message would ever be."""
@@ -87,7 +87,7 @@ def test_usage_accumulates_across_messages(_query, _usage, client):
 
 
 @patch("src.api.routes.chat.token_usage", return_value=1_500)
-@patch("src.api.routes.chat.answer_query", return_value=("an answer", []))
+@patch("src.api.routes.chat.answer_query", return_value=Answer("an answer", []))
 def test_one_users_spend_does_not_block_another(_query, _usage, client):
     spender = _auth_headers(client, "budget-spender@example.com")
     other = _auth_headers(client, "budget-other@example.com")

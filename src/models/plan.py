@@ -158,3 +158,26 @@ class PlanCostShare(Base):
     network_tier: Mapped[str] = mapped_column(String(64), nullable=False)
     family_cost: Mapped[str] = mapped_column(String(32), nullable=False)
     amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+
+
+class ZipCounty(Base):
+    """A county a ZIP code lies in, for one plan year.
+
+    Plans are sold per county, but people know their ZIP, and 28% of ZIPs span
+    more than one county (74103 is in Tulsa and Osage). Holds every
+    jurisdiction CMS lists, not only the ingested states, so a ZIP in a state
+    that runs its own exchange can be told apart from a mistyped one.
+    """
+
+    __tablename__ = "zip_counties"
+    __table_args__ = (
+        # ZIP first, so the constraint's index also serves the lookup.
+        UniqueConstraint("zipcode", "plan_year", "countyfips", name="uq_zip_counties_zipcode_plan_year_countyfips"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    zipcode: Mapped[str] = mapped_column(String(5), nullable=False)
+    plan_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    countyfips: Mapped[str] = mapped_column(String(5), nullable=False)
+    county_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    state: Mapped[str] = mapped_column(String(2), nullable=False)

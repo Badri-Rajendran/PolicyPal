@@ -7,4 +7,4 @@ class InvalidCredentialsError(Exception):
 
 
 class MarketplaceApiKeyMissingError(Exception):
-    """Raised when plan ingestion runs without CMS_MARKETPLACE_API_KEY set."""
+    """Raised when a Marketplace API call is made without CMS_MARKETPLACE_API_KEY set."""

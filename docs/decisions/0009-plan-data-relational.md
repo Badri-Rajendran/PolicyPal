@@ -7,7 +7,7 @@ Accepted
 ## Context
 
 Phase 1 lets a user compare real purchasable health plans — "silver plans in
-60601", "which has the lower deductible". The data comes from the CMS
+75801", "which has the lower deductible". The data comes from the CMS
 Marketplace API, whose verified behaviour is recorded in
 [`docs/findings/cms-marketplace-api.md`](../findings/cms-marketplace-api.md).
 
