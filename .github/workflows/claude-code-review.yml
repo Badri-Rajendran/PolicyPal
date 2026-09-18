@@ -19,6 +19,16 @@ jobs:
     #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
 
     runs-on: ubuntu-latest
+
+    # Advisory, never a merge gate. This job depends on an external identity
+    # (the app-token exchange behind CLAUDE_CODE_OAUTH_TOKEN), so it can fail
+    # for reasons that have nothing to do with the code under review — an
+    # expired token or a changed app installation reads as a red X on a PR
+    # whose lint, tests, migrations and secret scan are all green. Correctness
+    # is gated by the `backend`, `frontend` and `secret-scan` jobs in ci.yml;
+    # this one only ever adds a review comment.
+    continue-on-error: true
+
     permissions:
       contents: read
       pull-requests: read

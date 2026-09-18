@@ -20,6 +20,13 @@ than discovered late.
 | [3](phase-3-sbc-top-issuers.md) | SBC for the largest issuers nationally | Documented only |
 | [4](phase-4-sbc-full-coverage.md) | SBC across all 30 HealthCare.gov states | Documented only |
 
+Verified, dated facts about external systems (API behavior confirmed against
+a real key, not just documentation) live in
+[`docs/findings/`](../findings/) — e.g.
+[`cms-marketplace-api.md`](../findings/cms-marketplace-api.md) — separately
+from these phase documents, so they stay findable after a phase's status
+moves on.
+
 Phase 0 ships green on its own before Phase 1 starts. If retrieval or
 abstention quality regresses afterwards, that ordering makes it unambiguous
 which change caused it.
@@ -48,7 +55,7 @@ insurance data from all providers." It does not.
 
 | Dimension | Covered | Missing |
 | --- | --- | --- |
-| Geography | 28 FFM + 2 SBM-FP = **30 states** | 21 states + DC (CA, NY, WA, CO, MA…) |
+| Geography | 27 FFM + 3 SBM-FP (AR, OK, OR) = **30 states** | 21 states + DC (CA, NY, WA, CO, MA…) |
 | Segment | ACA individual/family, **24.2M** people | Employer **164M (53.8%)**, Medicare 19.1%, Medicaid 17.6% |
 | Content | Premiums, deductibles, OOP max, copays, EHB categories, formulary | No contract language, no exclusions, no prior-auth rules |
 

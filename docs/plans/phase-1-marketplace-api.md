@@ -1,8 +1,10 @@
 # Phase 1 — Marketplace API catalog and plan comparison
 
-**Status:** not started
+**Status:** Step 1 (verification spike) complete; Step 2 not started
 **Depends on:** [Phase 0](phase-0-hosted-llm.md) shipped green
-**Blocks:** Phases 2–4 (SBC collection needs plan IDs and document URLs)
+**Blocks:** Phases 2–4 (SBC collection needs plan IDs and document URLs) — and
+Step 1 found the API hands us candidate SBC URLs directly, see
+[`docs/findings/cms-marketplace-api.md`](../findings/cms-marketplace-api.md)
 
 ## Goal
 
@@ -21,44 +23,101 @@ copays and coinsurance, essential health benefit detail, drug formulary
 coverage, provider network inclusion, issuer details, quality star ratings,
 and standard vs. non-standard plan design.
 
-**Does not return:** plan documents, SBCs, or any contract language.
+**Correction from the spike:** this line originally said the API "does not
+return plan documents, SBCs, or any contract language." That's wrong for one
+field — `benefits_url` is a direct link to the plan's real SBC PDF. Full
+detail, including why this doesn't pull SBC parsing into this phase, is in
+[`docs/findings/cms-marketplace-api.md`](../findings/cms-marketplace-api.md).
 
-**Covers:** 28 FFM states + 2 SBM-FP (AR, OR) = 30. ACA individual/family
-only — 24.2M people. Not Medicare, Medicaid, or employer coverage.
+**Covers:** 27 FFM states + 3 SBM-FP (AR, OK, OR) = 30. ACA individual/family
+only — 24.2M people. Not Medicare, Medicaid, or employer coverage. Verified
+directly against the live API, not just documentation — see the findings
+doc for the confirmed `IL`-rejected / `TX`-accepted example.
 
 Scale for context: 183 QHP issuers on HealthCare.gov for plan year 2026.
 
-## Step 1 — verification spike, before any schema work
+## Step 1 — verification spike (complete)
 
-**The live request/response shape has not been verified against a real key.**
-Everything below is designed from documented capabilities, which is not the
-same thing. Do this first and let the findings correct the schema:
+Run via a throwaway script against a real key, state `TX`, ZIP `75001`
+(Dallas County). Full findings, evidence, and exact field names are in
+[`docs/findings/cms-marketplace-api.md`](../findings/cms-marketplace-api.md)
+— this section is the summary that matters for what to build next.
 
-1. Request a key at [developer.cms.gov/marketplace-api/key-request.html](https://developer.cms.gov/marketplace-api/key-request.html)
-2. Call the plan-search and issuer endpoints; record actual field names,
-   types, nullability, and pagination behaviour
-3. **Answer the open question:** can plan catalog data (benefits, deductibles,
-   plan metadata) be fetched per state independently of rate quoting, or does
-   every response require a household context? This decides whether ingestion
-   is a nightly batch or a live per-request call with aggressive caching —
-   a fork that changes the whole pipeline design
-4. Record rate limits and whether they permit bulk ingestion at all
+**The open question (item 3) is answered: catalog data does NOT require a
+household.** Only `premium`/`premium_w_credit` vary with household; every
+other field — benefits, deductibles, moops, issuer, quality rating, document
+URLs — is identical with or without one. **Nightly batch ingestion is fully
+viable**: enumerate county → call the search endpoint with no household (or
+one fixed reference household) → store everything except premium as the
+catalog, treating premium as an indicative reference figure. That's
+consistent with, not in tension with, the existing "Out of scope: subsidized
+premiums, income, tobacco, household size" line below.
 
-Write the findings into this document before continuing. The spike is throwaway
-code; nothing from it is kept.
+**`place.countyfips` is required and not derivable from state alone** —
+needs a ZIP→county resolution step before the catalog can be queried at all.
+A bulk county/ZIP crosswalk endpoint is documented but not yet verified;
+check it before building Step 2's real pipeline.
+
+**Pagination is a fixed page of 10; `limit` is ignored, `offset` works.**
+One county alone had 138 plans (14 requests to enumerate). Full ingestion
+across 30 states is many thousands of requests — comfortably inside the
+verified rate limit (200/sec, 1000/min from real response headers), but call
+politely (a small delay between calls), not at the ceiling.
+
+**The two fields Step 2's original sketch got wrong, materially** (full
+detail and exact response shapes in the findings doc):
+
+- `deductibles` and `moops` are **arrays**, one row per CSR variant ×
+  network tier × individual/family — not the four flat columns originally
+  sketched. A silver plan alone has four CSR variants.
+- `issuer` and `quality_rating` are **nested objects**, not plan-row
+  scalars.
+
+Step 2's schema below is corrected for both. Whether to also add
+`benefits_url` as a stored column (cheap, and sets up Phase 2) is flagged
+there rather than decided silently.
 
 ## Step 2 — plan data is relational, not vector
 
-New tables, entirely separate from `chunks`, carrying no embeddings:
+New tables, entirely separate from `chunks`, carrying no embeddings.
+Corrected against the verified shape in
+[`docs/findings/cms-marketplace-api.md`](../findings/cms-marketplace-api.md)
+— `deductibles`/`moops` are multi-row (per CSR variant, network tier,
+individual/family), not scalar columns, and `issuer`/`quality_rating` are
+nested objects:
 
 ```
-plans          plan_id (HIOS), plan_year, issuer_name, marketing_name,
-               metal_level, plan_type, state, premium_base,
-               deductible_individual, deductible_family,
-               oop_max_individual, oop_max_family, quality_rating
+issuers        issuer_id (HIOS), name, address, individual_url, shop_url,
+               toll_free, tty
+
+plans          plan_id (HIOS), plan_year, issuer_fk, marketing_name,
+               metal_level, plan_type, state, premium_reference
+               (the catalog premium from Step 1's no-household call —
+               indicative, never a personalized quote; see Security below),
+               hsa_eligible, has_national_network,
+               quality_rating_global, quality_rating_clinical,
+               quality_rating_enrollee, quality_rating_efficiency
+               (nullable — most 2026 plans are simply unrated),
+               benefits_url (flagged below, not yet decided)
 
 plan_benefits  plan_fk, benefit_name, covered, copay, coinsurance, limits
+
+plan_cost_shares  plan_fk, kind ("deductible" | "moop"), csr_variant,
+                  network_tier, family_cost, individual, family, amount
 ```
+
+`plan_cost_shares` is the schema correction: one row per
+`(plan, kind, csr_variant, network_tier, family_cost)`, matching the array
+the API actually returns instead of assuming one deductible per plan.
+
+**Flagged, not decided here:** whether `plans.benefits_url` (the real SBC
+PDF link Step 1 found) belongs in this phase's schema. Capturing it costs
+one column and no extra ingestion complexity — it's already in every plan
+response. Storing it does not pull SBC *download or parsing* into this
+phase; that stays Phase 2's job per "Out of scope" below. Recommend
+capturing it now since it's free and de-risks Phase 2, but flagging rather
+than deciding unilaterally, since it does touch the Phase 1/2 boundary the
+roadmap deliberately drew.
 
 Unique on `(plan_id, plan_year)`. Idempotent upsert, so a re-run changes no
 row count.
@@ -78,6 +137,13 @@ New pipeline `src/ingestion/plans.py` plus a `make ingest-plans` target. It is
 deliberately **not** a `Source` subclass: that ABC in
 `src/ingestion/sources/base.py` produces chunks, and this produces rows. Do not
 force it into an interface that does not fit.
+
+Shaped by the verified findings (see the findings doc linked above): per
+state, resolve counties (`/data/county-zips` or per-ZIP
+`/counties/by/zip`), call `/plans/search` with no household per county, and
+page on `offset` in steps of 10 until `offset >= total` — `limit` does not
+change the page size. A small delay between calls, not a tight loop, even
+though the 200/sec-1000/min limit would technically allow one.
 
 ## Step 3 — fix the `answer()` short-circuit first
 

@@ -131,6 +131,7 @@ Copy the required variables below into a `.env` file at the repo root before run
 | `JWT_SECRET_KEY`                   | Signing key for access tokens                              |
 | `OPENAI_API_KEY`                   | **Required.** Answer generation runs on a hosted model (ADR 0008) |
 | `HF_API_KEY`                       | Optional Hugging Face token (for gated models)              |
+| `CMS_MARKETPLACE_API_KEY`          | Optional. Only used by `scripts/verify_marketplace_api.py` (Phase 1 spike) for now |
 | `DEVICE`                           | `auto` \| `cpu` \| `mps` \| `cuda` — device for the *local* embedding and reranker models |
 | `ENVIRONMENT`                      | `development` \| `production`                               |
 | `LOG_LEVEL`                        | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` \| `CRITICAL`     |

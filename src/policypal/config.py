@@ -113,6 +113,13 @@ class Settings(BaseSettings):
     # and _MAX_REWRITE_CHARS is what actually bounds the question's length.
     rewrite_max_output_tokens: int = 192
 
+    # CMS Marketplace API (Phase 1, docs/plans/phase-1-marketplace-api.md)
+
+    # Optional rather than Field(...): only scripts/verify_marketplace_api.py
+    # reads this so far, and requiring it would break Settings() — and every
+    # test — for anyone without a key. Promote once real ingestion needs it.
+    cms_marketplace_api_key: SecretStr | None = None
+
     # API / Auth
 
     jwt_secret_key: SecretStr = Field(..., description="Signing key for access tokens.")
