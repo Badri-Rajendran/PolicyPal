@@ -1,23 +1,18 @@
 """CMS Marketplace API client — the plan catalog, fetched politely.
 
 Not a `Source`: those produce corpus chunks, and this feeds
-`src/ingestion/plans.py`, which produces rows. What each endpoint verifiably
-returns is recorded in docs/findings/cms-marketplace-api.md.
+`src/ingestion/plans.py`, which produces rows. Transport, pacing and key
+redaction live in `src/core/marketplace_api.py`, shared with the chat path.
 """
 import json
-import time
+from dataclasses import dataclass
 
-import requests
-
-from src.core.exceptions import MarketplaceApiKeyMissingError
 from src.core.logging import get_logger
-from src.policypal.config import settings
+from src.core.marketplace_api import REFERENCE_AGE, request
 
-from .constants import MARKETPLACE_API_BASE_URL, PLANS_RAW
+from .constants import PLANS_RAW
 
 logger = get_logger(__name__)
-
-_REQUEST_TIMEOUT_SECONDS = 60
 
 # /data/county-zips is ~1.4 MB and has taken 86s to answer where it
 # earlier took about one.
@@ -26,77 +21,25 @@ _BULK_REQUEST_TIMEOUT_SECONDS = 180
 # Verified fixed: `limit` is ignored and every page holds 10 plans.
 _PAGE_SIZE = 10
 
-# A free public API. With request latency this lands near a quarter of the
-# verified 1000/min limit — polite, and robust if CMS tightens it.
-_REQUEST_DELAY_SECONDS = 0.2
-
 # 138 plans (14 pages) was the largest county seen. This only stops a server
 # that reports a total it never reaches from paging forever.
 _MAX_PAGES_PER_COUNTY = 100
 
-# CMS's own convention for comparing premiums. Age is the only household
-# input that moves `premium`; income and tobacco move only `premium_w_credit`,
-# which is not stored. Omitting the household does not mean age 27 — CMS
-# applies its own undocumented default — so this is sent on every call, and
-# is a constant rather than a setting because it defines what the stored
-# premium means.
-REFERENCE_AGE = 27
+# Age is the only household input that moves `premium`; income and tobacco
+# move only `premium_w_credit`, which is not stored.
 _REFERENCE_HOUSEHOLD = {"people": [{"age": REFERENCE_AGE}]}
 
 
-def _api_key() -> str:
-    # A blank `CMS_MARKETPLACE_API_KEY=` line yields an empty SecretStr, not
-    # None — it is just as missing.
-    key = settings.cms_marketplace_api_key
-    if key is None or not key.get_secret_value():
-        raise MarketplaceApiKeyMissingError(
-            "CMS_MARKETPLACE_API_KEY is not set. Request a key at "
-            "https://developer.cms.gov/marketplace-api and add it to .env."
-        )
-    return key.get_secret_value()
+@dataclass(frozen=True)
+class County:
+    state: str
+    fips: str
+    name: str
+    zips: tuple[str, ...]
 
 
-def _request(
-    method: str,
-    path: str,
-    *,
-    params: dict | None = None,
-    body: dict | None = None,
-    timeout: int = _REQUEST_TIMEOUT_SECONDS,
-):
-    """One paced call. The key is a query parameter, so no error may carry the URL.
-
-    `requests` embeds the full URL — query string and key — both in
-    `raise_for_status()` errors and in connection and timeout errors, and the
-    caller logs error text. Every failure is re-raised with method and path only.
-    """
-    time.sleep(_REQUEST_DELAY_SECONDS)
-    try:
-        response = requests.request(
-            method,
-            f"{MARKETPLACE_API_BASE_URL}{path}",
-            params={**(params or {}), "apikey": _api_key()},
-            json=body,
-            timeout=timeout,
-        )
-    except requests.RequestException as exc:
-        raise requests.RequestException(f"{method} {path} failed: {type(exc).__name__}") from None
-
-    if not response.ok:
-        raise requests.HTTPError(f"{method} {path} returned {response.status_code}")
-    return response.json()
-
-
-def counties_by_state(year: int) -> dict[str, list[tuple[str, str]]]:
-    """Each state's counties as `(fips, zipcode)`, from one ~1.4 MB call.
-
-    `/plans/search` wants a ZIP alongside the county. A ZIP can span counties
-    (74103 is in both Tulsa and Osage), so each county carries one of its own
-    ZIPs rather than resolving ZIPs to counties.
-
-    Known limit: an issuer may serve only part of a county. Searching with one
-    representative ZIP can miss such a plan; it never returns a plan that is
-    not sold in the county.
+def county_zips(year: int) -> list[County]:
+    """Every county in every state with its ZIPs, from one ~1.4 MB call.
 
     Cached per plan year under `data/plans/raw/`: the crosswalk is fixed for a
     year, and runs go one state at a time. Delete the file to refresh it.
@@ -110,7 +53,7 @@ def counties_by_state(year: int) -> dict[str, list[tuple[str, str]]]:
             # until someone finds and deletes the file.
             logger.warning("county-zips cache %s is unreadable; refetching", cache)
 
-    payload = _request(
+    payload = request(
         "GET", "/data/county-zips", params={"year": year}, timeout=_BULK_REQUEST_TIMEOUT_SECONDS
     )
     # Parsed before writing, so a malformed response never becomes the cache.
@@ -124,16 +67,33 @@ def counties_by_state(year: int) -> dict[str, list[tuple[str, str]]]:
     return counties
 
 
-def _parse_county_zips(payload) -> dict[str, list[tuple[str, str]]]:
+def _parse_county_zips(payload) -> list[County]:
     try:
-        return {
-            entry["state"]: [
-                (county["fips"], county["zips"][0]) for county in entry["counties"] if county.get("zips")
-            ]
+        return [
+            County(entry["state"], county["fips"], county["name"], tuple(county["zips"]))
             for entry in payload
-        }
-    except (KeyError, TypeError, IndexError) as exc:
+            for county in entry["counties"]
+        ]
+    except (KeyError, TypeError) as exc:
         raise ValueError(f"unexpected /data/county-zips shape: {exc!r}") from None
+
+
+def counties_by_state(counties: list[County]) -> dict[str, list[tuple[str, str]]]:
+    """Each state's counties as `(fips, zipcode)` for `/plans/search`.
+
+    The search wants a ZIP alongside the county. A ZIP can span counties
+    (74103 is in both Tulsa and Osage), so each county carries one of its own
+    ZIPs rather than resolving ZIPs to counties.
+
+    Known limit: an issuer may serve only part of a county. Searching with one
+    representative ZIP can miss such a plan; it never returns a plan that is
+    not sold in the county.
+    """
+    by_state: dict[str, list[tuple[str, str]]] = {}
+    for county in counties:
+        if county.zips:
+            by_state.setdefault(county.state, []).append((county.fips, county.zips[0]))
+    return by_state
 
 
 def county_plans(state: str, countyfips: str, zipcode: str, year: int) -> list[dict]:
@@ -146,7 +106,7 @@ def county_plans(state: str, countyfips: str, zipcode: str, year: int) -> list[d
     plans: list[dict] = []
     offset = 0
     for _ in range(_MAX_PAGES_PER_COUNTY):
-        payload = _request(
+        payload = request(
             "POST",
             "/plans/search",
             body={

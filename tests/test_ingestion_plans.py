@@ -10,8 +10,14 @@ import pytest
 import requests
 from sqlalchemy import func, select
 
-from src.ingestion.plans import _write_county, execute, resolve_states
-from src.models.plan import Issuer, Plan, PlanCostShare, PlanCounty
+from src.ingestion.marketplace_api import County
+from src.ingestion.plans import (
+    _write_county,
+    _write_zip_counties,
+    execute,
+    resolve_states,
+)
+from src.models.plan import Issuer, Plan, PlanCostShare, PlanCounty, ZipCounty
 
 YEAR = 1999
 
@@ -153,8 +159,10 @@ def test_one_failing_county_does_not_stop_the_run(session, monkeypatch, capsys):
     def same_session():
         yield session
 
-    monkeypatch.setattr("src.ingestion.plans.counties_by_state",
-                        lambda year: {"TX": [("48113", "75001"), ("48439", "76101")]})
+    monkeypatch.setattr("src.ingestion.plans.county_zips", lambda year: [
+        County("TX", "48113", "Dallas", ("75001",)),
+        County("TX", "48439", "Tarrant", ("76101",)),
+    ])
     monkeypatch.setattr("src.ingestion.plans.county_plans", county_plans)
     monkeypatch.setattr("src.ingestion.plans.get_session", same_session)
 
@@ -162,6 +170,24 @@ def test_one_failing_county_does_not_stop_the_run(session, monkeypatch, capsys):
 
     assert session.scalars(select(Plan.hios_plan_id).where(Plan.plan_year == YEAR)).all() == ["11111TX0010005"]
     assert "1 counties ingested, 1 failed" in capsys.readouterr().out
+
+
+def test_the_zip_crosswalk_is_replaced_not_appended(session):
+    """A ZIP in two counties is two rows — the chat path must ask which one —
+    and a re-run for the year leaves the same rows, not twice as many."""
+    counties = [
+        County("OK", "40113", "Osage", ("74103", "74001")),
+        County("OK", "40143", "Tulsa", ("74103",)),
+    ]
+    _write_zip_counties(session, counties, YEAR)
+    _write_zip_counties(session, counties, YEAR)
+
+    rows = session.execute(
+        select(ZipCounty.zipcode, ZipCounty.countyfips)
+        .where(ZipCounty.plan_year == YEAR)
+        .order_by(ZipCounty.zipcode, ZipCounty.countyfips)
+    ).all()
+    assert rows == [("74001", "40113"), ("74103", "40113"), ("74103", "40143")]
 
 
 def test_resolve_states_normalizes_and_expands_all():

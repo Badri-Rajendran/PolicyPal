@@ -18,6 +18,12 @@ This runs the full `answer_query()` path and checks two things:
              the fallback rather than inventing something? This is the
              hallucination guard, and it is the half that protects users.
 
+  PLAN SEARCH — does a question about specific plans reach search_plans
+             (ADR 0010)? The reverse is checked in ANSWERS: a definitional
+             question that searches plans does not count as answered.
+             Needs Anderson County, TX in the catalog:
+             `uv run python -m src.ingestion.plans --states TX --max-counties 1`.
+
 Slow by nature — it loads the LLM and generates once per question — so like
 the retrieval eval this is a manual tool, not a CI gate. Run it after any
 change to the corpus, retrieval, the prompt, or the model:
@@ -43,6 +49,7 @@ from src.services.generation import NO_ANSWER_RESPONSE, answer_query
 MIN_CORRECT = 8
 MIN_REFUSED = 4
 MIN_FOLLOW_UPS = 3
+MIN_PLAN_SEARCHES = 3
 
 
 @dataclass
@@ -72,7 +79,10 @@ ANSWER_SET = [
 # answer to any of them is the failure this set exists to catch.
 REFUSAL_SET = [
     "Is State Farm better than Geico?",
-    "How much will my policy cost me?",
+    # Was "How much will my policy cost me?" — with the plan tool that is
+    # rightly answered by asking for a ZIP code and age (ADR 0010). Car
+    # insurance has no such source.
+    "How much will my car insurance cost me?",
     "Will my car insurance premium go up next year?",
     "What is the capital of France?",
 ]
@@ -87,6 +97,15 @@ FOLLOW_UP_SET = [
 ]
 
 
+# 75801 is in Anderson County, TX (48001), and in no other county. The last
+# case gives no ZIP or age, so reaching the tool means asking for them.
+PLAN_SEARCH_SET = [
+    "What silver plans can I buy in 75801? I'm 34.",
+    "Compare the bronze plans with the lowest deductibles in ZIP 75801 for a 45-year-old.",
+    "Show me some health plans I could buy.",
+]
+
+
 def run_answers() -> int:
     print("=" * 78)
     print("ANSWERS — does the generated text state what a correct answer must?")
@@ -95,10 +114,15 @@ def run_answers() -> int:
     correct = 0
 
     for case in ANSWER_SET:
-        text, _ = answer_query(case.query)
+        result = answer_query(case.query)
+        text = result.text
 
         if text == NO_ANSWER_RESPONSE:
             print(f"  [NO ANSWER]  {case.query}")
+            continue
+        if result.plans or result.needs_plan_inputs:
+            print(f"  [SEARCHED]   {case.query}")
+            print("               searched plans for a definitional question")
             continue
 
         missing = [term for term in case.must_state if term.lower() not in text.lower()]
@@ -124,7 +148,8 @@ def run_refusals() -> int:
     refused = 0
 
     for query in REFUSAL_SET:
-        text, chunks = answer_query(query)
+        result = answer_query(query)
+        text, chunks = result.text, result.chunks
 
         if text == NO_ANSWER_RESPONSE:
             refused += 1
@@ -146,12 +171,12 @@ def run_follow_ups() -> int:
     answered = 0
 
     for opener, case in FOLLOW_UP_SET:
-        first, _ = answer_query(opener)
+        first = answer_query(opener).text
         history = [
             {"role": "user", "content": opener},
             {"role": "assistant", "content": first},
         ]
-        text, _ = answer_query(case.query, history)
+        text = answer_query(case.query, history).text
 
         if text == NO_ANSWER_RESPONSE:
             print(f"  [NO ANSWER]  {opener} -> {case.query}")
@@ -172,10 +197,33 @@ def run_follow_ups() -> int:
     return answered
 
 
+def run_plan_searches() -> int:
+    print("\n" + "=" * 78)
+    print("PLAN SEARCH — does a question about specific plans reach the tool?")
+    print("=" * 78)
+
+    reached = 0
+
+    for query in PLAN_SEARCH_SET:
+        result = answer_query(query)
+
+        if result.plans or result.needs_plan_inputs:
+            reached += 1
+            print(f"  [ok]         {query}")
+            print(f"               {len(result.plans)} plans, needs {list(result.needs_plan_inputs)}")
+        else:
+            print(f"  [NO SEARCH]  {query}")
+        print(f"               -> {result.text.strip()[:220]}")
+
+    print(f"\n  {reached}/{len(PLAN_SEARCH_SET)} plan questions reached search_plans")
+    return reached
+
+
 def main() -> int:
     correct = run_answers()
     refused = run_refusals()
     followed = run_follow_ups()
+    searched = run_plan_searches()
 
     print("\n" + "=" * 78)
     failures = []
@@ -191,6 +239,12 @@ def main() -> int:
         failures.append(
             f"follow-ups {followed} < floor {MIN_FOLLOW_UPS} — the rewrite stopped "
             "resolving questions against their conversation"
+        )
+
+    if searched < MIN_PLAN_SEARCHES:
+        failures.append(
+            f"plan searches {searched} < floor {MIN_PLAN_SEARCHES} — a plan question "
+            "stopped reaching search_plans"
         )
 
     if failures:

@@ -4,6 +4,13 @@
 
 ### Added
 
+- `search_plans`: chat compares real Marketplace plans by ZIP code and age. The
+  catalog filters by county, CMS prices the plans live for that age, and the
+  model compares but never recommends (ADR 0010).
+- `zip_counties` crosswalk, written by `make ingest-plans` for every state; a
+  ZIP in several counties is asked about, never merged.
+- Plan-search set in `scripts/eval_generation.py`, with a floor of 3/3.
+
 - Plan catalog: `issuers`, `plans`, `plan_counties` and `plan_cost_shares`,
   loaded by `make ingest-plans STATES=...`. Relational, not vector — a
   deductible is a `WHERE` clause, not a similarity search (ADR 0009).
@@ -84,6 +91,18 @@
   already linked to them.
 
 ### Changed
+
+- `answer()` skips the model only when there are no chunks *and* no plan
+  catalog, so a plan question reaches the tool. A reply grounded in neither a
+  chunk nor a search is still refused.
+- `answer()` and `answer_query()` return an `Answer` (text, chunks, plans,
+  missing plan inputs) instead of a tuple.
+- The Marketplace HTTP client moved to `src/core/marketplace_api.py`, shared
+  by ingestion and chat.
+- `urllib3`, `httpx` and `openai` loggers are pinned to WARNING; at DEBUG they
+  would log the CMS key and a user's ZIP code and age.
+- Refusal eval: "How much will my policy cost me?" became a car-insurance
+  question — the plan tool now rightly asks for a ZIP code and age.
 
 - The Claude review workflow is advisory (`continue-on-error`), not a merge
   gate. It authenticates through an external app-token exchange, so an

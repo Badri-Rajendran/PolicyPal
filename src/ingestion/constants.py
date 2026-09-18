@@ -49,21 +49,6 @@ HEALTHCARE_GOV_COLLECTIONS = {
 
 HEALTHCARE_GOV_USER_AGENT = "PolicyPalRAGProject/1.0 (personal project)"
 
-# CMS Marketplace API — the plan catalog, not the corpus. See
-# docs/findings/cms-marketplace-api.md for what it verifiably returns.
-MARKETPLACE_API_BASE_URL = "https://marketplace.api.healthcare.gov/api/v1"
-
-# The states this API serves: marketplace_model FFM (27) plus SupportedSBM
-# (AR, OK, OR), per GET /states for plan year 2026. It exists to validate
-# `--states` and to expand ALL — it does not choose what gets ingested. The
-# other 21 states and DC run their own exchanges, and the API rejects them
-# ("state is not a valid marketplace state"), so failing locally is kinder.
-MARKETPLACE_STATES = (
-    "AK", "AL", "AR", "AZ", "DE", "FL", "HI", "IA", "IN", "KS",
-    "LA", "MI", "MO", "MS", "MT", "NC", "ND", "NE", "NH", "OH",
-    "OK", "OR", "SC", "SD", "TN", "TX", "UT", "WI", "WV", "WY",
-)
-
 RAW = Path("data/corpus/raw")
 
 PLANS_RAW = Path("data/plans/raw")

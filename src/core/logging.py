@@ -62,7 +62,13 @@ def setup_logging() -> None:
                 "level": "WARNING",
                 "handlers": ["file"],
                 "propagate": False
-            }
+            },
+            # At DEBUG these log request lines and bodies: urllib3 the CMS
+            # URL with its ?apikey=, httpx and openai the prompt with a
+            # user's ZIP and age. Nothing they say at INFO is worth that.
+            "urllib3": {"level": "WARNING"},
+            "httpx": {"level": "WARNING"},
+            "openai": {"level": "WARNING"}
         }
     })
 

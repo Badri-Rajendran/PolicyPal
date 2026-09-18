@@ -4,6 +4,8 @@ same "hammer past the configured limit" shape.
 """
 from unittest.mock import patch
 
+from src.services.generation import Answer
+
 
 def _auth_headers(client, email):
     token = client.post("/api/auth/register", json={"email": email, "password": "correct-horse-1"}).get_json()[
@@ -88,7 +90,7 @@ def test_list_messages_is_rate_limited(client):
 
 @patch("src.api.routes.chat.answer_query")
 def test_send_message_is_rate_limited(mock_answer_query, client):
-    mock_answer_query.return_value = ("answer", [])
+    mock_answer_query.return_value = Answer("answer", [])
     headers = _auth_headers(client, "send-message-rl@example.com")
     thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
 

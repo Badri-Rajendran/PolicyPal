@@ -123,7 +123,9 @@ def create_message(thread_id: str):
 
     reset_token_usage()
     try:
-        answer_text, chunks = answer_query(body.content, history)
+        # result.plans is persisted from Step 5 (message_plans); until then
+        # the plans reach the user only through the answer text.
+        result = answer_query(body.content, history)
     except openai.OpenAIError:
         # Whatever billed before the failure (e.g. a successful rewrite call
         # ahead of a timed-out answer call) is real spend — record it rather
@@ -138,9 +140,9 @@ def create_message(thread_id: str):
     assistant_message = Message(
         thread_id=thread.id,
         role="assistant",
-        content=answer_text,
+        content=result.text,
         sources=[
-            MessageSource(chunk_id=c.chunk_id, source=c.source, relevance=c.score) for c in chunks
+            MessageSource(chunk_id=c.chunk_id, source=c.source, relevance=c.score) for c in result.chunks
         ],
     )
     db.add(assistant_message)

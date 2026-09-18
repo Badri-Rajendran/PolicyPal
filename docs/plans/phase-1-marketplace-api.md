@@ -1,6 +1,6 @@
 # Phase 1 — Marketplace API catalog and plan comparison
 
-**Status:** Steps 1–2 complete (API verified; plan catalog ingested); Step 3 next
+**Status:** Steps 1–4 complete (API verified; catalog ingested; plan search in chat); Step 5 next
 **Depends on:** [Phase 0](phase-0-hosted-llm.md) shipped green
 **Blocks:** Phases 2–4 (SBC collection needs plan IDs and document URLs) — and
 Step 1 found the API hands us candidate SBC URLs directly, see
@@ -10,7 +10,9 @@ Step 1 found the API hands us candidate SBC URLs directly, see
 
 Ingest the CMS Marketplace API plan catalog, and let a user compare real
 purchasable plans inside the chat transcript — "show me silver plans in
-60601", "which of these has the lower deductible".
+75801", "which of these has the lower deductible". (60601, the example this
+line first used, is Chicago: Illinois runs its own exchange, and the API
+rejects it.)
 
 ## Data source and its verified limits
 
@@ -156,57 +158,56 @@ thousands — hours at polite pacing. And an issuer may serve only part of a
 county: searching with one representative ZIP per county can miss such a
 plan, though it never records a plan the county does not sell.
 
-## Step 3 — fix the `answer()` short-circuit first
+## Step 3 — the `answer()` short-circuit (complete)
 
-`src/services/generation.py:191`:
+`answer()` returned `NO_ANSWER_RESPONSE` whenever retrieval found no chunks,
+before any model call. "Show me silver plans in 75801" clears nothing against
+the 0.5 relevance gate, so every plan question ended there. It is the same
+shape as the failure [ADR 0005](../decisions/0005-conversation-history.md)
+fixed: retrieval ran first and gave up before the later capability was
+consulted.
 
-```python
-if not chunks:
-    return NO_ANSWER_RESPONSE
-```
+What shipped ([ADR 0010](../decisions/0010-plan-search-tool.md)):
 
-The model is never called — `test_fallback_does_not_load_the_model` asserts it.
+- **The free refusal remains when there is nothing to search.** With no
+  chunks and an empty plan catalog, no model call is made.
+- **Otherwise the model runs with the tool**, and a reply that drew on no
+  chunk and no search is refused. The call is paid for, and nothing
+  ungrounded is sent.
+- **The regression is tested**: a plan question with an empty corpus result
+  reaches the tool. Breaking the condition on purpose fails that test.
 
-**This breaks every plan question under the target flow.** "Show me silver
-plans in 60601" clears nothing against the 0.5 relevance gate on a
-Wikipedia/HealthCare.gov corpus, so `chunks == []`, so the user gets "I
-couldn't find an answer" and the plan tool is never reached.
+## Step 4 — the plan tool (complete)
 
-This is structurally identical to the failure
-[ADR 0005](../decisions/0005-conversation-history.md) already fixed once:
-retrieval runs first and short-circuits before the later capability is
-consulted. Recognising it early is the point of writing it down here.
-
-The early exit becomes conditional on there being no chunks **and** no plan
-data available — while still avoiding a paid API call when genuinely nothing
-can be answered.
-
-## Step 4 — retrieval flow and the plan tool
-
-Retrieval is unconditional. It runs before the model on every prompt:
+Retrieval is unconditional and runs first, as sketched. There is one tool,
+`search_plans`, offered whenever the catalog has rows. What shipped:
 
 ```
-user prompt
-  → RAG retrieves chunks (local embeddings + rerank)
-  → chunks go into the LLM context
-  → LLM also has plan tools available
-  → LLM answers from both together
+search_plans(zip_code, age, metal_level?, plan_type?, max_deductible?,
+             county_fips?, sort_by?)
 ```
 
-So there is **one** tool, not two. `search_corpus` is not a choice the model
-makes, because `search()` has already run.
+How it differs from the sketch, and why:
 
-`src/services/tools.py`:
+- **`county_fips` was added.** 28% of ZIPs span more than one county, and
+  plans and prices are set per county. An ambiguous ZIP returns the county
+  list for the model to ask about; merging the counties would list plans the
+  user cannot buy.
+- **`zip_counties` was added**, written by `make ingest-plans` from the
+  county-zips payload it already downloads. It covers all 59 jurisdictions,
+  so an out-of-marketplace ZIP is named as such.
+- **Premiums are live for the user's age**, from `POST /plans`, verified in
+  a third pass of the findings. They are sorted on the live figure: issuers'
+  age factors differ, so the age-27 order does not hold. If CMS fails, the
+  labelled age-27 premium is shown instead.
+- **`sort_by` was added**, because only 10 plans come back and "lowest
+  deductible" needs them ordered that way.
+- **Catastrophic plans are left out from age 30** unless asked for.
+- **The "form card when ZIP or age is missing" is `needs_input`.** The tool
+  returns what is missing, and `Answer.needs_plan_inputs` carries it to
+  Step 6.
 
-```
-search_plans(zip_code, age, metal_level?, plan_type?, max_deductible?)
-```
-
-Corpus chunks and plan rows share one context. Tag each context item with its
-source type and identifier so a citation resolves back to whatever produced
-it — a design goal for citation accuracy, not a restriction on merging.
-
-When ZIP or age is missing, return a form card rather than guessing at them.
+Each plan fact is cited as `[Plan: <id>]` and each chunk as `[Source: …]`.
 
 ## Step 5 — API and persistence
 
@@ -239,10 +240,12 @@ Per CLAUDE.md, no feature is complete without tests and a passing CI run.
   authn/authz, boundaries, error responses, and throttling (429 with retry
   headers)
 - **Ingestion tests** — idempotency, and the upsert key
-- **Tool-selection accuracy floor**, the natural sibling to the existing
-  routing and coverage floors in `scripts/eval_retrieval.py`
-- **A regression test for Step 3**: a plan question with an empty corpus
-  result must still reach the tool
+- **Tool-selection floor** (done): a plan-search set in
+  `scripts/eval_generation.py`, not `eval_retrieval.py`, because tool
+  choice happens at generation. Definitional questions that search plans
+  count as misses there.
+- **A regression test for Step 3** (done): a plan question with an empty
+  corpus result reaches the tool
 
 ## Security
 
@@ -272,9 +275,9 @@ make ui-test && make ui-lint && make ui-build
 End-to-end in the browser:
 
 - a definitional question → prose with source citations
-- "silver plans in 60601, I'm 34" → plan cards. **The regression test for
+- "silver plans in 75801, I'm 34" → plan cards. **The regression test for
   Step 3** — it must reach the tool despite an empty corpus result
-- "what's a deductible, and what's the cheapest silver deductible in 60601?"
+- "what's a deductible, and what's the cheapest silver deductible in 75801?"
   → one answer drawing on corpus chunks and plan rows together, each fact
   citing its own origin
 - reload the thread → prose, citations and plan cards all persist
