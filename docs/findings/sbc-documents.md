@@ -1,9 +1,14 @@
-# SBC documents — the first live ingest
+# SBC documents — live ingests
 
-**Verified:** 2026-09-19 (UTC), plan year 2026: New Hampshire and Delaware (all 13
-counties), plus the two Texas counties already loaded.
-**Referenced by:** [ADR 0013](../decisions/0013-sbc-documents.md) and
-[Phase 2](../plans/phase-2-sbc-narrow-slice.md).
+**Verified:** 2026-09-19 (UTC), plan year 2026.
+- Phase 2: New Hampshire and Delaware (all 13 counties), plus two Texas
+  counties.
+- Phase 3: the ten largest parent companies in FL, TX, NC, TN, AL and SC
+  ([below](#phase-3-the-largest-issuers)).
+
+**Referenced by:** [ADR 0013](../decisions/0013-sbc-documents.md),
+[ADR 0015](../decisions/0015-sbc-at-scale.md), [Phase 2](../plans/phase-2-sbc-narrow-slice.md)
+and [Phase 3](../plans/phase-3-sbc-top-issuers.md).
 **Re-verify:** after any change to `src/ingestion/sbc/`, and every plan year.
 Issuers change their layouts and hosts. What follows was observed on the date
 above.
@@ -193,3 +198,184 @@ These ran with a throwaway user (ZIP 03301), who was deleted afterwards.
   - Before the prompt was tightened, "Will my MRI be covered?" asked right
     after a plan question could get no tool call. It was then declined by
     ADR 0010's no-grounding rule.
+
+## Phase 3: the largest issuers
+
+Measured on 2026-09-19 (UTC), plan year 2026, under ADR 0015.
+
+### Choosing them
+
+- **Source:** CMS's
+  [2025 Issuer Level Enrollment PUF](https://www.cms.gov/marketplace/resources/data/issuer-level-enrollment-data)
+  (sheet "QHP Enrollment Counts"), the newest published.
+  - It gives each plan's average monthly enrollment, with state and HIOS issuer
+    ID but no names. Plans whose count is suppressed (`*`, 252 rows) count as
+    zero.
+  - It includes Illinois, which left HealthCare.gov for 2026; Illinois is left
+    out. That leaves 14,842,856 enrollees in the 30 states.
+- **Names** come from `GET /issuers?state=…&year=2026`.
+  - **It pages at 25, with no `total` field**, and takes an `offset`. A single
+    call silently returns only the first 25 issuers of a state.
+- **Parents** were assigned by issuer name and checked by hand:
+  - "Ambetter …" is Centene;
+  - "Anthem …" and "Wellpoint" are Elevance;
+  - BCBS of Texas, Oklahoma and Montana are HCSC;
+  - the two Florida Blue companies are GuideWell.
+- **Aetna (sixth, 4.7%) withdrew for 2026.** None of its issuer IDs has a 2026
+  plan in any of the eight loaded states.
+- **2026 brought issuer IDs the 2025 data doesn't have.** After loading the
+  catalog, every issuer whose name matches a top parent was compared with the
+  list. Three were added:
+  - Oscar Health Maintenance Organization of Florida (21525);
+  - Oscar Insurance Company, Alabama (17091);
+  - a second UnitedHealthcare, Texas (70754).
+  Repeat this check whenever a new state or year is loaded.
+
+### The catalog
+
+`make ingest-plans`, one state at a time:
+
+| State | Counties | Plans | Time |
+| --- | --- | --- | --- |
+| FL | 67 | 410 | 399 s |
+| TX | 254 | 834 | 692 s |
+| NC | 100 | 206 | 246 s, plus 237 s for the re-run |
+| TN | 95 | 158 | 259 s |
+| AL | 67 | 54 | 122 s |
+| SC | 46 | 125 | 122 s |
+
+- **The only failure:** one North Carolina county (37049) answered
+  `/plans/search` with HTTP 500. A re-run of the state picked it up.
+- **Scale:** the eight states now hold 1,873 plans and 36,040 plan–county rows.
+  `find_plans` for a county, Miami-Dade (189 plans) included, took a median of
+  5–26 ms over two measurements; the machine's load moves it more than the
+  catalog does.
+
+### What was read
+
+| Parent | States with plans | Plans | Documents | Plans with an SBC | Why not |
+| --- | --- | --- | --- | --- | --- |
+| Centene (Ambetter) | all eight | 182 | 182 | 182 | |
+| Oscar Health | AL, FL, NC, TN, TX | 180 | 180 | 0 | `robots.txt`: `Disallow: /` |
+| UnitedHealth Group | AL, FL, NC, SC, TN, TX | 103 | 103 | 0 | `robots.txt` answers HTTP 403 |
+| HCSC (BCBS of Texas) | TX | 546 | 25 | 546 | |
+| Florida Blue | FL | 116 | 116 | 116 | |
+| Molina Healthcare | FL, SC, TX | 46 | 46 | 46 | |
+| Elevance (Anthem, Wellpoint) | FL, NH, TX | 46 | 46 | 0 | `robots.txt` answers HTTP 401 |
+| BCBS of North Carolina | NC | 117 | 57 | 0 | a JavaScript bot challenge |
+| BCBS of South Carolina | SC | 74 | 74 | 0 | `robots.txt`: `Disallow: /web/` |
+
+Select Health sells only in Utah, which isn't loaded.
+
+- **890 of the top parents' 1,410 plans (63%) have an SBC.** Four of the
+  largest ten refuse automated requests, and one sits behind a bot challenge:
+  - **Oscar** serves its SBCs from `d3ul0st9g52g6o.cloudfront.net`, whose
+    `robots.txt` disallows every path to every agent.
+  - **BCBS of South Carolina** serves them under `/web/…` on
+    `www.southcarolinablues.com`, and its `robots.txt` disallows `/web/`.
+  - **BCBS of North Carolina** redirects each link to `buyonline.bcbsnc.com`.
+    That host answers every request, `robots.txt` included, with a 200 and an
+    F5 JavaScript challenge page, not the PDF. It is stored as `not_pdf` and
+    was not worked around. One more link returns a 404.
+- **Nothing was worked around** (ADR 0013). These plans' answers link the
+  issuer's PDF.
+- **Phase 2's other issuers stayed covered:**
+  - NH and DE were re-read for all issuers;
+  - Baylor Scott & White and CHRISTUS in Texas were re-read with
+    `ISSUERS=40788,66252`, which added the 3 documents their plans gained
+    outside the two original counties.
+  - In all, 436 documents are stored, with no orphan rows (a document no plan
+    points at) and no `wrong_year`.
+
+### Parsing
+
+- **Speed:** 1.45 s per document on average; the tuning run took 794 s for 829
+  documents, 369 of them stored.
+- **Sections:** every stored document yields all 25 template sections, Florida
+  Blue's and Molina's new layouts included.
+- **One layout bug, fixed** (`PARSER_VERSION` 2). Florida Blue splits "If you
+  have a hospital stay" across two left-column cells.
+  - "If you have a" begins two template headings, so it stayed unresolved, and
+    "hospital stay" became row text.
+  - A label that continues an unresolved heading now completes it. This
+    affected 9 documents.
+- **Titles:** Florida Blue's printed title is read as the template's header
+  line. Titles are stored but not used in answers.
+- **Disk:** the kept PDFs of the tuning pass came to 321 MB (436 files,
+  0.74 MB each).
+- **The final run deleted them all.** It ran without `KEEP_PDFS`, read nothing
+  already current, and left `data/sbc/raw/` empty.
+  - It took 125 s for the top issuers, retrying failures only.
+  - Most of that was BCBS of North Carolina's 57 links, requested again at
+    two seconds each. Blocked hosts cost nothing, because their refusal is
+    cached per run.
+
+### Is each document the plan's?
+
+- **231 documents print one of their own plans' HIOS IDs**, from Ambetter,
+  Highmark, Baylor Scott & White, AmeriHealth, Harvard Pilgrim and WellSense.
+- **None prints another catalog plan's ID.**
+- **205 print no ID.** These are Florida Blue, BCBS of Texas, Molina and
+  CHRISTUS. All 205 print their plan's catalog name on the first two pages,
+  without the marketing suffix in parentheses and sometimes without the metal
+  level ("BlueSelect 1443E" for "BlueSelect Silver 1443E").
+- **Checked by hand against the rendered PDF** (deductible, out-of-pocket
+  limit, and the rows below):
+
+| Plan | Deductible (in network) | Out-of-pocket limit (in network) | Also checked |
+| --- | --- | --- | --- |
+| Florida Blue BlueSelect Silver 1443E | $4,000 / $8,000 | $8,100 / $16,200 | Imaging: deductible + 50%, prior authorization |
+| Molina Bronze Enhanced 3500 (FL) | $3,500 / $7,000 | $9,950 / $19,900 | Imaging: 50%, not covered out of network |
+| BCBS of Texas Blue Advantage Silver HMO 205 | — | — | ER: $1,000/visit plus 50% coinsurance |
+
+### Does the right section reach the model?
+
+Phase 2's method, on the new issuers: 10 questions × 20 plans, two each from
+Florida Blue's two companies, Molina (FL, TX, SC), BCBS of Texas, and Ambetter
+(FL, TN, NC, AL).
+
+- **The right section was among the four passages for 200 of 200 pairs**, and
+  ranked first for 170.
+- Phase 2 measured 78 of 80. Plan-scoped retrieval reranks one document's ~25
+  sections, so its quality does not depend on how many documents are stored.
+
+### The general corpus is unaffected
+
+- `chunks` still holds 1,568 rows. SBC text is only in `sbc_chunks` (ADR 0014),
+  so general search, its gate and its eval floors see exactly what they did
+  before.
+- **No HNSW index.** The roadmap's trigger was a growing `chunks` table, and it
+  did not grow. `search()` took a median of 200–315 ms over two measurements,
+  most of it the cross-encoder.
+
+### Evals
+
+`scripts/eval_generation.py` was run three times, with four new COVERAGE
+cases: Florida Blue lab work, Molina primary care, the BCBS of Texas ER, and a
+blocked Oscar plan whose answer must link the PDF. The existing floors stayed
+where they were, except COVERAGE, which is now 9.
+
+| Set | Run 1 | Run 2 | Run 3 | Floor |
+| --- | --- | --- | --- | --- |
+| ANSWERS | 8/8 | 8/8 | 8/8 | 8 |
+| REFUSALS | 4/4 | 4/4 | 4/4 | 4 |
+| FOLLOW-UPS | 3/3 | 2/3 | 3/3 | 3 |
+| PLAN SEARCH | 4/4 | 4/4 | 4/4 | 4 |
+| COVERAGE | 9/10 | 9/10 | 10/10 | 9 |
+| BOUNDARY | 2/2 | 2/2 | 2/2 | 2 |
+
+- **All four new cases passed every run.**
+- **Both COVERAGE misses were Phase 2's CHRISTUS imaging case.** Run alone it
+  stated "no charge" in 3 of 6 tries; the answer names the preauthorization
+  rule but not the price. The stored text is unchanged since Phase 2 and
+  correct, but hard to read:
+  - "Imaging (CT/PET scans," is on one line;
+  - "No charge | Not covered" is on the next;
+  - "MRIs)" follows.
+  Writing each chart row as one sentence, as Phase 2's plan first proposed,
+  would likely fix it. That is parser work for a later phase.
+- **The follow-up miss was variance.** "What about for auto insurance?"
+  declined once, then answered 6 of 6 when run alone. Nothing here touches the
+  corpus or its prompts.
+- **Tokens per coverage answer:** 2,431–5,628, a mean of about 4,500. That is
+  as in Phase 2.

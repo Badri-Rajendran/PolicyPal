@@ -26,8 +26,9 @@ This runs the full `answer_query()` path and checks two things:
 
   COVERAGE — does a question about a shown plan's coverage state its SBC
              term and cite that plan's SBC, and only that plan's (ADR 0014)?
-             Needs the NH, DE and TX SBCs:
-             `make ingest-plans STATES=NH,DE` then `make ingest-sbc STATES=NH,DE,TX`.
+             Needs the NH, DE, TX and FL SBCs: `make ingest-plans STATES=NH,DE,TX,FL`,
+             then `make ingest-sbc STATES=NH,DE`, `make ingest-sbc STATES=TX,FL TOP_ISSUERS=1`
+             and `make ingest-sbc STATES=TX ISSUERS=40788,66252`.
 
   BOUNDARY — does "will my claim be paid?" get the fixed boundary sentence
              and the plan's terms, never a yes or no?
@@ -69,9 +70,12 @@ MIN_FOLLOW_UPS = 3
 MIN_PLAN_SEARCHES = 4
 # ADR 0014's sets, measured over three runs: boundary 2/2 every time; coverage
 # 6/6 twice and 5/6 once (one answer left out the term), hence one short.
+# Phase 3 added four cases (ADR 0015); coverage then ran 9/10, 9/10 and 10/10.
+# Both misses were CHRISTUS's imaging price, which states "no charge" in 3 of
+# 6 tries alone: its row text wraps the service name around the price.
 # The plan-search profile case also varies: 6/8 searches on main at this
 # point, so re-run a single miss there before calling it a regression.
-MIN_COVERAGE = 5
+MIN_COVERAGE = 9
 MIN_BOUNDARY = 2
 
 
@@ -144,6 +148,15 @@ _CHRISTUS = ShownPlan(1, "66252TX0380010", "CHRISTUS Value Silver 70 ($0 Virtual
 # Its issuer's host refuses automated requests: blocked in ingestion.
 _UHC = ShownPlan(2, "40220TX0080020", "UHC Silver Standard", "UnitedHealthcare", "Silver", 2026)
 _UHC_SBC = "https://www.uhc.com/ifp/sbc.40220TX0080020-01.en.2026.pdf"
+# Phase 3's issuers (ADR 0015), checked by hand against the same PDFs.
+_FLORIDA_BLUE = ShownPlan(1, "16842FL0320004", "BlueSelect Silver 1443E ($10 Labs / Adult Dental & Vision / Rewards)",
+                          "Florida Blue (BlueCross BlueShield FL)", "Silver", 2026)
+_MOLINA = ShownPlan(2, "54172FL0010013", "Molina Bronze Enhanced 3500", "Molina Healthcare", "Bronze", 2026)
+_BCBS_TX = ShownPlan(1, "33602TX0460553", "Blue Advantage Silver HMO℠ 205", "Blue Cross and Blue Shield of Texas",
+                     "Silver", 2026)
+# Oscar's SBC host disallows every path in robots.txt: blocked in ingestion.
+_OSCAR = ShownPlan(2, "20069TX0100006", "Silver Classic", "Oscar Insurance Company", "Silver", 2026)
+_OSCAR_SBC = "https://d3ul0st9g52g6o.cloudfront.net/2026/TX/sbc/2026_20069TX010000601.pdf"
 _SBC = " - Summary of Benefits - "
 
 
@@ -170,6 +183,12 @@ COVERAGE_SET = [
     # Shown for a year the catalog doesn't hold: no other year's SBC may stand in.
     CoverageCase("Does the first one cover MRIs?",
                  (ShownPlan(1, "13219NH0010002", _WELLSENSE.name, _WELLSENSE.issuer, "Silver", 2025),), (), None),
+    CoverageCase("What does the first plan charge for lab work?", (_FLORIDA_BLUE, _MOLINA), ("$10",), _FLORIDA_BLUE),
+    CoverageCase("What does the second one charge for a primary care visit?", (_FLORIDA_BLUE, _MOLINA),
+                 ("$50",), _MOLINA),
+    CoverageCase("What does the first plan charge for an emergency room visit?", (_BCBS_TX, _OSCAR),
+                 ("$1,000",), _BCBS_TX),
+    CoverageCase("Does the second plan cover MRIs?", (_BCBS_TX, _OSCAR), (_OSCAR_SBC,), None),
 ]
 
 # "Will it be paid?" turns on medical necessity, prior authorization and the

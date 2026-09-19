@@ -25,7 +25,7 @@ import pdfplumber
 # Stored with each document. Bump it when a change alters what `parse_sbc`
 # yields for a real SBC: every stored document is then read again, and one
 # whose PDF is no longer kept is downloaded again (ADR 0015).
-PARSER_VERSION = 1
+PARSER_VERSION = 2
 
 # The template runs to about 8 pages; a file far beyond it is not an SBC.
 MAX_PAGES = 30
@@ -275,7 +275,9 @@ def _events(rows: list[TableRow]) -> list[Section]:
 
     A page break can cut a group, and its label with it: the heading may
     start in the row text of one page and end as a label on the next. A row
-    that doesn't open a group continues the one before it.
+    that doesn't open a group continues the one before it, and its label
+    finishes the group's heading when that heading was left unresolved
+    ("If you have a" above "hospital stay", each in a cell of its own).
     """
     sections: list[Section] = []
     active = False
@@ -295,7 +297,11 @@ def _events(rows: list[TableRow]) -> list[Section]:
             sections.append(Section(_template_heading(first_cell, EVENT_HEADINGS, prefix=True), row.body))
         elif sections and (row.label or row.body):
             last = sections[-1]
-            sections[-1] = Section(last.heading, _join([last.text, row.label, row.body]))
+            joined = _template_heading(f"{last.heading} {row.label}", EVENT_HEADINGS, prefix=True)
+            if row.label and last.heading not in EVENT_HEADINGS and joined in EVENT_HEADINGS:
+                sections[-1] = Section(joined, _join([last.text, row.body]))
+            else:
+                sections[-1] = Section(last.heading, _join([last.text, row.label, row.body]))
     return sections
 
 

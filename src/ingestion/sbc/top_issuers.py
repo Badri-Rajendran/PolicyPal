@@ -5,6 +5,10 @@ from CMS's 2025 Issuer Level Enrollment PUF, the newest published. Aetna
 (sixth) is left out: it withdrew from the marketplace for 2026. The ranking
 and how each issuer was assigned to its parent are in
 docs/findings/sbc-documents.md.
+
+A parent can sell under a new HIOS ID from one year to the next, which the
+2025 data cannot show. Each is marked with the year it was first seen, from
+the catalog.
 """
 from itertools import chain
 
@@ -16,10 +20,13 @@ TOP_ISSUERS: dict[str, tuple[str, ...]] = {
     "Oscar Health": (
         "13877", "40572", "45819", "43490", "77739", "69512", "69803", "57424", "29341", "45845", "91908", "23552",
         "20069",
+        "21525",  # 2026: Oscar Health Maintenance Organization of Florida
+        "17091",  # 2026: Alabama
     ),
     "UnitedHealth Group": (
         "69461", "40702", "68398", "56610", "72850", "94968", "69842", "71667", "95426", "97560", "54332", "73102",
         "33931", "45480", "33764", "69443", "40220", "80180", "49714",
+        "70754",  # 2026: a second Texas issuer
     ),
     "Health Care Service Corporation (BCBS TX, OK, MT)": ("33602", "87571", "30751"),
     "Florida Blue": ("16842", "30252"),

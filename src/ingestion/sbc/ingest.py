@@ -15,6 +15,7 @@ rebuilds without touching them.
 """
 import argparse
 import hashlib
+import re
 import sys
 from collections import Counter, defaultdict
 from collections.abc import Collection
@@ -34,10 +35,12 @@ from src.policypal.config import settings
 from ..chunking import make_recursive_splitter
 from ..plans import resolve_states, upsert
 from .extract import PARSER_VERSION, SbcParse, SbcParseError, parse_sbc, read_pdf
-from .fetch import FetchResult, fetch_pdf, url_key
+from .fetch import FetchResult, cache_path, fetch_pdf, url_key
 from .top_issuers import TOP_ISSUER_IDS
 
 logger = get_logger(__name__)
+
+_HIOS_ISSUER_ID = re.compile(r"^\d{5}$")
 
 
 @dataclass(frozen=True)
@@ -149,10 +152,10 @@ def _store(url: str, year: int, fetched: FetchResult, *, sha256: str | None = No
 
 
 def execute(states: list[str], year: int, limit: int | None = None,
-            top_issuers: bool = False, keep_pdfs: bool = False) -> Counter:
+            issuer_ids: Collection[str] | None = None, keep_pdfs: bool = False) -> Counter:
     """Read every document not already stored by this parser. Returns the statuses of those read."""
     with get_session() as session:
-        documents = documents_for(session, states, year, TOP_ISSUER_IDS if top_issuers else None)
+        documents = documents_for(session, states, year, issuer_ids)
         current = set(session.scalars(select(SbcDocument.url).where(
             SbcDocument.plan_year == year, SbcDocument.status == "ok",
             SbcDocument.parser_version == PARSER_VERSION,
@@ -161,6 +164,10 @@ def execute(states: list[str], year: int, limit: int | None = None,
         sys.exit(f"No catalog plans with an SBC link for {', '.join(states)} in {year}. "
                  f"Run `make ingest-plans STATES={','.join(states)}` first.")
     pending = [url for url in documents if url not in current]
+    if not keep_pdfs:
+        # A tuning run keeps the PDFs of what it stored; the next run removes them.
+        for url in documents.keys() & current:
+            cache_path(url, year).unlink(missing_ok=True)
     urls = pending[:limit]
     print(f"{len(documents)} SBC documents behind the {', '.join(states)} plans for {year}; "
           f"{len(documents) - len(pending)} already current, reading {len(urls)}")
@@ -193,8 +200,10 @@ def parse_args(args):
     parser.add_argument("--year", type=int, default=datetime.now(UTC).year,
                         help="Plan year (default: this year); must match an ingested catalog year")
     parser.add_argument("--limit", type=int, default=None, help="Read at most this many documents, for a smoke run")
-    parser.add_argument("--top-issuers", action="store_true",
-                        help="Only the largest parent companies' plans (src/ingestion/sbc/top_issuers.py)")
+    issuers = parser.add_mutually_exclusive_group()
+    issuers.add_argument("--top-issuers", action="store_true",
+                         help="Only the largest parent companies' plans (src/ingestion/sbc/top_issuers.py)")
+    issuers.add_argument("--issuers", help="Only these HIOS issuer IDs' plans, comma-separated, e.g. 40788,66252")
     parser.add_argument("--keep-pdfs", action="store_true",
                         help="Keep downloaded PDFs after parsing, for tuning the parser")
     parsed = parser.parse_args(args)
@@ -204,9 +213,14 @@ def parse_args(args):
         parser.error(str(exc))
     if parsed.limit is not None and parsed.limit < 1:
         parser.error("--limit must be at least 1")
+    parsed.issuer_ids = TOP_ISSUER_IDS if parsed.top_issuers else None
+    if parsed.issuers is not None:
+        parsed.issuer_ids = frozenset(i.strip() for i in parsed.issuers.split(",") if i.strip())
+        if not parsed.issuer_ids or not all(_HIOS_ISSUER_ID.match(i) for i in parsed.issuer_ids):
+            parser.error("--issuers takes five-digit HIOS issuer IDs, e.g. 40788,66252")
     return parsed
 
 
 def main(args=sys.argv[1:]) -> None:
     parsed = parse_args(args)
-    execute(parsed.states, parsed.year, parsed.limit, parsed.top_issuers, parsed.keep_pdfs)
+    execute(parsed.states, parsed.year, parsed.limit, parsed.issuer_ids, parsed.keep_pdfs)

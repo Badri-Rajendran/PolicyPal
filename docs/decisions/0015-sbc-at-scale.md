@@ -64,8 +64,14 @@ listed with the HIOS issuer IDs it sells under.
   catalog does not carry, so each issuer was assigned by its name and checked
   by hand.
 - **Only the derived IDs are committed**, not the spreadsheet.
-- `make ingest-sbc TOP_ISSUERS=1` reads only these issuers' plans. Without it,
-  every plan in the states is read, as in Phase 2.
+- **IDs first seen in 2026 are added from the catalog.** A parent can sell
+  under a new HIOS ID, which 2025 data cannot show. After a state's catalog is
+  loaded, its issuers are compared with the list by name, and a match joins its
+  parent, marked with its year.
+- `make ingest-sbc TOP_ISSUERS=1` reads only these issuers' plans, and
+  `ISSUERS=40788,66252` only the IDs given. That second form is how Phase 2's
+  other Texas issuers stay current. Without either, every plan in the states
+  is read, as in Phase 2.
 
 ### A document is parsed once per parser version
 
@@ -83,6 +89,8 @@ listed with the HIOS issuer IDs it sells under.
   fails, the file stays.
 - **`--keep-pdfs` (`KEEP_PDFS=1`) keeps them** for tuning the parser. It also
   keeps unparseable files, which are the ones tuning needs.
+- **The next run without it removes them.** It skips the documents already
+  current, and deletes their kept PDFs as it does, with no request.
 - A `wrong_year` file is always deleted, as ADR 0013 requires.
 
 **This strengthens ADR 0013's copyright position.** PolicyPal no longer holds

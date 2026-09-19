@@ -178,6 +178,19 @@ def test_a_parser_change_reads_stored_documents_again(sbc, fetches, catalog, ses
     assert _version(session, GOLD) == ingest.PARSER_VERSION
 
 
+def test_a_run_without_keep_pdfs_removes_the_pdfs_a_tuning_run_kept(sbc, fetches, catalog, session, tmp_path,
+                                                                    monkeypatch):
+    monkeypatch.setattr(ingest, "cache_path", lambda url, year: tmp_path / f"{abs(hash(url))}.pdf")
+    ingest.execute(["NH"], YEAR, keep_pdfs=True)
+    assert len(list(tmp_path.glob("*.pdf"))) == 2
+
+    fetches.clear()
+    ingest.execute(["NH"], YEAR)
+
+    assert fetches == []
+    assert list(tmp_path.glob("*.pdf")) == []
+
+
 def test_the_pdf_is_deleted_once_its_text_is_stored(sbc, session, tmp_path):
     assert ingest.ingest_document(GOLD, YEAR) == "ok"
 
@@ -228,3 +241,22 @@ def test_rebuilding_the_corpus_leaves_sbc_chunks_alone(sbc, session, monkeypatch
     assert session.scalars(select(Chunk.chunk_id).where(Chunk.chunk_id.in_(["old_c00", "test_deductible_c00"]))).all() == ["test_deductible_c00"]
     assert _chunks(session, GOLD) == ["If you have a test\nImaging $60 copay"]
     assert session.scalar(select(func.count()).select_from(SbcChunk)) >= 1
+
+
+@pytest.mark.parametrize(("args", "expected"), [
+    ([], None),
+    (["--top-issuers"], ingest.TOP_ISSUER_IDS),
+    (["--issuers", "40788, 66252"], frozenset({"40788", "66252"})),
+])
+def test_a_run_is_narrowed_to_the_issuers_asked_for(args, expected):
+    assert ingest.parse_args(["--states", "TX", *args]).issuer_ids == expected
+
+
+@pytest.mark.parametrize("args", [
+    ["--issuers", "4078"],
+    ["--issuers", ","],
+    ["--issuers", "40788", "--top-issuers"],
+])
+def test_issuers_must_be_hios_ids_and_not_mixed_with_the_top_list(args):
+    with pytest.raises(SystemExit):
+        ingest.parse_args(["--states", "TX", *args])

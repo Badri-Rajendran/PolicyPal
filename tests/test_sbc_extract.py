@@ -112,6 +112,21 @@ def test_a_group_cut_by_a_page_break_is_rejoined_under_its_full_heading():
     assert "Tier 2" not in sections["If you have a test"]
 
 
+def test_a_label_split_across_two_cells_is_joined_into_its_heading():
+    """Too short to tell apart alone: "If you have a" begins two headings."""
+    sections = _sections(_page(rows=[
+        ("Common Medical Event", "What You Will Pay"),
+        ("If you have a", "Facility fee (e.g., hospital room) $350 copay per day"),
+        ("hospital stay", "Physician/surgeon fees No charge"),
+        ("If you are pregnant", "Office visits No charge"),
+    ]))
+
+    assert sections["If you have a hospital stay"] == (
+        "Facility fee (e.g., hospital room) $350 copay per day\nPhysician/surgeon fees No charge"
+    )
+    assert "If you have a" not in sections
+
+
 def test_the_chart_ends_at_the_next_template_heading():
     sections = _sections(_page(rows=[
         ("Common Medical Event", "What You Will Pay"),
