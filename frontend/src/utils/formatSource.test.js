@@ -6,6 +6,12 @@ describe("formatSourceLabel", () => {
     expect(formatSourceLabel("wiki_Health_insurance.txt")).toBe("Health insurance");
   });
 
+  it("keeps a plan name's own dots in a plan-document label", () => {
+    expect(formatSourceLabel("Acme Health Co. Silver 2.0 - Summary of Benefits - If you have a test.pdf")).toBe(
+      "Acme Health Co. Silver 2.0 - Summary of Benefits - If you have a test",
+    );
+  });
+
   it("leaves a plain filename's words alone", () => {
     expect(formatSourceLabel("Marine_insurance.md")).toBe("Marine insurance");
   });

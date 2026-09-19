@@ -1,7 +1,7 @@
 # Phase 2 — SBC ingestion, narrow slice
 
-**Status:** In progress. Ingestion is built (ADR 0013); plan-scoped answers
-are next (ADR 0014)
+**Status:** Complete. Ingestion (ADR 0013) and plan-scoped coverage answers
+(ADR 0014) are built; results are in docs/findings/sbc-documents.md
 **Slice:** New Hampshire and Delaware, all issuers, plus the two Texas counties
 already loaded
 **Depends on:** [Phase 1](phase-1-marketplace-api.md) — plan IDs and issuer

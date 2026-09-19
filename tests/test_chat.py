@@ -98,7 +98,7 @@ def test_send_message_returns_grounded_answer_with_sources(mock_answer_query, cl
     assert body["role"] == "assistant"
     assert "deductible" in body["content"]
     assert body["sources"][0]["source"] == "wiki_Health.txt"
-    mock_answer_query.assert_called_once_with("What is a deductible?", [], profile=ANY)
+    mock_answer_query.assert_called_once_with("What is a deductible?", [], profile=ANY, shown_plans=())
     # The saved profile reaches the plan tool from the server, not the prompt (ADR 0012).
     assert mock_answer_query.call_args.kwargs["profile"] == PlanProfile(
         zip_code="00001", age=age_on(date(1990, 5, 17), today()), county_fips="99001"
@@ -334,3 +334,25 @@ def test_a_childs_age_prices_the_search_but_is_never_stored(client):
     live = sent.get_json()["plans"]
     assert [(p["monthly_premium"], p["premium_age"]) for p in live] == [("301.20", None), ("620.15", 13)]
     assert next(m for m in reopened if m["role"] == "assistant")["plans"] == live
+
+
+# Coverage follow-ups (ADR 0014)
+
+def test_a_follow_up_is_given_the_plans_last_shown_and_its_sbc_citations_are_kept(client):
+    first = (_plan("66252TX0380010", "620.15"), _plan("33602TX0460725", "601.05"))
+    headers, thread_id, _, _ = _ask(client, Answer("Two plans.", [], first))
+    passage = RetrievedChunk("sbc_2026_ab_s01_c00", "If you have a test\nImaging 40%",
+                             "Plan 33602TX0460725 - Summary of Benefits - If you have a test.pdf", 0.21)
+
+    def ask(question, answer):
+        with patch("src.api.routes.chat.answer_query", return_value=answer) as answer_query:
+            sent = client.post(f"/api/chat/threads/{thread_id}/messages", json={"content": question}, headers=headers)
+        return answer_query.call_args.kwargs["shown_plans"], sent.get_json()
+
+    shown, reply = ask("Does the second one cover MRIs?", Answer("Imaging is 40%.", [passage]))
+    # An answer without plans leaves the last table the one referred to.
+    shown_again, _ = ask("And the first?", Answer("No plans here.", []))
+
+    assert [(p.position, p.plan_id, p.plan_year) for p in shown] == [(1, "66252TX0380010", 2026), (2, "33602TX0460725", 2026)]
+    assert shown_again == shown
+    assert reply["sources"] == [{"chunk_id": passage.chunk_id, "source": passage.source, "relevance": 0.21}]

@@ -16,7 +16,12 @@ from src.schemas.chat import (
     ThreadCreateRequest,
     ThreadResponse,
 )
-from src.services.generation import answer_query, reset_token_usage, token_usage
+from src.services.generation import (
+    ShownPlan,
+    answer_query,
+    reset_token_usage,
+    token_usage,
+)
 from src.services.plan_search import PlanResult
 from src.services.profile import MIN_SIGNUP_AGE, plan_profile
 from src.services.usage import (
@@ -69,6 +74,26 @@ def _plan_row(position: int, plan: PlanResult) -> MessagePlan:
         county_name=plan.county_name,
         state=plan.state,
         benefits_url=plan.benefits_url,
+    )
+
+
+def _shown_plans(db, thread_id) -> tuple[ShownPlan, ...]:
+    """The plans of the thread's latest answer that showed any, in the order shown (ADR 0014)."""
+    latest = (
+        select(MessagePlan.message_id)
+        .join(Message, Message.id == MessagePlan.message_id)
+        .where(Message.thread_id == thread_id)
+        .order_by(Message.created_at.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    rows = db.execute(
+        select(MessagePlan).where(MessagePlan.message_id == latest).order_by(MessagePlan.position)
+    ).scalars()
+    return tuple(
+        ShownPlan(position=row.position + 1, plan_id=row.hios_plan_id, name=row.name, issuer=row.issuer,
+                  metal_level=row.metal_level, plan_year=row.plan_year)
+        for row in rows
     )
 
 
@@ -144,6 +169,7 @@ def create_message(thread_id: str):
         select(Message).where(Message.thread_id == thread.id).order_by(Message.created_at)
     ).scalars().all()
     history = [{"role": m.role, "content": m.content} for m in prior]
+    shown_plans = _shown_plans(db, thread.id)
 
     user_message = Message(thread_id=thread.id, role="user", content=body.content)
     db.add(user_message)
@@ -151,7 +177,7 @@ def create_message(thread_id: str):
 
     reset_token_usage()
     try:
-        result = answer_query(body.content, history, profile=plan_profile(user))
+        result = answer_query(body.content, history, profile=plan_profile(user), shown_plans=shown_plans)
     except openai.OpenAIError:
         # Whatever billed before the failure (e.g. a successful rewrite call
         # ahead of a timed-out answer call) is real spend — record it rather

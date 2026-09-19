@@ -195,6 +195,11 @@
   white-space: pre-wrap;
 }
 
+/* A document link is one long word; on a phone it must wrap, not widen the page. */
+.message-body a {
+  overflow-wrap: anywhere;
+}
+
 .message-assistant {
   border-left: 2px solid var(--rule);
   padding-left: 1rem;

@@ -43,13 +43,15 @@ HealthCare.gov ┘                              │
 User ──► React UI ──► Flask API ──► Retrieval ──► LLM ──► Cited answer
                          ▲                         │   ▲       │
                          │            search_plans ▼   │       │
-                         │      plan tables + CMS live premium │
+                         │           plan_coverage     │       │
+                         │  plan tables, CMS premium, SBC text │
                          └──────────── persisted reply ───────┘
 ```
 
 - **Offline ingestion** (`make ingest`) populates the vector store and BM25 index. Run it once, or again whenever the source corpus changes.
 - **Online serving** (`make api`) retrieves relevant chunks per query, reranks and filters them, and generates a grounded answer, persisting the conversation.
 - **Plan questions** reach the `search_plans` tool, offered whenever the plan catalog is loaded. It resolves the ZIP to its county, filters the catalog, and fetches premiums for the user's age from CMS. A reply that drew on no chunk and no search is refused, not sent (ADR 0010).
+- **Coverage questions** about a specific plan ("does the second one cover MRIs?") reach the `plan_coverage` tool. It reranks that plan's own SBC sections and returns the best four, cited by plan and section. The plans last shown in the thread are handed to the model so "the second one" resolves. A situational question ("will my MRI be covered?") gets a fixed boundary sentence and the plan's terms, never a yes or no (ADR 0014).
 
 Both halves share the same embedding model (`src/core/embedding.py`) so ingestion-time and query-time vectors stay comparable.
 
@@ -241,6 +243,11 @@ sections into `sbc_chunks`, kept apart from the corpus that `make ingest` rebuil
 Per-issuer results of the live run are in
 [`docs/findings/sbc-documents.md`](docs/findings/sbc-documents.md).
 
+Once loaded, chat answers coverage questions about those plans from their SBC,
+citing each passage as "plan name - Summary of Benefits - section". For a plan
+whose SBC could not be read, the answer links the issuer's PDF; links in answers
+are clickable (https only).
+
 ## Testing
 
 ```bash
@@ -309,10 +316,17 @@ A fourth set checks that plan questions reach `search_plans`. Its ZIP, 75801, li
 only in Anderson County, TX, so load that county first:
 `uv run python -m src.ingestion.plans --states TX --max-counties 1`.
 
+Two more check plan coverage (ADR 0014). COVERAGE asks about shown plans and
+requires each plan's SBC term, cited from that plan's SBC alone. BOUNDARY asks
+"will it be paid?" and requires the boundary sentence and the plan's terms, with
+no yes or no. Both need the NH, DE and TX SBCs: `make ingest-plans STATES=NH,DE`,
+then `make ingest-sbc STATES=NH,DE,TX`.
+
 Slower still than the retrieval eval — it generates once per question — and
 likewise a manual tool rather than a CI gate. Unlike the retrieval eval it
-also **costs money**: generation is hosted, so one run is roughly 17k tokens,
-a cent or two at current `gpt-5-mini` rates. The per-user daily token budget
+also **costs money**: generation is hosted. The first four sets are roughly 17k
+tokens; the coverage set adds about 26k and the boundary set three more
+answers, a few cents in all at current `gpt-5-mini` rates. The per-user daily token budget
 does not apply here — it is enforced at the API layer, and this calls
 `answer_query()` directly.
 

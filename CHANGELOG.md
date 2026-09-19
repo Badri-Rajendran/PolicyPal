@@ -4,6 +4,16 @@
 
 ### Added
 
+- Coverage answers from a plan's SBC: a `plan_coverage` tool reranks that plan's
+  own sections and cites the best four as "plan - Summary of Benefits - section"
+  (ADR 0014). General search never sees SBC text.
+- "The second one" resolves: the plans last shown in a thread reach the model as
+  `<plans_shown>` (IDs, names, issuer, metal, year; no prices).
+- Situational questions ("will my MRI be covered?") get a fixed boundary sentence
+  and the plan's terms, never a yes or no.
+- A plan whose SBC is blocked or missing gets a link to the issuer's PDF; https
+  links in answers are clickable, through `safeUrl`, and wrap on a phone.
+- COVERAGE and BOUNDARY sets in `scripts/eval_generation.py`, with floors.
 - Plan documents: `make ingest-sbc STATES=...` reads each catalog plan's Summary of
   Benefits and Coverage into `sbc_documents` and `sbc_chunks`, one chunk per section
   of the federal template, kept apart from the corpus (ADR 0013).

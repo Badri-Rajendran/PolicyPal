@@ -1,4 +1,5 @@
 import { formatSourceLabel, formatTime } from "../../utils/formatSource";
+import { linkify } from "../../utils/linkify";
 import PlanComparison from "../plans/PlanComparison";
 
 export default function MessageItem({ message }) {
@@ -11,7 +12,20 @@ export default function MessageItem({ message }) {
         <span className="message-author">{isAssistant ? "PolicyPal" : "You"}</span>
         <time dateTime={message.created_at}>{formatTime(message.created_at)}</time>
       </p>
-      <p className="message-body">{message.content}</p>
+      <p className="message-body">
+        {isAssistant
+          ? linkify(message.content).map((part, index) =>
+              part.href ? (
+                <a key={index} href={part.href} target="_blank" rel="noopener noreferrer">
+                  {part.text}
+                  <span className="visually-hidden"> (opens in a new tab)</span>
+                </a>
+              ) : (
+                part.text
+              ),
+            )
+          : message.content}
+      </p>
 
       {hasPlans && <PlanComparison plans={message.plans} shownAt={message.created_at} />}
 
