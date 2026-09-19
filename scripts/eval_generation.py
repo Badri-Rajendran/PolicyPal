@@ -34,6 +34,7 @@ import sys
 from dataclasses import dataclass
 
 from src.services.generation import NO_ANSWER_RESPONSE, answer_query
+from src.services.profile import PlanProfile
 
 # Floors, set at the measured baseline — every set scored full marks on
 # gpt-5-mini (rewrites on gpt-5-nano), up from 7/8 and 2/3 under the local
@@ -49,7 +50,7 @@ from src.services.generation import NO_ANSWER_RESPONSE, answer_query
 MIN_CORRECT = 8
 MIN_REFUSED = 4
 MIN_FOLLOW_UPS = 3
-MIN_PLAN_SEARCHES = 3
+MIN_PLAN_SEARCHES = 4
 
 
 @dataclass
@@ -97,12 +98,16 @@ FOLLOW_UP_SET = [
 ]
 
 
-# 75801 is in Anderson County, TX (48001), and in no other county. The last
-# case gives no ZIP or age, so reaching the tool means asking for them.
+# 75801 is in Anderson County, TX (48001), and in no other county. The third
+# case has neither a profile nor a ZIP or age in the question, so reaching the
+# tool means being told to add them. The last has only a saved profile: the
+# prompt holds no ZIP or age at all, and the server fills them in (ADR 0012).
+_PROFILE = PlanProfile(zip_code="75801", age=34, county_fips="48001")
 PLAN_SEARCH_SET = [
-    "What silver plans can I buy in 75801? I'm 34.",
-    "Compare the bronze plans with the lowest deductibles in ZIP 75801 for a 45-year-old.",
-    "Show me some health plans I could buy.",
+    ("What silver plans can I buy in 75801? I'm 34.", None),
+    ("Compare the bronze plans with the lowest deductibles in ZIP 75801 for a 45-year-old.", None),
+    ("Show me some health plans I could buy.", None),
+    ("What silver plans can I buy?", _PROFILE),
 ]
 
 
@@ -204,8 +209,8 @@ def run_plan_searches() -> int:
 
     reached = 0
 
-    for query in PLAN_SEARCH_SET:
-        result = answer_query(query)
+    for query, profile in PLAN_SEARCH_SET:
+        result = answer_query(query, profile=profile)
 
         if result.plans or result.needs_plan_inputs:
             reached += 1

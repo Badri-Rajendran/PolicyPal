@@ -16,6 +16,7 @@ from src.core.logging import get_logger
 from src.core.marketplace_api import REFERENCE_AGE
 
 from .plan_search import PlanFilters, PlanResult, PlanSearchResult, search_plans
+from .profile import PlanProfile
 
 logger = get_logger(__name__)
 
@@ -55,15 +56,23 @@ TOOLS = [{
             "Search real ACA Marketplace health plans sold through HealthCare.gov in the user's "
             "county, with monthly premiums for the user's age. Call it for any question about "
             "specific plans, their premiums, deductibles or out-of-pocket maximums, or comparing "
-            "plans. Pass null for anything the user has not stated in this conversation; never "
-            "guess a ZIP code or an age."
+            "plans. The user's saved ZIP code, age and county are filled in for you: leave zip_code "
+            "and age null unless the question itself names a different one. Never guess either."
         ),
         "strict": True,
         "parameters": {
             "type": "object",
             "properties": {
-                "zip_code": _nullable("string", "The user's 5-digit US ZIP code."),
-                "age": _nullable("integer", "The age of the person to be covered."),
+                "zip_code": _nullable(
+                    "string",
+                    "Only a 5-digit ZIP code the question names for this search, such as a relative's "
+                    "or one the user is moving to. Null uses the user's saved ZIP code.",
+                ),
+                "age": _nullable(
+                    "integer",
+                    "Only an age the question names for this search, such as a child's or a parent's. "
+                    "Null uses the user's own age.",
+                ),
                 "metal_level": _nullable("string", "Only plans of this metal level.", get_args(MetalLevel)),
                 "plan_type": _nullable("string", "Only plans of this network type.", get_args(PlanType)),
                 "max_deductible": _nullable("integer", "Only plans whose yearly deductible is at most this, in USD."),
@@ -149,8 +158,12 @@ def _render(result: PlanSearchResult) -> ToolOutcome:
     return ToolOutcome(json.dumps(payload, default=str), plans=result.plans)
 
 
-def run_tool(name: str, raw_arguments: str) -> ToolOutcome:
+def run_tool(name: str, raw_arguments: str, profile: PlanProfile | None = None) -> ToolOutcome:
     """Run one model-requested tool call. Never raises: a failure is a result.
+
+    `profile` fills whatever the question did not name, here on the server:
+    the user's saved ZIP code and age never pass through the model (ADR 0012).
+    Its county applies only to its own ZIP code.
 
     An exception escaping here would bypass the chat route's handler for
     OpenAI errors, fail the request and roll back the spend it recorded.
@@ -168,7 +181,13 @@ def run_tool(name: str, raw_arguments: str) -> ToolOutcome:
         problems = [f"{'.'.join(map(str, e['loc'])) or 'arguments'}: {e['msg']}" for e in errors]
         return _outcome("invalid_arguments", problems=problems)
 
-    missing = tuple(f for f in ("zip_code", "age") if getattr(args, f) is None)
+    zip_code = args.zip_code or (profile.zip_code if profile else None)
+    age = args.age if args.age is not None else (profile.age if profile else None)
+    county_fips = args.county_fips or (
+        profile.county_fips if profile and zip_code == profile.zip_code else None
+    )
+
+    missing = tuple(f for f, value in (("zip_code", zip_code), ("age", age)) if value is None)
     if missing:
         logger.info("search_plans needs input: %s", list(missing))
         outcome = _outcome("needs_input", missing=list(missing))
@@ -182,8 +201,8 @@ def run_tool(name: str, raw_arguments: str) -> ToolOutcome:
     )
     try:
         with get_session() as session:
-            result = search_plans(session, zip_code=args.zip_code, age=args.age,
-                                  county_fips=args.county_fips, filters=filters)
+            result = search_plans(session, zip_code=zip_code, age=age,
+                                  county_fips=county_fips, filters=filters)
     except Exception as exc:  # noqa: BLE001 — see the docstring
         # The type only: a database error's text carries its bound parameters, the ZIP among them.
         logger.error("search_plans failed: %s", type(exc).__name__)

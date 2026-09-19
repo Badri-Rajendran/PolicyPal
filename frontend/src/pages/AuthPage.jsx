@@ -2,6 +2,7 @@ import { useNavigate } from "react-router";
 import AuthForm from "../features/auth/AuthForm";
 import { useAuth } from "../hooks/useAuth";
 import "../features/auth/auth.css";
+import "../features/profile/profile.css";
 
 export default function AuthPage({ mode = "login" }) {
   const { status } = useAuth();

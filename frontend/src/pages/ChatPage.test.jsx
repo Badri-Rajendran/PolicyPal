@@ -9,7 +9,12 @@ import ChatPage from "./ChatPage";
 vi.mock("../hooks/useAuth");
 vi.mock("../features/chat/useThreads");
 vi.mock("../features/chat/ChatWindow", () => ({
-  default: ({ threadTitle }) => <div data-testid="chat-window">{threadTitle || "New question"}</div>,
+  default: ({ threadTitle, notice }) => (
+    <div data-testid="chat-window">
+      {threadTitle || "New question"}
+      {notice}
+    </div>
+  ),
 }));
 
 const threads = [{ id: "t1", title: "Deductibles" }];
@@ -92,5 +97,17 @@ describe("ChatPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Can't reach PolicyPal");
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(retry).toHaveBeenCalledOnce();
+  });
+
+  it("asks an account without a profile to add one, and nobody else", () => {
+    mockThreads();
+    useAuth.mockReturnValue({ user: { email: "alice@example.com", profile_complete: false }, logout: vi.fn() });
+    const { unmount } = renderAt("/chat");
+    expect(screen.getByRole("link", { name: "your profile" })).toHaveAttribute("href", "/profile");
+    unmount();
+
+    useAuth.mockReturnValue({ user: { email: "alice@example.com", profile_complete: true }, logout: vi.fn() });
+    renderAt("/chat");
+    expect(screen.queryByText(/add your ZIP code/)).not.toBeInTheDocument();
   });
 });

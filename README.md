@@ -17,7 +17,8 @@ Because HealthCare.gov is the authoritative consumer source, answers about healt
 - **Conversational Q&A**, organized into threads, over a curated insurance knowledge base
 - **Hybrid RAG pipeline** — BM25 + pgvector semantic search, cross-encoder reranked and relevance-filtered before reaching the LLM, so weakly-relevant matches never become context
 - **Cited answers** — every reply lists the source passages and their relevance score, and the plans it compared; both survive reloading the conversation
-- **Real plan comparison** — ask about ACA Marketplace plans by ZIP code and age; the model searches the ingested catalog and prices plans live for that age (ADR 0010). It compares plans and never recommends one
+- **Real plan comparison** — ask about ACA Marketplace plans; the model searches the ingested catalog and CMS prices the plans live for your age (ADR 0010). It compares plans and never recommends one
+- **A profile, kept off the model** — signup takes a ZIP code, date of birth and county, and plan questions use them without their ever being sent to the LLM. Nobody under 13 can sign up (ADR 0012)
 - **JWT-authenticated API** — only a signed-in user can query, and only ever sees their own threads
 - **Reproducible ingestion** — a single command runs fetch → normalize → chunk → embed → store, across every registered source
 
@@ -190,7 +191,8 @@ Loads real purchasable plans from the CMS Marketplace API into relational tables
 `issuers`, `plans`, `plan_counties`, `plan_cost_shares` — kept apart from the RAG
 corpus because a deductible is a `WHERE` clause, not a similarity search (ADR 0009).
 Each run also rewrites `zip_counties`, the ZIP-to-county crosswalk for the plan year
-across every state, which chat uses to resolve a user's ZIP (ADR 0010). On a database
+across every state, which chat uses to resolve a user's ZIP (ADR 0010) and signup
+checks a ZIP code against (ADR 0012) — so run it at least once before anyone signs up. On a database
 ingested before that table existed, re-run once. Needs `CMS_MARKETPLACE_API_KEY`;
 `make ingest` does not.
 

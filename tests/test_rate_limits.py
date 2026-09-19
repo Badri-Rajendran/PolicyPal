@@ -5,10 +5,11 @@ same "hammer past the configured limit" shape.
 from unittest.mock import patch
 
 from src.services.generation import Answer
+from tests.helpers import PROFILE
 
 
 def _auth_headers(client, email):
-    token = client.post("/api/auth/register", json={"email": email, "password": "correct-horse-1"}).get_json()[
+    token = client.post("/api/auth/register", json={"email": email, "password": "correct-horse-1", **PROFILE}).get_json()[
         "access_token"
     ]
     return {"Authorization": f"Bearer {token}"}
@@ -20,7 +21,7 @@ def _hammer(client, method, path, times, headers=None, body=None):
 
 def test_register_is_rate_limited(client):
     responses = [
-        client.post("/api/auth/register", json={"email": f"reg-rl{i}@example.com", "password": "correct-horse-1"})
+        client.post("/api/auth/register", json={"email": f"reg-rl{i}@example.com", "password": "correct-horse-1", **PROFILE})
         for i in range(6)
     ]
 
@@ -30,7 +31,7 @@ def test_register_is_rate_limited(client):
 
 
 def test_login_is_rate_limited(client):
-    client.post("/api/auth/register", json={"email": "login-rl@example.com", "password": "correct-horse-1"})
+    client.post("/api/auth/register", json={"email": "login-rl@example.com", "password": "correct-horse-1", **PROFILE})
     body = {"email": "login-rl@example.com", "password": "correct-horse-1"}
 
     responses = _hammer(client, "POST", "/api/auth/login", times=11, body=body)
@@ -101,3 +102,32 @@ def test_send_message_is_rate_limited(mock_answer_query, client):
     assert [r.status_code for r in responses[:15]] == [201] * 15
     assert responses[15].status_code == 429
     assert "Retry-After" in responses[15].headers
+
+
+def test_get_profile_is_rate_limited(client):
+    headers = _auth_headers(client, "get-profile-rl@example.com")
+
+    responses = _hammer(client, "GET", "/api/profile", times=61, headers=headers)
+
+    assert [r.status_code for r in responses[:60]] == [200] * 60
+    assert responses[60].status_code == 429
+    assert "Retry-After" in responses[60].headers
+
+
+def test_update_profile_is_rate_limited(client):
+    headers = _auth_headers(client, "put-profile-rl@example.com")
+
+    responses = _hammer(client, "PUT", "/api/profile", times=11, headers=headers, body=PROFILE)
+
+    assert [r.status_code for r in responses[:10]] == [200] * 10
+    assert responses[10].status_code == 429
+    assert "Retry-After" in responses[10].headers
+
+
+def test_county_lookup_is_rate_limited(client):
+    """Public, so keyed by IP address rather than a token."""
+    responses = _hammer(client, "GET", "/api/counties?zip=00001", times=31)
+
+    assert [r.status_code for r in responses[:30]] == [200] * 30
+    assert responses[30].status_code == 429
+    assert "Retry-After" in responses[30].headers

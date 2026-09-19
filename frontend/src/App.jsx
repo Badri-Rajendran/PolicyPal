@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router";
 import { useAuth } from "./hooks/useAuth";
 import AuthPage from "./pages/AuthPage";
 import ChatPage from "./pages/ChatPage";
+import ProfilePage from "./pages/ProfilePage";
 
 function RequireAuth({ children }) {
   const { status } = useAuth();
@@ -23,6 +24,7 @@ export default function App() {
       />
       <Route path="/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
       <Route path="/chat/:threadId" element={<RequireAuth><ChatPage /></RequireAuth>} />
+      <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/chat" replace />} />
     </Routes>
   );

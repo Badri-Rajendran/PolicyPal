@@ -278,7 +278,7 @@ def test_answer_query_retrieves_on_the_rewrite_but_answers_the_real_question():
         answer_query("What about for auto?", [_OLDER])
 
     mock_search.assert_called_once_with("standalone", None)
-    mock_answer.assert_called_once_with("What about for auto?", [chunk], [_OLDER])
+    mock_answer.assert_called_once_with("What about for auto?", [chunk], [_OLDER], None)
 
 
 def test_answer_query_runs_retrieval_then_generation():
@@ -289,7 +289,7 @@ def test_answer_query_runs_retrieval_then_generation():
         result = answer_query("what is a deductible", top_k=10)
 
     mock_search.assert_called_once_with("what is a deductible", 10)
-    mock_answer.assert_called_once_with("what is a deductible", [chunk], [])
+    mock_answer.assert_called_once_with("what is a deductible", [chunk], [], None)
     assert result == "text"
 
 
@@ -380,7 +380,7 @@ def test_a_plan_question_with_no_chunks_still_reaches_the_tool(_no_plan_catalog)
          patch("src.services.generation.run_tool", return_value=_plan_found()) as tool:
         result = answer("Silver plans in 75801? I'm 34.", [])
 
-    tool.assert_called_once_with("search_plans", _ARGS)
+    tool.assert_called_once_with("search_plans", _ARGS, None)
     assert result.text == "Here are the silver plans."
     assert [p.hios_plan_id for p in result.plans] == ["11111TX0010001"]
     assert token_usage() == 350

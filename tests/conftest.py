@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from src.api.limiter import limiter
 from src.api.main import create_app
 from src.core.db import engine
+from tests.helpers import seed_zip_counties
 
 
 @pytest.fixture
@@ -31,6 +32,7 @@ def client(app, monkeypatch):
         return Session(bind=connection, join_transaction_mode="create_savepoint")
 
     monkeypatch.setattr("src.api.deps.SessionLocal", make_session)
+    seed_zip_counties(make_session())
 
     try:
         yield app.test_client()

@@ -2,13 +2,17 @@ import { useNavigate, useParams } from "react-router";
 import ErrorBanner from "../components/ErrorBanner";
 import ChatWindow from "../features/chat/ChatWindow";
 import Sidebar from "../features/chat/Sidebar";
+import ProfileNudge from "../features/profile/ProfileNudge";
 import "../features/chat/chat.css";
+import "../features/profile/profile.css";
 import { useThreads } from "../features/chat/useThreads";
+import { useAuth } from "../hooks/useAuth";
 
 export default function ChatPage() {
   const { threadId } = useParams();
   const navigate = useNavigate();
   const { threads, status, error, createThread, removeThread, touchThread, retry } = useThreads();
+  const { user } = useAuth();
 
   const selectedThread = threads.find((t) => t.id === threadId);
 
@@ -47,6 +51,8 @@ export default function ChatPage() {
       <ChatWindow
         threadId={threadId ?? null}
         threadTitle={selectedThread?.title}
+        // Strictly false: a session stored before profiles existed has no flag, and is not nagged on a guess.
+        notice={user?.profile_complete === false ? <ProfileNudge /> : null}
         onCreateThread={startThread}
         onThreadTitled={touchThread}
       />

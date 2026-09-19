@@ -4,6 +4,14 @@
 
 ### Added
 
+- User profile: signup collects ZIP code, date of birth and (for a ZIP code in
+  several counties) county, and `/profile` shows and edits them. Plan questions
+  use the profile, filled in on the server, so the saved ZIP code and age never
+  reach the LLM (ADR 0012).
+- Nobody under 13 can sign up, and a refused signup stores nothing. A child's age
+  asked about in chat prices that search but is never saved with its plans.
+- `GET/PUT /api/profile` (owner only) and a public, per-IP rate-limited
+  `GET /api/counties?zip=` for the signup form.
 - Plan cards persist: `message_plans` stores each plan an answer showed as a
   snapshot (premium, the age it was priced for, deductibles, county, SBC
   link), and `MessageResponse.plans` returns them on both `POST` and `GET`
@@ -96,6 +104,9 @@
 
 ### Changed
 
+- The token response's user carries `profile_complete`, but no profile values,
+  so the ZIP code and date of birth stay out of `sessionStorage`.
+- `.link` moved from `auth.css` to the shared `components.css`; three pages use it.
 - `answer()` skips the model only when there are no chunks *and* no plan
   catalog, so a plan question reaches the tool. A reply grounded in neither a
   chunk nor a search is still refused.
