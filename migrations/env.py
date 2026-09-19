@@ -8,6 +8,7 @@ from src.models import (  # noqa: F401 — register models on Base.metadata
     chat,
     chunk,
     plan,
+    sbc,
     usage,
     user,
 )

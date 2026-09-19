@@ -47,11 +47,16 @@ HEALTHCARE_GOV_COLLECTIONS = {
     "articles": "hcg_articles.json",
 }
 
-HEALTHCARE_GOV_USER_AGENT = "PolicyPalRAGProject/1.0 (personal project)"
+# Sent on every fetch this project makes, so a site can tell who is asking.
+USER_AGENT = "PolicyPalRAGProject/1.0 (personal project)"
 
 RAW = Path("data/corpus/raw")
 
 PLANS_RAW = Path("data/plans/raw")
+
+# Downloaded SBC PDFs, kept so a re-run never downloads twice. Never
+# committed or served: ADR 0013.
+SBC_RAW = Path("data/sbc/raw")
 
 MARKDOWN = Path("data/corpus/markdown")
 

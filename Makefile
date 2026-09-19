@@ -1,4 +1,4 @@
-.PHONY: ingest ingest-plans migrate api \
+.PHONY: ingest ingest-plans ingest-sbc migrate api \
         ui-dev ui-build ui-lint ui-preview ui-test
 
 ingest:
@@ -10,6 +10,12 @@ ingest:
 ingest-plans:
 	@test -n "$(STATES)" || { echo "STATES is required, e.g. make ingest-plans STATES=TX,FL (or STATES=ALL)"; exit 2; }
 	uv run python -m src.ingestion.plans --states $(STATES)
+
+# Summary of Benefits PDFs for the catalog plans in STATES; run ingest-plans
+# first. Required for the same reason. e.g. make ingest-sbc STATES=NH,DE
+ingest-sbc:
+	@test -n "$(STATES)" || { echo "STATES is required, e.g. make ingest-sbc STATES=NH,DE (or STATES=ALL)"; exit 2; }
+	uv run python -m src.ingestion.sbc --states $(STATES)
 
 migrate:
 	uv run alembic upgrade head

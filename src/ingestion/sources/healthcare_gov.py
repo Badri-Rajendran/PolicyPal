@@ -26,9 +26,9 @@ from ..chunking import make_chunk, make_chunk_id, make_recursive_splitter, sanit
 from ..constants import (
     HEALTHCARE_GOV_BASE_URL,
     HEALTHCARE_GOV_COLLECTIONS,
-    HEALTHCARE_GOV_USER_AGENT,
     MARKDOWN,
     RAW,
+    USER_AGENT,
 )
 from ..html_text import html_to_markdown
 from .base import Source
@@ -79,7 +79,7 @@ class HealthCareGovSource(Source):
             try:
                 response = requests.get(
                     url,
-                    headers={"User-Agent": HEALTHCARE_GOV_USER_AGENT},
+                    headers={"User-Agent": USER_AGENT},
                     timeout=_REQUEST_TIMEOUT_SECONDS,
                 )
                 response.raise_for_status()

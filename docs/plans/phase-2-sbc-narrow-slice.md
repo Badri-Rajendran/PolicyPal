@@ -1,8 +1,32 @@
 # Phase 2 — SBC ingestion, narrow slice
 
-**Status:** documented only, not built
+**Status:** In progress. Ingestion is built (ADR 0013); plan-scoped answers
+are next (ADR 0014)
+**Slice:** New Hampshire and Delaware, all issuers, plus the two Texas counties
+already loaded
 **Depends on:** [Phase 1](phase-1-marketplace-api.md) — plan IDs and issuer
 document URLs come from the catalog
+
+## Decisions made while building it
+
+The user settled these at the start of the phase. Most depart from the text
+below, which is kept as the original analysis.
+
+- **SBC text lives in its own table, `sbc_chunks`, not in `chunks`.** It is
+  reached through a plan-scoped tool, never through the unconditional
+  `search()`. General search then cannot return one plan's numbers for a
+  definitional question, with no filter for every query to remember. See
+  ADR 0014, which replaces "Retrieval" and "Cross-plan retrieval" below.
+- **Slot competition is avoided by construction.** SBC passages arrive through
+  the tool and do not take corpus slots. It is still measured.
+- **Incremental ingestion without touching `chunks`.** `make ingest` still
+  rebuilds the corpus. SBC ingestion replaces one document at a time
+  (ADR 0013). ADR 0007's reasoning is unchanged.
+- **Situational questions** ("will my MRI be covered?") get a fixed boundary
+  sentence plus the plan's SBC terms, never a yes/no verdict.
+- **No issuer PDF is committed.** Parser tests use hand-written pages in the
+  template's shape, and real documents are verified by the live ingest
+  (docs/findings/sbc-documents.md).
 
 ## Goal
 
