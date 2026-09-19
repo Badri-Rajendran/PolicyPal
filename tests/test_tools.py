@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from src.services.plan_search import CountyOption, PlanResult, PlanSearchResult
+from src.services.profile import PlanProfile
 from src.services.tools import run_tool
 
 _NULLS = dict.fromkeys(
@@ -111,3 +112,42 @@ def test_the_model_reads_each_deductible_by_what_it_covers():
     assert "reference_premium_age_27" not in split
     assert "75801" not in outcome.content
     assert outcome.plans == result.plans
+
+
+# The saved profile (ADR 0012)
+
+_SAVED = PlanProfile(zip_code="75801", age=34, county_fips="48001")
+
+
+def _searched_with(raw, profile):
+    result = PlanSearchResult("no_match", county=CountyOption("48001", "Anderson", "TX"), plan_year=2026)
+    with patch("src.services.tools.search_plans", return_value=result) as search, \
+         patch("src.services.tools.get_session"):
+        outcome = run_tool("search_plans", raw, profile)
+    return search.call_args.kwargs if search.called else None, outcome
+
+
+def test_the_saved_profile_fills_a_search_the_model_left_blank():
+    """The model sends nulls; the saved ZIP code and age come from the server,
+    so they never pass through the prompt."""
+    searched, outcome = _searched_with(_args(), _SAVED)
+
+    assert (searched["zip_code"], searched["age"], searched["county_fips"]) == ("75801", 34, "48001")
+    assert "75801" not in outcome.content
+    assert "34" not in outcome.content
+
+
+def test_a_zip_code_or_age_in_the_question_overrides_the_profile_for_that_search():
+    for_a_child, _ = _searched_with(_args(age=10), _SAVED)
+    elsewhere, _ = _searched_with(_args(zip_code="74103"), _SAVED)
+
+    assert (for_a_child["zip_code"], for_a_child["age"], for_a_child["county_fips"]) == ("75801", 10, "48001")
+    # The saved county belongs to the saved ZIP code; another ZIP code resolves its own.
+    assert (elsewhere["zip_code"], elsewhere["age"], elsewhere["county_fips"]) == ("74103", 34, None)
+
+
+def test_without_a_profile_or_a_stated_zip_and_age_the_user_is_asked_to_add_them():
+    searched, outcome = _searched_with(_args(), None)
+
+    assert searched is None
+    assert outcome.needs_input == ("zip_code", "age")

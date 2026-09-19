@@ -4,7 +4,7 @@ import Composer from "./Composer";
 import MessageTranscript from "./MessageTranscript";
 import { useMessages } from "./useMessages";
 
-export default function ChatWindow({ threadId, threadTitle, onCreateThread, onThreadTitled }) {
+export default function ChatWindow({ threadId, threadTitle, notice, onCreateThread, onThreadTitled }) {
   const { messages, status, isSending, sendError, send } = useMessages(threadId, onThreadTitled);
   const [draft, setDraft] = useState("");
   const [draftThreadId, setDraftThreadId] = useState(threadId);
@@ -40,6 +40,7 @@ export default function ChatWindow({ threadId, threadTitle, onCreateThread, onTh
       <header className="chat-window-header">
         <h2>{threadTitle || "New question"}</h2>
       </header>
+      {notice}
 
       <MessageTranscript messages={messages} status={status} isSending={isSending} onPrompt={setDraft} />
 

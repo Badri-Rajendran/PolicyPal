@@ -7,6 +7,7 @@ import { useAuth } from "./hooks/useAuth";
 vi.mock("./hooks/useAuth");
 vi.mock("./pages/AuthPage", () => ({ default: ({ mode }) => <div>auth-page:{mode}</div> }));
 vi.mock("./pages/ChatPage", () => ({ default: () => <div>chat-page</div> }));
+vi.mock("./pages/ProfilePage", () => ({ default: () => <div>profile-page</div> }));
 
 function renderAt(path) {
   return render(
@@ -57,5 +58,16 @@ describe("App routing", () => {
     useAuth.mockReturnValue({ status: "signed-in" });
     renderAt("/nowhere");
     expect(screen.getByText("chat-page")).toBeInTheDocument();
+  });
+
+  it("opens the profile for a signed-in user only", () => {
+    useAuth.mockReturnValue({ status: "signed-in" });
+    const { unmount } = renderAt("/profile");
+    expect(screen.getByText("profile-page")).toBeInTheDocument();
+    unmount();
+
+    useAuth.mockReturnValue({ status: "signed-out" });
+    renderAt("/profile");
+    expect(screen.getByText("auth-page:login")).toBeInTheDocument();
   });
 });

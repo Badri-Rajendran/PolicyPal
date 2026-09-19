@@ -9,6 +9,7 @@ from src.api.deps import TokenBudgetExhaustedError, ValidationFailedError, close
 from src.api.limiter import limiter
 from src.api.routes.auth import bp as auth_bp
 from src.api.routes.chat import bp as chat_bp
+from src.api.routes.profile import bp as profile_bp
 from src.core.logging import get_logger
 from src.policypal.config import settings
 
@@ -29,6 +30,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(chat_bp)
+    app.register_blueprint(profile_bp)
 
     app.teardown_appcontext(close_db)
 

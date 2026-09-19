@@ -54,9 +54,17 @@ export function AuthProvider({ children }) {
   );
 
   const register = useCallback(
-    async (email, password) => signIn(await authService.register(email, password)),
+    async (email, password, profile) => signIn(await authService.register(email, password, profile)),
     [signIn],
   );
+
+  const updateUser = useCallback((changes) => {
+    setSession((current) => {
+      const next = { ...current, user: { ...current.user, ...changes } };
+      store(next);
+      return next;
+    });
+  }, []);
 
   const logout = useCallback(() => {
     clearStored();
@@ -69,7 +77,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext value={{ ...session, login, register, logout, expireSession }}>
+    <AuthContext value={{ ...session, login, register, logout, expireSession, updateUser }}>
       {children}
     </AuthContext>
   );

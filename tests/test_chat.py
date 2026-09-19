@@ -1,6 +1,8 @@
 import uuid
+from dataclasses import replace
+from datetime import date
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from sqlalchemy import func, select
 
@@ -8,11 +10,13 @@ from src.api import deps
 from src.models.chat import Message, MessagePlan
 from src.services.generation import Answer
 from src.services.plan_search import PlanResult
+from src.services.profile import PlanProfile, age_on, today
 from src.services.retrieval import RetrievedChunk
+from tests.helpers import PROFILE
 
 
 def _auth_headers(client, email="bob@example.com", password="correct-horse-1"):
-    token = client.post("/api/auth/register", json={"email": email, "password": password}).get_json()["access_token"]
+    token = client.post("/api/auth/register", json={"email": email, "password": password, **PROFILE}).get_json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -94,7 +98,11 @@ def test_send_message_returns_grounded_answer_with_sources(mock_answer_query, cl
     assert body["role"] == "assistant"
     assert "deductible" in body["content"]
     assert body["sources"][0]["source"] == "wiki_Health.txt"
-    mock_answer_query.assert_called_once_with("What is a deductible?", [])
+    mock_answer_query.assert_called_once_with("What is a deductible?", [], profile=ANY)
+    # The saved profile reaches the plan tool from the server, not the prompt (ADR 0012).
+    assert mock_answer_query.call_args.kwargs["profile"] == PlanProfile(
+        zip_code="00001", age=age_on(date(1990, 5, 17), today()), county_fips="99001"
+    )
 
 
 @patch("src.api.routes.chat.answer_query")
@@ -314,3 +322,15 @@ def test_deleting_a_thread_takes_its_plans(client):
 
     assert client.delete(f"/api/chat/threads/{thread_id}", headers=headers).status_code == 204
     assert db.scalar(stored) == 0
+
+
+def test_a_childs_age_prices_the_search_but_is_never_stored(client):
+    """ADR 0012: nothing about someone under 13 is stored. The question text is
+    kept as typed, but the saved card drops the age — live and after a reload."""
+    child = replace(_plan("66252TX0380010", "301.20"), premium_age=10)
+    adult = replace(_plan("66252TX0380008", "620.15"), premium_age=13)
+    _, _, sent, reopened = _ask(client, Answer("Plans for your child.", [], (child, adult)))
+
+    live = sent.get_json()["plans"]
+    assert [(p["monthly_premium"], p["premium_age"]) for p in live] == [("301.20", None), ("620.15", 13)]
+    assert next(m for m in reopened if m["role"] == "assistant")["plans"] == live

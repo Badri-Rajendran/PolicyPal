@@ -12,11 +12,12 @@ from src.models.usage import LlmUsage
 from src.policypal.config import settings
 from src.services.generation import Answer, _tokens_used
 from src.services.usage import record_tokens, tokens_used_today
+from tests.helpers import PROFILE
 
 
 def _auth_headers(client, email):
     token = client.post(
-        "/api/auth/register", json={"email": email, "password": "correct-horse-1"}
+        "/api/auth/register", json={"email": email, "password": "correct-horse-1", **PROFILE}
     ).get_json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 

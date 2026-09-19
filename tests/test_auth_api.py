@@ -1,5 +1,8 @@
+from tests.helpers import PROFILE
+
+
 def _register(client, email="alice@example.com", password="correct-horse-1"):
-    return client.post("/api/auth/register", json={"email": email, "password": password})
+    return client.post("/api/auth/register", json={"email": email, "password": password, **PROFILE})
 
 
 def test_register_success(client):

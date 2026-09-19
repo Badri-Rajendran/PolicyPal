@@ -1,6 +1,6 @@
 # Phase 1 — Marketplace API catalog and plan comparison
 
-**Status:** Steps 1–5 complete (API verified; catalog ingested; plan search in chat; plan cards saved); Step 5b (user profile) next
+**Status:** Steps 1–5b complete (API verified; catalog ingested; plan search in chat; plan cards saved; user profile); Step 6 next
 **Depends on:** [Phase 0](phase-0-hosted-llm.md) shipped green
 **Blocks:** Phases 2–4 (SBC collection needs plan IDs and document URLs) — and
 Step 1 found the API hands us candidate SBC URLs directly, see
@@ -226,7 +226,7 @@ reloaded thread keeps its plan cards exactly as sources survive a reload.
 - **`needs_plan_inputs` is neither saved nor returned**: Step 5b's profile
   replaces the inline form it was for.
 
-## Step 5b — user profile (next)
+## Step 5b — user profile (complete)
 
 Decided before building, from the user's product direction: plan searches
 should come from a profile rather than from asking in chat.
@@ -245,9 +245,24 @@ should come from a profile rather than from asking in chat.
   "for your age"; the card shows the number from the database. This follows
   CLAUDE.md's "keep PII out of prompts". An age or ZIP code the user types in
   a question still reaches OpenAI, since it is in their own message.
-- **Its own ADR**: date of birth and ZIP code at rest, who can read them, the
-  profile endpoints' authz, validation and throttling, and what users
-  registered before the profile existed are asked for.
+- **Its own ADR**: [ADR 0012](../decisions/0012-user-profile.md) covers date of
+  birth and ZIP code at rest, who can read them, the profile endpoints' authz,
+  validation and throttling, and how users registered before the profile existed
+  are handled.
+
+What shipped, beyond the decisions above:
+
+- **Nobody under 13.** Signup refuses a date of birth under 13 before any row is
+  written, and the form refuses it before the request is sent. "Today" is
+  measured in UTC−12, so an account is created only once the person is 13 in
+  every US time zone.
+- **A child's age in a question** prices that search and is not stored: the
+  saved card keeps the price, but not the age.
+- **Older accounts are nudged, not blocked**: a banner in chat links to the
+  profile page.
+- **Any real US ZIP code is accepted**; an own-exchange state gets a note.
+- **`GET /api/counties?zip=`** is public (signup has no account yet) and
+  rate-limited per IP address.
 
 ## Step 6 — frontend
 

@@ -112,3 +112,24 @@
     transform: translateY(-2px);
   }
 }
+
+.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--pine);
+  font-weight: 500;
+  text-decoration: underline;
+}
+
+.field select {
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.field select[aria-invalid="true"] {
+  border-color: var(--danger);
+}

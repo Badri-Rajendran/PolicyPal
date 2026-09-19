@@ -1,10 +1,14 @@
-import { render, screen } from "@testing-library/react";
+import { render as renderInPage, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth } from "../../hooks/useAuth";
 import Sidebar from "./Sidebar";
 
 vi.mock("../../hooks/useAuth");
+
+// The footer links to /profile, and a Link needs a router.
+const render = (ui) => renderInPage(<MemoryRouter>{ui}</MemoryRouter>);
 
 const threads = [
   { id: "t1", title: "Deductibles" },
@@ -47,5 +51,10 @@ describe("Sidebar", () => {
     expect(screen.getByText("alice@example.com")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(logout).toHaveBeenCalledOnce();
+  });
+
+  it("links to the profile", () => {
+    render(<Sidebar threads={[]} status="ready" onSelect={() => {}} onDelete={() => {}} onCreate={() => {}} />);
+    expect(screen.getByRole("link", { name: "Profile" })).toHaveAttribute("href", "/profile");
   });
 });

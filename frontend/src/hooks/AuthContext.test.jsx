@@ -42,9 +42,10 @@ describe("useAuth", () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
 
     await act(async () => {
-      await result.current.register("bob@example.com", "correct-horse-1");
+      await result.current.register("bob@example.com", "correct-horse-1", { zip_code: "75801" });
     });
 
+    expect(authService.register).toHaveBeenCalledWith("bob@example.com", "correct-horse-1", { zip_code: "75801" });
     expect(result.current.status).toBe("signed-in");
     expect(result.current.token).toBe("tok456");
   });
@@ -127,5 +128,19 @@ describe("useAuth", () => {
     expect(renderHook(() => useAuth(), { wrapper }).result.current.status).toBe("signed-out");
 
     getItem.mockRestore();
+  });
+
+  it("keeps a changed user across a reload", async () => {
+    authService.login.mockResolvedValue({ access_token: "tok1", user: { id: "u1", email: "a@example.com", profile_complete: false } });
+    const first = renderHook(() => useAuth(), { wrapper });
+    await act(async () => {
+      await first.result.current.login("a@example.com", "correct-horse-1");
+    });
+
+    act(() => first.result.current.updateUser({ profile_complete: true }));
+    first.unmount();
+    const reloaded = renderHook(() => useAuth(), { wrapper });
+
+    expect(reloaded.result.current.user).toEqual({ id: "u1", email: "a@example.com", profile_complete: true });
   });
 });

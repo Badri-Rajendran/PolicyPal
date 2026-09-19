@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted. Amended by ADR 0012: a null `premium_age` beside a price now
+means the age was a child's and was not stored. Unpriced is told by a null
+`monthly_premium`.
 
 ## Context
 

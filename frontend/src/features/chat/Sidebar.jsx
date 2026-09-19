@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import Button from "../../components/Button";
 import { useAuth } from "../../hooks/useAuth";
 import ThreadListItem from "./ThreadListItem";
@@ -33,6 +34,9 @@ export default function Sidebar({ threads, status, selectedThreadId, onSelect, o
 
       <div className="sidebar-footer">
         <span className="sidebar-email">{user?.email}</span>
+        <Link to="/profile" className="link">
+          Profile
+        </Link>
         <button type="button" className="link" onClick={logout}>
           Sign out
         </button>

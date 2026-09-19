@@ -18,6 +18,7 @@ from src.schemas.chat import (
 )
 from src.services.generation import answer_query, reset_token_usage, token_usage
 from src.services.plan_search import PlanResult
+from src.services.profile import MIN_SIGNUP_AGE, plan_profile
 from src.services.usage import (
     budget_exhausted,
     record_tokens,
@@ -56,7 +57,9 @@ def _plan_row(position: int, plan: PlanResult) -> MessagePlan:
         metal_level=plan.metal_level,
         plan_type=plan.plan_type,
         monthly_premium=plan.monthly_premium,
-        premium_age=plan.premium_age,
+        # A child's age, asked about in a question, prices that search and is
+        # then dropped: nothing about someone under 13 is stored (ADR 0012).
+        premium_age=plan.premium_age if (plan.premium_age or 0) >= MIN_SIGNUP_AGE else None,
         premium_reference=plan.premium_reference,
         deductible=plan.deductible,
         drug_deductible=plan.drug_deductible,
@@ -148,7 +151,7 @@ def create_message(thread_id: str):
 
     reset_token_usage()
     try:
-        result = answer_query(body.content, history)
+        result = answer_query(body.content, history, profile=plan_profile(user))
     except openai.OpenAIError:
         # Whatever billed before the failure (e.g. a successful rewrite call
         # ahead of a timed-out answer call) is real spend — record it rather
