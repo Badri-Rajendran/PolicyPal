@@ -119,3 +119,77 @@ wrong. These were fixed before recording the counts above:
 - **Highmark** omits "Language Access Services". The minimum-coverage section
   now also ends at the template's "To see examples…" line, so it no longer runs
   into the coverage examples.
+
+## Answering from them (ADR 0014)
+
+Measured on 2026-09-19 (UTC), after the ingest above.
+
+### Does the right section reach the model?
+
+`plan_coverage` reranks all of a plan's sections with the cross-encoder and
+passes the top 4 to the model.
+
+- **The test:** 10 questions against 8 plans spread across the reachable
+  issuers, such as "Is an MRI covered, and what does it cost?", "Is acupuncture
+  covered?" and "Do I need a referral to see a specialist?".
+- **Results:**
+  - The right section was among the four for **78 of 80**, and ranked first
+    for 65.
+  - Both misses were one Blue Cross and Blue Shield of Texas plan, on MRI and
+    on mental health. Its table text is interleaved across columns, and the
+    coverage examples outranked the right section.
+- **Scores are not answerability** (ADR 0004). The right section often scores
+  well under 0.5, and the other three can score near 0. That is why no gate is
+  applied.
+
+### Evals
+
+`scripts/eval_generation.py` was run three times:
+
+| Set | Results | Floor |
+| --- | --- | --- |
+| COVERAGE | 6/6, 6/6, 5/6 | 5 |
+| BOUNDARY | 2/2 each time | 2 |
+
+The existing sets held their floors, with one exception: the plan-search case
+that relies on a saved profile searched in 3 of 4 once. Measured directly, that
+case searched 8/8 on this branch and 6/8 on `main`, so it is model variance and
+predates this change.
+
+### Context and tokens
+
+| Question | Tokens per answer (all calls) | In context |
+| --- | --- | --- |
+| Definitional, e.g. "What is coinsurance?" | about 2,500 | 4 corpus chunks, 0 SBC passages |
+| Coverage, with passages | 4,800 to 5,400 | 4 SBC passages; 0 or 1 corpus chunk |
+| Coverage, blocked or missing SBC | about 4,000 | no passages; the answer links the PDF or asks |
+
+- **Why coverage costs more:** a coverage answer adds a tool round.
+- **SBC passages never take a corpus slot.** They arrive through the tool.
+  Corpus chunks still come from the unconditional search, and a coverage
+  question rarely clears its gate.
+
+### Live checks through the route
+
+These ran with a throwaway user (ZIP 03301), who was deleted afterwards.
+
+- **Plan follow-up:** "What silver plans can I buy?", then "Does the second one
+  cover MRIs?", cited the WellSense Silver 6000 imaging row (40% coinsurance,
+  pre-authorization required) and linked its PDF.
+- **Texas follow-up:** after a Texas search, "Does the first one cover MRIs?"
+  cited the CHRISTUS plan's imaging row.
+- **UnitedHealthcare (blocked host):** in the COVERAGE eval, not through the
+  route, the answer says the SBC can't be read here and links its PDF.
+- **Reload:** the sources survive it.
+- **Phone width:** a long PDF link wraps (fixed during the check), and there
+  is no horizontal scroll.
+- **Leaks:** neither API key appears in any log, and the application log has
+  no ZIP code. The Flask development server's own access log does record the
+  query string of `/api/counties?zip=…` (ADR 0012's endpoint), so a ZIP appears
+  there.
+- **Known variance:**
+  - The model sometimes adds the boundary sentence to a question about plan
+    terms ("does it cover MRIs?"). That is harmless, but not asked for.
+  - Before the prompt was tightened, "Will my MRI be covered?" asked right
+    after a plan question could get no tool call. It was then declined by
+    ADR 0010's no-grounding rule.

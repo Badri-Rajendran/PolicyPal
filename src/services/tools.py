@@ -1,4 +1,4 @@
-"""The one tool the answering model may call, and the boundary it crosses (ADR 0010).
+"""The tools the answering model may call, and the boundary they cross (ADR 0010, 0014).
 
 The model's arguments are generated text — possibly steered by a prompt
 injection — so they are validated here before any query or outbound call,
@@ -6,17 +6,20 @@ whatever the schema promised. What goes back is data for the model, never
 instructions, and carries neither the ZIP nor the age.
 """
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, get_args
+from typing import Annotated, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from src.core.db import get_session
 from src.core.logging import get_logger
 from src.core.marketplace_api import REFERENCE_AGE
 
+from .plan_coverage import PlanCoverage, coverage_for
 from .plan_search import PlanFilters, PlanResult, PlanSearchResult, search_plans
 from .profile import PlanProfile
+from .retrieval import RetrievedChunk
 
 logger = get_logger(__name__)
 
@@ -25,6 +28,10 @@ PlanType = Literal["HMO", "PPO", "EPO", "POS", "Indemnity"]
 SortBy = Literal["premium", "deductible"]
 
 SEARCH_PLANS = "search_plans"
+PLAN_COVERAGE = "plan_coverage"
+
+MAX_COVERAGE_PLANS = 3
+HiosPlanId = Annotated[str, StringConstraints(pattern=r"^\d{5}[A-Z]{2}\d{7}$")]
 
 
 class SearchPlansArgs(BaseModel):
@@ -38,6 +45,13 @@ class SearchPlansArgs(BaseModel):
     max_deductible: int | None = Field(ge=0, le=100_000)
     county_fips: str | None = Field(pattern=r"^\d{5}$")
     sort_by: SortBy | None
+
+
+class PlanCoverageArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    plan_ids: list[HiosPlanId] = Field(min_length=1, max_length=MAX_COVERAGE_PLANS)
+    question: str = Field(min_length=1, max_length=300)
 
 
 def _nullable(json_type: str, description: str, enum: tuple | None = None) -> dict:
@@ -92,6 +106,36 @@ TOOLS = [{
             "additionalProperties": False,
         },
     },
+}, {
+    "type": "function",
+    "function": {
+        "name": PLAN_COVERAGE,
+        "description": (
+            "Read what specific plans' Summary of Benefits and Coverage says: what a plan covers "
+            "or excludes, its copays, coinsurance and limits for a service, and its coverage "
+            "examples. Call it for any question about what a particular plan covers or charges for "
+            "a service. Plan IDs come from a search_plans result or from <plans_shown>; to learn a "
+            "plan's ID first, call search_plans."
+        ),
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "plan_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": f"1 to {MAX_COVERAGE_PLANS} plan IDs, exactly as given, e.g. 12345NH0010001.",
+                },
+                "question": {
+                    "type": "string",
+                    "description": "What to look up, as a short standalone question, e.g. \"Is an MRI covered, "
+                                   "and what does it cost?\" No personal details.",
+                },
+            },
+            "required": list(PlanCoverageArgs.model_fields),
+            "additionalProperties": False,
+        },
+    },
 }]
 
 
@@ -99,6 +143,8 @@ TOOLS = [{
 class ToolOutcome:
     content: str
     plans: tuple[PlanResult, ...] = ()
+    # SBC passages the answer may cite (ADR 0014).
+    chunks: tuple[RetrievedChunk, ...] = ()
     # What the user still has to supply: "zip_code", "age" or "county".
     needs_input: tuple[str, ...] = ()
 
@@ -158,28 +204,50 @@ def _render(result: PlanSearchResult) -> ToolOutcome:
     return ToolOutcome(json.dumps(payload, default=str), plans=result.plans)
 
 
-def run_tool(name: str, raw_arguments: str, profile: PlanProfile | None = None) -> ToolOutcome:
+def _coverage_row(coverage: PlanCoverage) -> dict:
+    row = {"plan_id": coverage.plan_id, "status": coverage.status}
+    if coverage.status == "not_found":
+        return row
+    row |= {"name": coverage.name, "issuer": coverage.issuer, "plan_year": coverage.plan_year,
+            "sbc_url": coverage.sbc_url}
+    if coverage.passages:
+        row["passages"] = [{"source": p.source, "text": p.content} for p in coverage.passages]
+    return row
+
+
+def _parse(model: type[BaseModel], name: str, raw_arguments: str) -> BaseModel | ToolOutcome:
+    """The validated arguments, or the invalid_arguments result to send back."""
+    try:
+        return model.model_validate_json(raw_arguments)
+    except ValidationError as exc:
+        # include_input=False: the rejected value may be the user's ZIP.
+        errors = exc.errors(include_input=False, include_url=False)
+        logger.info("%s arguments rejected: %s", name, sorted({e["type"] for e in errors}))
+        problems = [f"{'.'.join(map(str, e['loc'])) or 'arguments'}: {e['msg']}" for e in errors]
+        return _outcome("invalid_arguments", problems=problems)
+
+
+def run_tool(name: str, raw_arguments: str, profile: PlanProfile | None = None,
+             plan_years: Mapping[str, int] | None = None) -> ToolOutcome:
     """Run one model-requested tool call. Never raises: a failure is a result.
 
     `profile` fills whatever the question did not name, here on the server:
     the user's saved ZIP code and age never pass through the model (ADR 0012).
-    Its county applies only to its own ZIP code.
+    Its county applies only to its own ZIP code. `plan_years` holds the year
+    of each plan the user has been shown, so coverage is read for that year.
 
     An exception escaping here would bypass the chat route's handler for
     OpenAI errors, fail the request and roll back the spend it recorded.
     """
+    if name == PLAN_COVERAGE:
+        return _plan_coverage(raw_arguments, plan_years)
     if name != SEARCH_PLANS:
         logger.warning("model requested an unknown tool")
         return _outcome("error", detail="unknown tool")
 
-    try:
-        args = SearchPlansArgs.model_validate_json(raw_arguments)
-    except ValidationError as exc:
-        # include_input=False: the rejected value may be the user's ZIP.
-        errors = exc.errors(include_input=False, include_url=False)
-        logger.info("search_plans arguments rejected: %s", sorted({e["type"] for e in errors}))
-        problems = [f"{'.'.join(map(str, e['loc'])) or 'arguments'}: {e['msg']}" for e in errors]
-        return _outcome("invalid_arguments", problems=problems)
+    args = _parse(SearchPlansArgs, name, raw_arguments)
+    if isinstance(args, ToolOutcome):
+        return args
 
     zip_code = args.zip_code or (profile.zip_code if profile else None)
     age = args.age if args.age is not None else (profile.age if profile else None)
@@ -210,3 +278,22 @@ def run_tool(name: str, raw_arguments: str, profile: PlanProfile | None = None) 
 
     logger.info("search_plans: %s", result.status)
     return _render(result)
+
+
+def _plan_coverage(raw_arguments: str, plan_years: Mapping[str, int] | None) -> ToolOutcome:
+    args = _parse(PlanCoverageArgs, PLAN_COVERAGE, raw_arguments)
+    if isinstance(args, ToolOutcome):
+        return args
+
+    plan_ids = list(dict.fromkeys(args.plan_ids))
+    try:
+        with get_session() as session:
+            coverages = coverage_for(session, plan_ids, args.question, plan_years)
+    except Exception as exc:  # noqa: BLE001 — see run_tool
+        logger.error("plan_coverage failed: %s", type(exc).__name__)
+        return _outcome("error")
+
+    logger.info("plan_coverage: %s", [c.status for c in coverages])
+    payload = {"status": "ok", "plans": [_coverage_row(c) for c in coverages]}
+    chunks = tuple(p for c in coverages for p in c.passages)
+    return ToolOutcome(json.dumps(payload, default=str), chunks=chunks)

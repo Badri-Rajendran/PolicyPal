@@ -11,8 +11,10 @@ from unittest.mock import patch
 
 import pytest
 
+from src.services.plan_coverage import PlanCoverage
 from src.services.plan_search import CountyOption, PlanResult, PlanSearchResult
 from src.services.profile import PlanProfile
+from src.services.retrieval import RetrievedChunk
 from src.services.tools import run_tool
 
 _NULLS = dict.fromkeys(
@@ -151,3 +153,58 @@ def test_without_a_profile_or_a_stated_zip_and_age_the_user_is_asked_to_add_them
 
     assert searched is None
     assert outcome.needs_input == ("zip_code", "age")
+
+
+# plan_coverage (ADR 0014)
+
+def _coverage_args(plan_ids=("12345NH0010001",), question="Is an MRI covered?", **extra) -> str:
+    return json.dumps({"plan_ids": list(plan_ids), "question": question, **extra})
+
+
+@pytest.mark.parametrize("raw", [
+    _coverage_args(plan_ids=()),
+    _coverage_args(plan_ids=["12345NH0010001"] * 2 + ["12345NH0010002", "12345NH0010003"]),
+    _coverage_args(plan_ids=["12345nh0010001"]),
+    _coverage_args(plan_ids=["12345NH0010001' OR 1=1"]),
+    _coverage_args(question=""),
+    _coverage_args(question="x" * 301),
+    _coverage_args(zip_code="75801"),
+    "MRI for plan 12345NH0010001",
+])
+def test_invalid_coverage_arguments_touch_nothing(raw):
+    with patch("src.services.tools.get_session") as session:
+        outcome = run_tool("plan_coverage", raw)
+
+    session.assert_not_called()
+    assert json.loads(outcome.content)["status"] == "invalid_arguments"
+    assert outcome.chunks == ()
+
+
+def test_a_failing_coverage_read_is_a_result_not_an_exception(caplog):
+    with patch("src.services.tools.coverage_for", side_effect=RuntimeError("hios_plan_id = '12345NH0010001'")), \
+         patch("src.services.tools.get_session"), caplog.at_level(logging.DEBUG):
+        outcome = run_tool("plan_coverage", _coverage_args())
+
+    assert json.loads(outcome.content) == {"status": "error"}
+    assert "12345NH0010001" not in caplog.text
+
+
+def test_coverage_returns_each_plans_passages_as_data_and_as_citations():
+    passage = RetrievedChunk("c1", "If you have a test\nImaging $100", "Gold - Summary of Benefits - If you have a test.pdf", 0.4)
+    coverages = [
+        PlanCoverage("12345NH0010001", "ok", "Gold", "Example", 2026, "https://sbc.example.com/g.pdf", (passage,)),
+        PlanCoverage("12345NH0010002", "unavailable", "Silver", "Example", 2026, "https://sbc.example.com/s.pdf"),
+        PlanCoverage("12345NH0010003", "not_found"),
+    ]
+    with patch("src.services.tools.coverage_for", return_value=coverages) as read, patch("src.services.tools.get_session"):
+        outcome = run_tool("plan_coverage", _coverage_args(
+            ["12345NH0010001", "12345NH0010002", "12345NH0010003"]), plan_years={"12345NH0010001": 2026})
+
+    assert read.call_args.args[1:] == (["12345NH0010001", "12345NH0010002", "12345NH0010003"],
+                                       "Is an MRI covered?", {"12345NH0010001": 2026})
+    rows = json.loads(outcome.content)["plans"]
+    assert rows[0]["passages"] == [{"source": passage.source, "text": passage.content}]
+    assert rows[1] == {"plan_id": "12345NH0010002", "status": "unavailable", "name": "Silver",
+                       "issuer": "Example", "plan_year": 2026, "sbc_url": "https://sbc.example.com/s.pdf"}
+    assert rows[2] == {"plan_id": "12345NH0010003", "status": "not_found"}
+    assert outcome.chunks == (passage,)

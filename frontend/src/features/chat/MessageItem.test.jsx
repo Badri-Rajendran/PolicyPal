@@ -55,6 +55,31 @@ describe("MessageItem", () => {
     expect(screen.getByRole("rowheader", { name: /Value Silver/ })).toBeInTheDocument();
   });
 
+  it("links an https address in an answer, keeping the text around it", () => {
+    const content = "Read the full summary at https://example.com/sbc.pdf. It has the details.";
+    render(<MessageItem message={{ id: "7", role: "assistant", content, created_at: "2026-01-01T00:00:00Z" }} />);
+
+    const link = screen.getByRole("link", { name: /example\.com\/sbc\.pdf/ });
+    expect(link).toHaveAttribute("href", "https://example.com/sbc.pdf");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(link.closest("p")).toHaveTextContent(/^Read the full summary at .*\. It has the details\.$/);
+  });
+
+  it("never links anything but https", () => {
+    const content = "Try javascript:alert(1) or http://example.com";
+    render(<MessageItem message={{ id: "8", role: "assistant", content, created_at: "2026-01-01T00:00:00Z" }} />);
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getByText(content)).toBeInTheDocument();
+  });
+
+  it("leaves a user's own message unlinked", () => {
+    const content = "Is https://example.com/sbc.pdf right?";
+    render(<MessageItem message={{ id: "9", role: "user", content, created_at: "2026-01-01T00:00:00Z" }} />);
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
   it("shows no table for an answer without plans", () => {
     render(<MessageItem message={{ id: "6", role: "assistant", content: "Hi", created_at: "2026-01-01T00:00:00Z", plans: [] }} />);
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
