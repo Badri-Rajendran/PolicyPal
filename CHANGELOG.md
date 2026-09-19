@@ -4,6 +4,10 @@
 
 ### Added
 
+- Plan cards persist: `message_plans` stores each plan an answer showed as a
+  snapshot (premium, the age it was priced for, deductibles, county, SBC
+  link), and `MessageResponse.plans` returns them on both `POST` and `GET`
+  (ADR 0011).
 - `search_plans`: chat compares real Marketplace plans by ZIP code and age. The
   catalog filters by county, CMS prices the plans live for that age, and the
   model compares but never recommends (ADR 0010).

@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
@@ -25,11 +26,35 @@ class SourceResponse(BaseModel):
     relevance: float
 
 
+class PlanCardResponse(BaseModel):
+    """A plan as the answer showed it. Money serializes as an exact string
+    ("620.15"), never a float that cannot hold cents."""
+
+    hios_plan_id: str
+    plan_year: int
+    name: str
+    issuer: str
+    metal_level: str
+    plan_type: str
+    monthly_premium: Decimal | None
+    premium_age: int | None
+    premium_reference: Decimal | None
+    deductible: Decimal | None
+    drug_deductible: Decimal | None
+    out_of_pocket_max: Decimal | None
+    hsa_eligible: bool
+    quality_rating: int | None
+    county_name: str
+    state: str
+    benefits_url: str | None
+
+
 class MessageResponse(BaseModel):
     id: uuid.UUID
     role: str
     content: str
     created_at: datetime
     sources: list[SourceResponse] = []
+    plans: list[PlanCardResponse] = []
 
 

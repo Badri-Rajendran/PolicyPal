@@ -16,7 +16,7 @@ Because HealthCare.gov is the authoritative consumer source, answers about healt
 
 - **Conversational Q&A**, organized into threads, over a curated insurance knowledge base
 - **Hybrid RAG pipeline** — BM25 + pgvector semantic search, cross-encoder reranked and relevance-filtered before reaching the LLM, so weakly-relevant matches never become context
-- **Cited answers** — every reply lists the source passages and their relevance score
+- **Cited answers** — every reply lists the source passages and their relevance score, and the plans it compared; both survive reloading the conversation
 - **Real plan comparison** — ask about ACA Marketplace plans by ZIP code and age; the model searches the ingested catalog and prices plans live for that age (ADR 0010). It compares plans and never recommends one
 - **JWT-authenticated API** — only a signed-in user can query, and only ever sees their own threads
 - **Reproducible ingestion** — a single command runs fetch → normalize → chunk → embed → store, across every registered source

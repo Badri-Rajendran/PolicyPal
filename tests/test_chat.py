@@ -1,6 +1,13 @@
+import uuid
+from decimal import Decimal
 from unittest.mock import patch
 
+from sqlalchemy import func, select
+
+from src.api import deps
+from src.models.chat import Message, MessagePlan
 from src.services.generation import Answer
+from src.services.plan_search import PlanResult
 from src.services.retrieval import RetrievedChunk
 
 
@@ -227,3 +234,83 @@ def test_delete_thread(client):
 
     list_resp = client.get("/api/chat/threads", headers=headers)
     assert list_resp.get_json() == []
+
+
+# Plan cards (ADR 0011)
+
+def _plan(plan_id, premium, *, drug=None):
+    """A plan as search_plans returns it; `premium=None` means CMS gave no live price."""
+    return PlanResult(
+        hios_plan_id=plan_id, plan_year=2026, name=f"Plan {plan_id}", issuer="CHRISTUS Health Plan",
+        metal_level="Silver", plan_type="HMO",
+        monthly_premium=None if premium is None else Decimal(premium),
+        premium_reference=Decimal("535.35"), deductible=Decimal("5990.00"), drug_deductible=drug,
+        out_of_pocket_max=Decimal("9200.00"), hsa_eligible=False, quality_rating=3,
+        benefits_url="https://example.com/sbc.pdf", county_name="Anderson", state="TX",
+        premium_age=None if premium is None else 34,
+    )
+
+
+def _ask(client, answer):
+    headers = _auth_headers(client)
+    thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+    with patch("src.api.routes.chat.answer_query", return_value=answer):
+        sent = client.post(f"/api/chat/threads/{thread_id}/messages",
+                           json={"content": "Silver plans in 75801? I'm 34."}, headers=headers)
+    reopened = client.get(f"/api/chat/threads/{thread_id}/messages", headers=headers).get_json()
+    return headers, thread_id, sent, reopened
+
+
+def test_plans_survive_reopening_the_thread_exactly_as_shown(client):
+    """A reloaded thread must match the live one (ADR 0007): same plans, same
+    order, same money to the cent, and the age each premium was priced for."""
+    # Shown in an order that sorts neither way by ID, so only position can keep it.
+    plans = (
+        _plan("66252TX0380010", "620.15"),
+        _plan("33602TX0460725", "601.05"),
+        _plan("40220TX0080031", "620.26", drug=Decimal("5500.00")),
+    )
+    _, _, sent, reopened = _ask(client, Answer("Here are three plans.", [], plans))
+
+    assert sent.status_code == 201
+    live = sent.get_json()["plans"]
+    assert [p["hios_plan_id"] for p in live] == ["66252TX0380010", "33602TX0460725", "40220TX0080031"]
+    assert live[0] == {
+        "hios_plan_id": "66252TX0380010", "plan_year": 2026, "name": "Plan 66252TX0380010",
+        "issuer": "CHRISTUS Health Plan", "metal_level": "Silver", "plan_type": "HMO",
+        "monthly_premium": "620.15", "premium_age": 34, "premium_reference": "535.35",
+        "deductible": "5990.00", "drug_deductible": None, "out_of_pocket_max": "9200.00",
+        "hsa_eligible": False, "quality_rating": 3, "county_name": "Anderson", "state": "TX",
+        "benefits_url": "https://example.com/sbc.pdf",
+    }
+    assert live[2]["drug_deductible"] == "5500.00"
+    assert next(m for m in reopened if m["role"] == "assistant")["plans"] == live
+
+
+def test_an_unpriced_plan_stays_unpriced_after_a_reload(client):
+    """Stored as $0 or given an age, it would read as a live price after a reload."""
+    _, _, _, reopened = _ask(client, Answer("CMS was unavailable.", [], (_plan("66252TX0380010", None),)))
+
+    card = next(m for m in reopened if m["role"] == "assistant")["plans"][0]
+    assert (card["monthly_premium"], card["premium_age"], card["premium_reference"]) == (None, None, "535.35")
+
+
+def test_messages_without_plans_carry_none(client):
+    _, _, sent, reopened = _ask(client, Answer("A deductible is what you pay first.", _fake_chunks()))
+
+    assert sent.get_json()["plans"] == []
+    assert [m["plans"] for m in reopened] == [[], []]
+
+
+def test_deleting_a_thread_takes_its_plans(client):
+    headers, thread_id, _, _ = _ask(client, Answer("plans", [], (_plan("66252TX0380010", "620.15"),)))
+    stored = select(func.count()).select_from(MessagePlan).where(
+        MessagePlan.message_id.in_(select(Message.id).where(Message.thread_id == uuid.UUID(thread_id)))
+    )
+    # The client's requests run on their own connection and transaction; the
+    # patched SessionLocal is the one way to read what they wrote.
+    db = deps.SessionLocal()
+    assert db.scalar(stored) == 1
+
+    assert client.delete(f"/api/chat/threads/{thread_id}", headers=headers).status_code == 204
+    assert db.scalar(stored) == 0

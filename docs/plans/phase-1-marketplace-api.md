@@ -1,6 +1,6 @@
 # Phase 1 — Marketplace API catalog and plan comparison
 
-**Status:** Steps 1–4 complete (API verified; catalog ingested; plan search in chat); Step 5 next
+**Status:** Steps 1–5 complete (API verified; catalog ingested; plan search in chat; plan cards saved); Step 5b (user profile) next
 **Depends on:** [Phase 0](phase-0-hosted-llm.md) shipped green
 **Blocks:** Phases 2–4 (SBC collection needs plan IDs and document URLs) — and
 Step 1 found the API hands us candidate SBC URLs directly, see
@@ -209,22 +209,54 @@ How it differs from the sketch, and why:
 
 Each plan fact is cited as `[Plan: <id>]` and each chunk as `[Source: …]`.
 
-## Step 5 — API and persistence
+## Step 5 — API and persistence (complete)
 
-`src/schemas/chat.py` — `MessageResponse` gains `plans:
-list[PlanCardResponse] = []` alongside the existing `sources`.
+What shipped ([ADR 0011](../decisions/0011-persisting-plan-cards.md)):
+`MessageResponse` gains `plans: list[PlanCardResponse]` beside `sources`, and a
+`message_plans` table stores them. `POST` and `GET` return the same shape, so a
+reloaded thread keeps its plan cards exactly as sources survive a reload.
 
-New `message_plans` table mirroring `message_sources`, including **no foreign
-key on `plan_id`** — the same reasoning as
-[ADR 0007](../decisions/0007-persisting-citations.md): plan re-ingestion
-replaces rows, and a cascade would delete conversation history.
+- **Snapshots, not a join to `plans`.** The premium was priced live for one
+  age and cannot be rebuilt, and a re-ingest changes the catalog. So each row
+  copies what was shown.
+- **No foreign key to `plans`**, for ADR 0007's reason.
+- **`premium_age` is stored**, so a card says whose premium it is. The ZIP
+  code is not; the county name is.
+- **`position` keeps the order shown**, which the catalog cannot reproduce.
+- **`needs_plan_inputs` is neither saved nor returned**: Step 5b's profile
+  replaces the inline form it was for.
 
-Citations must survive a reload, exactly as sources do today.
+## Step 5b — user profile (next)
+
+Decided before building, from the user's product direction: plan searches
+should come from a profile rather than from asking in chat.
+
+- **Signup collects ZIP code, date of birth and county**, and a profile page
+  shows and edits them. It is date of birth, not age: an age entered once goes
+  stale, and premiums rise with it. Age is computed as of today, as
+  HealthCare.gov does.
+- **County at signup** for a ZIP in several counties (28% of ZIPs), chosen from
+  `zip_counties`, so a search never has to ask which one.
+- **`search_plans` uses the profile by default.** A ZIP code or age stated in
+  the question ("plans for my mother, 60, in 75801") is used for that search
+  only and never changes the profile.
+- **Profile ZIP code and age never reach OpenAI.** The server fills them in
+  when it runs the search. The model sees filters and results only, and says
+  "for your age"; the card shows the number from the database. This follows
+  CLAUDE.md's "keep PII out of prompts". An age or ZIP code the user types in
+  a question still reaches OpenAI, since it is in their own message.
+- **Its own ADR**: date of birth and ZIP code at rest, who can read them, the
+  profile endpoints' authz, validation and throttling, and what users
+  registered before the profile existed are asked for.
 
 ## Step 6 — frontend
 
-- `PlanCard` component rendered inside the transcript
+- `PlanCard` component rendered inside the transcript, from the saved
+  `plans`. It says whose premium it shows (`premium_age`), and that it is
+  history: link to HealthCare.gov for today's price
 - `ChatWindow` handles messages carrying `plans`
+- No inline ZIP/age form: an incomplete profile links to the profile page
+  (Step 5b)
 - A comparison is a table, so it needs its own `overflow-x: auto` container;
   the transcript itself must not scroll horizontally at phone width
 - Follow `frontend/CLAUDE.md`: no boilerplate, no large comments or
@@ -262,6 +294,8 @@ Per CLAUDE.md, no feature is complete without tests and a passing CI run.
 - **0009** — plan data relational rather than vector
 - **0010** — unconditional retrieval plus plan tools, per-fact provenance
   tagging, and the conditional `answer()` short-circuit it requires
+- **0011** — plan cards saved as snapshots, with the age each premium was
+  priced for and no foreign key to the catalog
 
 ## Verification
 

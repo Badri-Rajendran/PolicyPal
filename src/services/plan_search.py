@@ -75,6 +75,12 @@ class PlanResult:
     out_of_pocket_max: Decimal | None
     hsa_eligible: bool
     quality_rating: int | None
+    # For the saved plan card (ADR 0011); none of these reach the model.
+    benefits_url: str | None = None
+    county_name: str = ""
+    state: str = ""
+    # The age monthly_premium was priced for; None when it was not priced.
+    premium_age: int | None = None
 
     @property
     def premium_is_live(self) -> bool:
@@ -226,6 +232,8 @@ def find_plans(session, *, countyfips: str, year: int, filters: PlanFilters, lim
             out_of_pocket_max=moop,
             hsa_eligible=plan.hsa_eligible,
             quality_rating=plan.quality_rating_global,
+            benefits_url=plan.benefits_url,
+            state=plan.state,
         )
         for plan, issuer_name, ded, drug, moop in rows
     ], total
@@ -242,7 +250,11 @@ def _price(plans: list[PlanResult], *, age: int, county: CountyOption, zip_code:
         # The exception text is method and path only (see core.marketplace_api).
         logger.warning("live premiums unavailable, showing reference premiums: %s", exc)
         live = {}
-    return [replace(p, monthly_premium=live.get(p.hios_plan_id)) for p in plans]
+    return [
+        replace(p, monthly_premium=live.get(p.hios_plan_id), county_name=county.name,
+                premium_age=age if p.hios_plan_id in live else None)
+        for p in plans
+    ]
 
 
 def search_plans(session, *, zip_code: str, age: int, county_fips: str | None = None,
