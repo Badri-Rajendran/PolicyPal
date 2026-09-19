@@ -1,7 +1,9 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
+from openai import BadRequestError
 
 from src.policypal.config import settings
 from src.services.generation import (
@@ -212,6 +214,19 @@ def test_rewrite_uses_the_cheaper_model_and_answering_does_not():
 
 def test_rewrite_falls_back_to_the_raw_query_when_empty():
     client = _fake_llm("   ")
+
+    with patch("src.services.generation._llm", return_value=client):
+        assert rewrite_query("What about for auto?", [_OLDER]) == "What about for auto?"
+
+
+def test_rewrite_falls_back_when_the_api_refuses_it():
+    """Live: "Could not finish the message because max_tokens or model output
+    limit was reached" came back as a 400 and failed the whole question."""
+    refused = BadRequestError("Could not finish the message because max_tokens or model output limit was reached.",
+                              response=httpx.Response(400, request=httpx.Request("POST", "https://api.openai.com")),
+                              body=None)
+    client = MagicMock()
+    client.chat.completions.create.side_effect = refused
 
     with patch("src.services.generation._llm", return_value=client):
         assert rewrite_query("What about for auto?", [_OLDER]) == "What about for auto?"

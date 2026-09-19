@@ -3,7 +3,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import lru_cache
 
-from openai import OpenAI
+from openai import BadRequestError, OpenAI
 
 from src.core.logging import get_logger
 from src.core.text import count_tokens
@@ -341,9 +341,16 @@ def rewrite_query(query: str, history: list[dict]) -> str:
         },
     ]
 
-    generated = _generate(
-        messages, settings.rewrite_max_output_tokens, settings.openai_rewrite_model
-    )
+    try:
+        generated = _generate(
+            messages, settings.rewrite_max_output_tokens, settings.openai_rewrite_model
+        )
+    except BadRequestError:
+        # Seen live: the rewrite model spends its output cap on reasoning and
+        # the API refuses with a 400 rather than a "length" finish. The answer
+        # call still runs; it just retrieves on the raw query.
+        logger.info("rewrite refused by the API; retrieving on the raw query")
+        return query
     rewritten = generated.splitlines()[0].strip().strip('"').strip() if generated else ""
 
     if not rewritten or len(rewritten) > _MAX_REWRITE_CHARS:
