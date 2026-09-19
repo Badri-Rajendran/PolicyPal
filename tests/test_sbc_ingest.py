@@ -4,8 +4,10 @@ Real Postgres through the rolled-back `session` fixture. Fetching and PDF
 reading are replaced; the parser is the real one, fed synthetic pages.
 """
 import json
+import os
 from collections import Counter
 from contextlib import contextmanager
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import func, insert, select
@@ -47,7 +49,8 @@ def sbc(monkeypatch, session, tmp_path):
         if served[url] is None:
             return FetchResult("blocked", detail="HTTP 403")
         path = cached(url, year)
-        path.write_bytes(url.encode())
+        if not path.exists():   # a kept PDF is served from disk, as fetch_pdf does
+            path.write_bytes(url.encode())
         return FetchResult("ok", path)
 
     monkeypatch.setattr(ingest, "cache_path", cached)
@@ -130,6 +133,29 @@ def test_an_sbc_for_another_year_is_refused_and_moved_aside_not_deleted(sbc, ses
     assert list(tmp_path.glob("*.pdf")) == []
     [rejected] = (tmp_path / "rejected" / str(YEAR)).glob("*.pdf")
     assert rejected.read_bytes() == GOLD.encode()
+
+
+def test_a_file_the_parser_turns_down_keeps_its_hash_and_the_parser_that_judged_it(sbc, session):
+    """ADR 0018: which file was refused, and by which parser, so a parser change can judge it again."""
+    sbc[GOLD] = []
+    sbc[SILVER] = _pages(year=YEAR - 1)
+
+    ingest.ingest_document(GOLD, YEAR)
+    ingest.ingest_document(SILVER, YEAR)
+
+    for url in (GOLD, SILVER):
+        document = session.scalar(select(SbcDocument).where(SbcDocument.url == url))
+        assert (len(document.sha256), document.parser_version) == (64, ingest.PARSER_VERSION)
+
+
+def test_fetched_at_is_when_the_pdf_was_downloaded_not_when_it_was_parsed(sbc, session, tmp_path):
+    ingest.ingest_document(GOLD, YEAR)
+    downloaded = datetime(2026, 1, 15, 9, 30, tzinfo=UTC)
+    os.utime(ingest.cache_path(GOLD, YEAR), (downloaded.timestamp(), downloaded.timestamp()))
+
+    ingest.ingest_document(GOLD, YEAR)
+
+    assert session.scalar(select(SbcDocument.fetched_at).where(SbcDocument.url == GOLD)) == downloaded
 
 
 def test_documents_are_grouped_by_url_within_the_states_and_year(session):
