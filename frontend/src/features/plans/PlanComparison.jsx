@@ -1,5 +1,6 @@
 import { formatMoney } from "../../utils/formatMoney";
 import { safeUrl } from "../../utils/safeUrl";
+import { isUnreadable, sbcNote } from "./sbcStatus";
 
 const REFERENCE_AGE = 27;
 const HEALTHCARE_GOV = "https://www.healthcare.gov/see-plans/";
@@ -15,6 +16,15 @@ function caption(plans, shownAt) {
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+function unreadableNote(plans) {
+  const count = plans.filter((p) => isUnreadable(p.sbc_status)).length;
+  if (count === 0) return null;
+  const one = count === 1;
+  return `${count} of these ${plans.length} plans ${one ? "has" : "have"} no Summary of Benefits read here, so ${
+    one ? "its" : "their"
+  } coverage can't be answered from one.`;
 }
 
 function Premium({ plan }) {
@@ -54,6 +64,7 @@ function Deductible({ plan }) {
 
 export default function PlanComparison({ plans, shownAt }) {
   const title = caption(plans, shownAt);
+  const unreadable = unreadableNote(plans);
 
   return (
     <section className="plan-comparison">
@@ -72,6 +83,7 @@ export default function PlanComparison({ plans, shownAt }) {
           <tbody>
             {plans.map((plan) => {
               const summary = safeUrl(plan.benefits_url);
+              const note = sbcNote(plan.sbc_status);
               return (
                 <tr key={plan.hios_plan_id}>
                   <th scope="row">
@@ -79,9 +91,11 @@ export default function PlanComparison({ plans, shownAt }) {
                     <span className="plan-sub">
                       {plan.issuer} · {plan.metal_level} · {plan.plan_type}
                     </span>
+                    {note && <span className="plan-sub">{note}</span>}
                     {summary && (
                       <a href={summary} target="_blank" rel="noopener noreferrer">
-                        Plan summary<span className="visually-hidden"> for {plan.name} (opens in a new tab)</span>
+                        Summary of Benefits (PDF)
+                        <span className="visually-hidden"> for {plan.name} (opens in a new tab)</span>
                       </a>
                     )}
                   </th>
@@ -99,6 +113,7 @@ export default function PlanComparison({ plans, shownAt }) {
           </tbody>
         </table>
       </div>
+      {unreadable && <p className="plan-footnote">{unreadable}</p>}
       <p className="plan-footnote">
         Premiums are before any tax credit, which may lower what you pay. Plans and prices change, so check
         today's at{" "}

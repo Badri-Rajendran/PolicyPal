@@ -16,7 +16,7 @@ Because HealthCare.gov is the authoritative consumer source, answers about healt
 
 - **Conversational Q&A**, organized into threads, over a curated insurance knowledge base
 - **Hybrid RAG pipeline** — BM25 + pgvector semantic search, cross-encoder reranked and relevance-filtered before reaching the LLM, so weakly-relevant matches never become context
-- **Cited answers** — every reply lists the source passages and their relevance score, and the plans it compared in a side-by-side table; both survive reloading the conversation
+- **Cited answers** — every reply lists the source passages and their relevance score, and the plans it compared in a side-by-side table; both survive reloading the conversation. Each plan in the table says whether its Summary of Benefits was read, and why not (ADR 0017)
 - **Real plan comparison** — ask about ACA Marketplace plans; the model searches the ingested catalog and CMS prices the plans live for your age (ADR 0010). It compares plans and never recommends one
 - **A profile, kept off the model** — signup takes a ZIP code, date of birth and county, and plan questions use them without their ever being sent to the LLM. Nobody under 13 can sign up (ADR 0012)
 - **JWT-authenticated API** — only a signed-in user can query, and only ever sees their own threads
