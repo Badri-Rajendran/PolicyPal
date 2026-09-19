@@ -213,6 +213,10 @@
 
 ### Fixed
 
+- A follow-up question no longer fails when the rewrite model runs out of
+  output tokens: the API's 400 ("max_tokens or model output limit was
+  reached") now falls back to the raw query, as the rewrite already did for an
+  empty or rambling reply.
 - SBC parsing: a chart label split across two cells ("If you have a" above
   "hospital stay") now completes its heading instead of landing in the row
   text. `PARSER_VERSION` is 2.
