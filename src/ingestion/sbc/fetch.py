@@ -1,10 +1,13 @@
-"""Download one SBC PDF, politely, into the local cache (ADR 0013).
+"""Download one SBC PDF, politely, into the local cache (ADR 0013, 0019).
 
 The URLs come from CMS, not users, but they point at dozens of issuers'
 servers, so each is checked before it is fetched and again at every redirect:
 HTTPS only, and never an IP address or a local host name. A site that
 refuses us — robots.txt, or a 401/403 — is recorded as `blocked` and left
 alone. Nothing here tries to get past it.
+
+`revalidate` asks whether a stored document has changed, with the validators
+the issuer gave us, and writes nothing.
 """
 import hashlib
 import ipaddress
@@ -34,11 +37,20 @@ _PDF_MAGIC_WINDOW = 1024
 _last_request: dict[str, float] = {}
 
 
+NOT_MODIFIED = "not_modified"   # a revalidation only: the stored file still stands
+
+
 @dataclass(frozen=True)
 class FetchResult:
-    status: str                 # an SbcDocument status
+    status: str                 # an SbcDocument status, or NOT_MODIFIED
     path: Path | None = None    # the cached PDF, when status is "ok"
     detail: str | None = None   # why not, in a few words
+    etag: str | None = None         # what the issuer gave us to ask with next time
+    last_modified: str | None = None
+    body: bytes | None = None       # a revalidation's bytes, not yet written anywhere
+    # A failure worth trying again: a 5xx, a 429 or a network error. The
+    # stored text of a document that hits one is left alone (ADR 0019).
+    transient: bool = False
 
 
 def url_key(url: str) -> str:
@@ -55,39 +67,59 @@ def fetch_pdf(url: str, year: int) -> FetchResult:
     target = cache_path(url, year)
     if target.exists():
         return FetchResult("ok", target)
+    return _fetch(url, target)
 
+
+def revalidate(url: str, etag: str | None = None, last_modified: str | None = None) -> FetchResult:
+    """Whether the issuer's file has changed, and its bytes if it has. Writes nothing."""
+    return _fetch(url, None, (etag, last_modified))
+
+
+def _fetch(url: str, target: Path | None, validators: tuple[str | None, str | None] = (None, None)) -> FetchResult:
     try:
-        return _download(url, target)
+        return _download(url, target, validators)
     except requests.RequestException as exc:
         # The type only: an exception's text can quote the URL's query string.
         logger.info("SBC fetch failed: %s", type(exc).__name__)
-        return FetchResult("http_error", detail=f"network error ({type(exc).__name__})")
+        return FetchResult("http_error", detail=f"network error ({type(exc).__name__})", transient=True)
 
 
-def _download(url: str, target: Path) -> FetchResult:
+def _download(url: str, target: Path | None, validators: tuple[str | None, str | None]) -> FetchResult:
     for _ in range(_MAX_REDIRECTS + 1):
-        refusal = _unsafe(url)
-        if refusal:
-            return FetchResult("blocked", detail=refusal)
-        refusal = _robots_refusal(url)
+        refusal = _unsafe(url) or _robots_refusal(url)
         if refusal:
             return FetchResult("blocked", detail=refusal)
 
         _pace(urlsplit(url).hostname)
-        with requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=_TIMEOUT,
+        with requests.get(url, headers=_headers(validators), timeout=_TIMEOUT,
                           stream=True, allow_redirects=False) as response:
             if response.is_redirect:
                 url = urljoin(url, response.headers.get("Location", ""))
                 continue
+            if response.status_code == 304:
+                return FetchResult(NOT_MODIFIED)
             if response.status_code in (401, 403):
                 return FetchResult("blocked", detail=f"HTTP {response.status_code}")
             if response.status_code != 200:
-                return FetchResult("http_error", detail=f"HTTP {response.status_code}")
-            return _save(response, target)
+                return FetchResult("http_error", detail=f"HTTP {response.status_code}",
+                                   transient=response.status_code == 429 or response.status_code >= 500)
+            return _read(response, target)
     return FetchResult("http_error", detail="too many redirects")
 
 
-def _save(response: requests.Response, target: Path) -> FetchResult:
+def _headers(validators: tuple[str | None, str | None]) -> dict[str, str]:
+    """Ours, plus what the issuer gave us to ask with: a 304 costs them nothing."""
+    etag, last_modified = validators
+    headers = {"User-Agent": USER_AGENT}
+    if etag:
+        headers["If-None-Match"] = etag
+    if last_modified:
+        headers["If-Modified-Since"] = last_modified
+    return headers
+
+
+def _read(response: requests.Response, target: Path | None) -> FetchResult:
+    """The response body, saved to `target`, or handed back when there is none to save to."""
     body = bytearray()
     for block in response.iter_content(_STREAM_CHUNK):
         body += block
@@ -96,13 +128,23 @@ def _save(response: requests.Response, target: Path) -> FetchResult:
     if b"%PDF-" not in body[:_PDF_MAGIC_WINDOW]:
         return FetchResult("not_pdf", detail="response is not a PDF")
 
+    served = {"etag": response.headers.get("ETag"), "last_modified": response.headers.get("Last-Modified")}
+    if target is None:
+        return FetchResult("ok", body=bytes(body), **served)
+    save(bytes(body), target)
+    return FetchResult("ok", target, **served)
+
+
+def save(body: bytes, target: Path) -> None:
+    """Write a downloaded PDF into the cache, atomically.
+
+    Written aside and renamed into place: a killed run leaves no half file
+    for the next run to trust, and a replaced file is never half-written.
+    """
     target.parent.mkdir(parents=True, exist_ok=True)
-    # Written aside and renamed into place: a killed run leaves no half file
-    # for the next run to trust.
     partial = target.with_suffix(".tmp")
     partial.write_bytes(body)
     partial.replace(target)
-    return FetchResult("ok", target)
 
 
 def _unsafe(url: str) -> str | None:

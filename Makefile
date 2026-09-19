@@ -1,4 +1,4 @@
-.PHONY: ingest ingest-plans ingest-sbc sbc-report migrate api \
+.PHONY: ingest ingest-plans ingest-sbc refresh-sbc sbc-report migrate api \
         ui-dev ui-build ui-lint ui-preview ui-test
 
 # The plan year to work on; the commands default to the calendar year, which
@@ -22,6 +22,12 @@ ingest-plans:
 ingest-sbc:
 	@test -n "$(STATES)" || { echo "STATES is required, e.g. make ingest-sbc STATES=NH,DE (or STATES=ALL)"; exit 2; }
 	uv run python -m src.ingestion.sbc --states $(STATES) $(YEAR_ARG) $(if $(TOP_ISSUERS),--top-issuers) $(if $(ISSUERS),--issuers $(ISSUERS))
+
+# Ask every stored document whether the issuer has changed it, and retry the
+# failures ingest-sbc skips. Monthly; see docs/runbooks/sbc.md.
+refresh-sbc:
+	@test -n "$(STATES)" || { echo "STATES is required, e.g. make refresh-sbc STATES=NH,DE (or STATES=ALL)"; exit 2; }
+	uv run python -m src.ingestion.sbc --refresh --states $(STATES) $(YEAR_ARG) $(if $(TOP_ISSUERS),--top-issuers) $(if $(ISSUERS),--issuers $(ISSUERS))
 
 # How much of the catalog has a Summary of Benefits behind it, and what is
 # missing, per state and issuer. Reads only. VERIFY=1 also hashes every kept
