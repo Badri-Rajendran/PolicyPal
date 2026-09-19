@@ -4,6 +4,11 @@
 
 ### Added
 
+- The plan table says, in each plan's row, whether its Summary of Benefits was
+  read here and why not ("the insurer blocks automated access"), and counts
+  beneath the table the plans it has none for. The link reads "Summary of
+  Benefits (PDF)" and stays for plans that couldn't be read (ADR 0017). Cards
+  saved before statuses were recorded show neither.
 - Answers say which plans have no SBC text (ADR 0017). `search_plans` tells the
   model whether each plan's SBC can be read, `plan_coverage` gives the precise
   reason (no link, never read, blocked, not a PDF, wrong year…), and the prompt

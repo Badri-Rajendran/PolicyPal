@@ -23,6 +23,7 @@ function plan(overrides) {
     county_name: "Anderson",
     state: "TX",
     benefits_url: "https://example.com/sbc.pdf",
+    sbc_status: "ok",
     ...overrides,
   };
 }
@@ -90,10 +91,59 @@ describe("PlanComparison", () => {
       />,
     );
 
-    const link = within(rowFor("CHRISTUS Value Silver 70")).getByRole("link", { name: /Plan summary/ });
+    const link = within(rowFor("CHRISTUS Value Silver 70")).getByRole("link", { name: /Summary of Benefits \(PDF\)/ });
     expect(link).toHaveAttribute("href", "https://example.com/sbc.pdf");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
     expect(within(rowFor("Risky Plan")).queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("says in each plan's row whether its Summary of Benefits was read", () => {
+    render(
+      <PlanComparison
+        plans={[plan(), plan({ hios_plan_id: "x2", name: "Oscar Silver Classic", sbc_status: "blocked" })]}
+        shownAt={SHOWN_AT}
+      />,
+    );
+
+    expect(within(rowFor("CHRISTUS Value Silver 70")).getByText("Summary of Benefits read")).toBeInTheDocument();
+    const blocked = screen.getByRole("rowheader", { name: /Oscar Silver Classic/ });
+    expect(blocked).toHaveTextContent("Summary of Benefits not read here: the insurer blocks automated access");
+  });
+
+  it("keeps the link to the insurer's PDF when the document couldn't be read here", () => {
+    render(<PlanComparison plans={[plan({ sbc_status: "not_pdf" })]} shownAt={SHOWN_AT} />);
+
+    expect(screen.getByText("Summary of Benefits not read here: the link returned a web page")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Summary of Benefits \(PDF\)/ })).toHaveAttribute(
+      "href", "https://example.com/sbc.pdf",
+    );
+  });
+
+  it("says a plan lists no Summary of Benefits, with nothing to link", () => {
+    render(<PlanComparison plans={[plan({ sbc_status: "no_link", benefits_url: null })]} shownAt={SHOWN_AT} />);
+
+    expect(screen.getByText("No Summary of Benefits listed")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Summary of Benefits/ })).not.toBeInTheDocument();
+  });
+
+  it("counts the plans it has no Summary of Benefits for beneath the table", () => {
+    render(
+      <PlanComparison
+        plans={[plan(), plan({ hios_plan_id: "x2", sbc_status: "blocked" }), plan({ hios_plan_id: "x3", sbc_status: "not_read" })]}
+        shownAt={SHOWN_AT}
+      />,
+    );
+
+    expect(
+      screen.getByText("2 of these 3 plans have no Summary of Benefits read here, so their coverage can't be answered from one."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no status or count for a card saved before statuses were recorded", () => {
+    render(<PlanComparison plans={[plan({ sbc_status: null }), plan({ hios_plan_id: "x2", sbc_status: undefined })]} shownAt={SHOWN_AT} />);
+
+    expect(screen.queryByText(/Summary of Benefits read|not read here|no Summary of Benefits/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /Summary of Benefits \(PDF\)/ })).toHaveLength(2);
   });
 
   it("points to HealthCare.gov for today's prices", () => {
