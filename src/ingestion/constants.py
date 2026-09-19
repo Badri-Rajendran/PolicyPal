@@ -59,6 +59,8 @@ PLANS_RAW = Path("data/plans/raw")
 # deleted, so a corrected one can be downloaded in its place.
 SBC_RAW = Path("data/sbc/raw")
 SBC_REJECTED = Path("data/sbc/rejected")
+# The file a changed one replaced, kept for good as well (ADR 0019).
+SBC_ARCHIVE = Path("data/sbc/archive")
 
 MARKDOWN = Path("data/corpus/markdown")
 

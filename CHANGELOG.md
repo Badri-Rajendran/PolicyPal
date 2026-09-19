@@ -4,6 +4,13 @@
 
 ### Added
 
+- `make refresh-sbc`: asks every stored SBC whether the issuer has changed it,
+  with a conditional request, and retries recorded failures (ADR 0019). A
+  changed file is downloaded and the one it replaces is moved to
+  `data/sbc/archive/`, never deleted. `sbc_documents` gains `etag`,
+  `last_modified` and `checked_at` (new migration).
+- `docs/runbooks/sbc.md`: the monthly refresh, the plan-year rollover, what to
+  do after a parser change, and the disk it all takes.
 - `make sbc-report`: how much of the catalog has a Summary of Benefits behind
   it, per state and issuer, with the reasons for the rest, orphaned documents,
   plans the latest catalog run did not return, and the disk the kept PDFs use.
@@ -168,6 +175,10 @@
 
 ### Changed
 
+- `make ingest-sbc` no longer retries recorded failures; it reads what is new,
+  what an older parser stored, and any stored document whose PDF has gone
+  missing, and says how many failures it skipped (ADR 0019). Re-requesting a
+  blocked host is now `make refresh-sbc`'s job, once a month.
 - Chart rows are rebuilt from the table's ruled grid, one line per service
   (`PARSER_VERSION` 3, ADR 0018), so a wrapped service name stays beside its
   price. CHRISTUS's imaging row stated its price in 3 of 6 tries before and 6

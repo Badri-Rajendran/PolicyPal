@@ -54,6 +54,11 @@ class SbcDocument(Base):
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # The parser that judged the file: "ok", "unparseable" or "wrong_year" (ADR 0015, 0018).
     parser_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # What the issuer gave us to ask with next time, and when we last asked
+    # whether the file had changed (ADR 0019). Stored as served.
+    etag: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    last_modified: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

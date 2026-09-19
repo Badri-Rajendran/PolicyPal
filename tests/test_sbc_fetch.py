@@ -8,17 +8,23 @@ import pytest
 import requests
 
 from src.ingestion.sbc import fetch
-from src.ingestion.sbc.fetch import MAX_BYTES, cache_path, fetch_pdf
+from src.ingestion.sbc.fetch import (
+    MAX_BYTES,
+    NOT_MODIFIED,
+    cache_path,
+    fetch_pdf,
+    revalidate,
+)
 
 URL = "https://sbc.example.com/plans/2026/gold.pdf"
 PDF = b"%PDF-1.7\n" + b"x" * 100
 
 
-def _response(status=200, body=PDF, location=None, text=""):
+def _response(status=200, body=PDF, location=None, text="", headers=None):
     response = MagicMock(spec=requests.Response)
     response.status_code = status
     response.is_redirect = location is not None
-    response.headers = {"Location": location} if location else {}
+    response.headers = {"Location": location} if location else dict(headers or {})
     response.text = text
     response.iter_content.return_value = [body[i:i + 64] for i in range(0, len(body), 64)]
     response.__enter__.return_value = response
@@ -124,3 +130,75 @@ def test_a_network_error_is_a_result_naming_only_its_type(_offline):
     result = fetch_pdf(URL, 2026)
 
     assert (result.status, result.detail) == ("http_error", "network error (ConnectionError)")
+
+
+# Asking whether a stored document has changed (ADR 0019)
+
+_VALIDATORS = {"ETag": '"abc123"', "Last-Modified": "Wed, 10 Sep 2026 08:00:00 GMT"}
+
+
+def _asked_with(get):
+    """The headers of the request for the PDF itself, not robots.txt."""
+    return next(call.kwargs["headers"] for call in get.call_args_list if not call.args[0].endswith("/robots.txt"))
+
+
+def test_a_download_records_what_the_issuer_gave_us_to_ask_with(_offline):
+    _serve(_offline, _response(headers=_VALIDATORS))
+
+    result = fetch_pdf(URL, 2026)
+
+    assert (result.etag, result.last_modified) == ('"abc123"', "Wed, 10 Sep 2026 08:00:00 GMT")
+
+
+def test_a_revalidation_sends_them_and_reads_an_unchanged_answer(_offline):
+    _serve(_offline, _response(status=304, body=b""))
+
+    result = revalidate(URL, '"abc123"', "Wed, 10 Sep 2026 08:00:00 GMT")
+
+    assert result.status == NOT_MODIFIED
+    assert _asked_with(_offline)["If-None-Match"] == '"abc123"'
+    assert _asked_with(_offline)["If-Modified-Since"] == "Wed, 10 Sep 2026 08:00:00 GMT"
+
+
+def test_a_revalidation_sends_them_again_after_a_redirect(_offline):
+    moved = "https://sbc.example.com/plans/2026/gold-v2.pdf"
+    responses = iter([_response(status=301, location=moved), _response(status=304, body=b"")])
+    _offline.side_effect = lambda url, **kw: _response(404) if url.endswith("/robots.txt") else next(responses)
+
+    assert revalidate(URL, '"abc123"').status == NOT_MODIFIED
+    assert all(call.kwargs["headers"].get("If-None-Match") == '"abc123"'
+               for call in _offline.call_args_list if not call.args[0].endswith("/robots.txt"))
+
+
+def test_a_changed_file_comes_back_as_bytes_and_is_not_written(_offline, tmp_path):
+    _serve(_offline, _response(body=b"%PDF-1.7\nnew", headers=_VALIDATORS))
+
+    result = revalidate(URL)
+
+    assert (result.status, result.body) == ("ok", b"%PDF-1.7\nnew")
+    assert list(tmp_path.glob("**/*.pdf")) == []
+
+
+def test_a_revalidation_still_obeys_a_refusal(_offline):
+    _serve(_offline, _response(), robots=_response(text="User-agent: *\nDisallow: /"))
+
+    assert revalidate(URL, '"abc123"').status == "blocked"
+
+
+@pytest.mark.parametrize(("status", "transient"), [(500, True), (503, True), (429, True), (404, False), (410, False)])
+def test_only_a_server_side_failure_is_worth_trying_again(_offline, status, transient):
+    """ADR 0019: a stored document keeps its text through a 5xx, not through a 404."""
+    _serve(_offline, _response(status=status, body=b""))
+
+    result = revalidate(URL)
+
+    assert (result.status, result.transient) == ("http_error", transient)
+
+
+def test_a_network_error_is_worth_trying_again(_offline):
+    _offline.side_effect = requests.ConnectTimeout("connecting to sbc.example.com?plan=12345 failed")
+
+    result = revalidate(URL)
+
+    assert (result.status, result.transient) == ("http_error", True)
+    assert "12345" not in (result.detail or "")

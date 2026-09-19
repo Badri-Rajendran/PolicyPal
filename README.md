@@ -249,8 +249,25 @@ sections into `sbc_chunks`, kept apart from the corpus that `make ingest` rebuil
 - **Plan year is checked.** A document whose coverage period is for another year is
   refused.
 - **Every attempt is recorded** in `sbc_documents`, and the run ends by naming the
-  plans left without an SBC. Failures are retried on the next run.
+  plans left without an SBC. A recorded failure is left to `make refresh-sbc`
+  (ADR 0019), so ingesting another state does not re-request every blocked host.
 - For a quick check: `uv run python -m src.ingestion.sbc --states NH --limit 5`.
+
+### Keeping documents current
+
+```bash
+make refresh-sbc STATES=NH,DE YEAR=2026
+```
+
+Asks every stored document whether the issuer has changed it, sending the ETag
+and Last-Modified it served last time, and retries the failures `ingest-sbc`
+skips. A changed file is downloaded, the one it replaces is moved to
+`data/sbc/archive/`, and the new text replaces the old. A temporary failure
+(a 5xx or a timeout) leaves the stored text alone; a 404, a refusal or a page
+instead of a PDF drops it, so answers link the issuer's document instead.
+
+The cadence, the plan-year rollover and what to check are in
+[docs/runbooks/sbc.md](docs/runbooks/sbc.md).
 
 ### Coverage report
 

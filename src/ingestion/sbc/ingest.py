@@ -5,9 +5,11 @@ Reads the Summary of Benefits and Coverage behind every catalog plan's
 that share a URL share one document.
 
 Incremental, never a rebuild (ADR 0015): each document is its own
-transaction, one stored by the current parser is not read again, and anything
-that failed is tried again next run. Every downloaded PDF is kept (ADR 0016),
-and a stored document whose PDF is missing is downloaded again.
+transaction, and one stored by the current parser is not read again. A run
+reads what is new, what an older parser stored, and any stored document whose
+PDF has gone missing; recorded failures are left to `make refresh-sbc`
+(ADR 0019), which also asks every stored document whether it has changed.
+Every downloaded PDF is kept (ADR 0016); a replaced one is archived.
 Its chunks go to `sbc_chunks`, apart from the corpus, which `make ingest`
 rebuilds without touching them.
 
@@ -22,7 +24,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, insert, select, update
 from tqdm import tqdm
 
 from src.core.db import get_session
@@ -33,10 +35,18 @@ from src.models.sbc import SbcChunk, SbcDocument
 from src.policypal.config import settings
 
 from ..chunking import make_recursive_splitter
-from ..constants import SBC_REJECTED
+from ..constants import SBC_ARCHIVE, SBC_REJECTED
 from ..plans import resolve_states, upsert
 from .extract import PARSER_VERSION, SbcParse, SbcParseError, parse_sbc, read_pdf
-from .fetch import FetchResult, cache_path, fetch_pdf, url_key
+from .fetch import (
+    NOT_MODIFIED,
+    FetchResult,
+    cache_path,
+    fetch_pdf,
+    revalidate,
+    save,
+    url_key,
+)
 from .top_issuers import TOP_ISSUER_IDS
 
 logger = get_logger(__name__)
@@ -154,29 +164,104 @@ def _store(url: str, year: int, fetched: FetchResult, *, sha256: str | None = No
             session.execute(insert(SbcChunk), [{**chunk, "document_id": document_id} for chunk in chunks])
 
 
+def refresh_document(url: str, year: int, stored) -> str:
+    """Ask the issuer whether a stored document has changed, and follow ADR 0019.
+
+    The reply is compared in memory, so a file is only ever written when it
+    really is a new one, and the file it replaces is archived, never deleted.
+    """
+    fetched = revalidate(url, stored.etag, stored.last_modified)
+    if fetched.status == NOT_MODIFIED:
+        _checked(url, year)
+        return "unchanged"
+    if fetched.transient:
+        # A 5xx, a 429 or a network error says nothing about the document:
+        # its text stays, and the next refresh asks again.
+        return "unreachable"
+    if fetched.status != "ok":
+        _archive(url, year)
+        _store(url, year, fetched)
+        return fetched.status
+
+    if hashlib.sha256(fetched.body).hexdigest() == stored.sha256 and cache_path(url, year).exists():
+        _checked(url, year, fetched)
+        return "unchanged"
+
+    _archive(url, year, stored.sha256)
+    save(fetched.body, cache_path(url, year))
+    status = ingest_document(url, year)
+    _checked(url, year, fetched)
+    return f"changed:{status}"
+
+
+def _archive(url: str, year: int, sha256: str | None = None) -> None:
+    """Move the file a new one replaces out of the cache, keeping it for good (ADR 0016)."""
+    current = cache_path(url, year)
+    if not current.exists():
+        return
+    digest = sha256 or hashlib.sha256(current.read_bytes()).hexdigest()
+    archived = SBC_ARCHIVE / str(year) / f"{current.stem}-{digest[:12]}.pdf"
+    archived.parent.mkdir(parents=True, exist_ok=True)
+    current.replace(archived)
+
+
+def _checked(url: str, year: int, fetched: FetchResult | None = None) -> None:
+    """Record that the document was asked about, and what to ask with next time."""
+    values = {"checked_at": datetime.now(UTC)}
+    if fetched:
+        values |= {"etag": fetched.etag, "last_modified": fetched.last_modified}
+    with get_session() as session:
+        session.execute(update(SbcDocument)
+                        .where(SbcDocument.url == url, SbcDocument.plan_year == year)
+                        .values(**values))
+
+
+def _needs_reading(url: str, row, year: int, refresh: bool) -> bool:
+    """Whether this run reads the document: new, outdated, its PDF gone, or a refresh.
+
+    A recorded failure is left alone unless this is a refresh: re-asking a
+    blocked host on every run costs time and puts load on it for nothing.
+    """
+    if row is None or refresh:
+        return True
+    if row.status not in ("ok", "unparseable"):
+        return False
+    return row.parser_version != PARSER_VERSION or (row.status == "ok" and not cache_path(url, year).exists())
+
+
 def execute(states: list[str], year: int, limit: int | None = None,
-            issuer_ids: Collection[str] | None = None) -> Counter:
-    """Read every document not stored by this parser, or whose PDF is missing. Returns the statuses of those read."""
+            issuer_ids: Collection[str] | None = None, refresh: bool = False) -> Counter:
+    """Read what is new or outdated; with `refresh`, ask about every stored document too.
+
+    Returns what happened to each document read.
+    """
     with get_session() as session:
         documents = documents_for(session, states, year, issuer_ids)
-        current = set(session.scalars(select(SbcDocument.url).where(
-            SbcDocument.plan_year == year, SbcDocument.status == "ok",
-            SbcDocument.parser_version == PARSER_VERSION,
-        )))
+        stored = {row.url: row for row in session.execute(
+            select(SbcDocument.url, SbcDocument.status, SbcDocument.parser_version, SbcDocument.sha256,
+                   SbcDocument.etag, SbcDocument.last_modified).where(SbcDocument.plan_year == year)
+        ).all()}
     if not documents:
         sys.exit(f"No catalog plans with an SBC link for {', '.join(states)} in {year}. "
                  f"Run `make ingest-plans STATES={','.join(states)}` first.")
-    pending = [url for url in documents if url not in current or not cache_path(url, year).exists()]
+    pending = [url for url in documents if _needs_reading(url, stored.get(url), year, refresh)]
     urls = pending[:limit]
+    skipped = sum(1 for url in documents
+                  if url not in pending and stored.get(url) and stored[url].status != "ok")
     print(f"{len(documents)} SBC documents behind the {', '.join(states)} plans for {year}; "
-          f"{len(documents) - len(pending)} already current, reading {len(urls)}")
+          f"{len(documents) - len(pending)} already current, "
+          f"{'re-checking' if refresh else 'reading'} {len(urls)}")
+    if skipped:
+        print(f"{skipped} recorded failures skipped; `make refresh-sbc STATES={','.join(states)}` retries them")
 
     statuses = Counter()
     failures = defaultdict(list)   # (issuer, status) -> plans
     for url in tqdm(urls, desc="SBCs"):
-        status = ingest_document(url, year)
+        row = stored.get(url)
+        status = refresh_document(url, year, row) if refresh and row and row.status == "ok" \
+            else ingest_document(url, year)
         statuses[status] += 1
-        if status != "ok":
+        if status not in ("ok", "unchanged", "changed:ok", "unreachable"):
             for plan in documents[url]:
                 failures[(plan.issuer, status)].append(plan)
 
@@ -188,7 +273,7 @@ def execute(states: list[str], year: int, limit: int | None = None,
             sample = ", ".join(p.hios_plan_id for p in plans[:3]) + (" …" if len(plans) > 3 else "")
             print(f"  {issuer}: {len(plans)} plans, {status} ({sample})")
         print("\nA blocked host refused automated requests and is not retried around. "
-              "Other failures are retried on the next run.")
+              "Other failures are retried by `make refresh-sbc`.")
     logger.info("SBC ingest finished: %s", dict(statuses))
     return statuses
 
@@ -199,6 +284,8 @@ def parse_args(args):
     parser.add_argument("--year", type=int, default=datetime.now(UTC).year,
                         help="Plan year (default: this year); must match an ingested catalog year")
     parser.add_argument("--limit", type=int, default=None, help="Read at most this many documents, for a smoke run")
+    parser.add_argument("--refresh", action="store_true",
+                        help="Also ask every stored document whether it has changed, and retry failures")
     issuers = parser.add_mutually_exclusive_group()
     issuers.add_argument("--top-issuers", action="store_true",
                          help="Only the largest parent companies' plans (src/ingestion/sbc/top_issuers.py)")
@@ -220,4 +307,4 @@ def parse_args(args):
 
 def main(args=sys.argv[1:]) -> None:
     parsed = parse_args(args)
-    execute(parsed.states, parsed.year, parsed.limit, parsed.issuer_ids)
+    execute(parsed.states, parsed.year, parsed.limit, parsed.issuer_ids, parsed.refresh)
