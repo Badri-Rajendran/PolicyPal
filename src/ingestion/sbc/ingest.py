@@ -6,8 +6,8 @@ that share a URL share one document.
 
 Incremental, never a rebuild (ADR 0015): each document is its own
 transaction, one stored by the current parser is not read again, and anything
-that failed is tried again next run. A PDF is deleted once its text is
-stored, unless `--keep-pdfs` asks to keep it for tuning the parser.
+that failed is tried again next run. Every downloaded PDF is kept (ADR 0016),
+and a stored document whose PDF is missing is downloaded again.
 Its chunks go to `sbc_chunks`, apart from the corpus, which `make ingest`
 rebuilds without touching them.
 
@@ -33,6 +33,7 @@ from src.models.sbc import SbcChunk, SbcDocument
 from src.policypal.config import settings
 
 from ..chunking import make_recursive_splitter
+from ..constants import SBC_REJECTED
 from ..plans import resolve_states, upsert
 from .extract import PARSER_VERSION, SbcParse, SbcParseError, parse_sbc, read_pdf
 from .fetch import FetchResult, cache_path, fetch_pdf, url_key
@@ -92,12 +93,8 @@ def build_chunks(url: str, year: int, parse: SbcParse) -> list[dict]:
     return chunks
 
 
-def ingest_document(url: str, year: int, keep_pdf: bool = False) -> str:
-    """Fetch, parse and store one SBC. Returns its status.
-
-    The PDF is deleted once its text is committed; `keep_pdf` keeps it, and
-    an unparseable one too, so parser fixes can be tried without a download.
-    """
+def ingest_document(url: str, year: int) -> str:
+    """Fetch, parse and store one SBC. Returns its status. The PDF is always kept."""
     fetched = fetch_pdf(url, year)
     if fetched.status != "ok":
         _store(url, year, fetched)
@@ -108,23 +105,23 @@ def ingest_document(url: str, year: int, keep_pdf: bool = False) -> str:
         pages = read_pdf(fetched.path)
         parse = parse_sbc(pages)
     except SbcParseError as exc:
-        return _reject(url, year, fetched, "unparseable", str(exc), discard=not keep_pdf)
+        return _reject(url, year, "unparseable", str(exc))
     if parse.coverage_year != year:
-        # Always discarded: the issuer may correct the file at the same URL,
-        # and only a fresh download would see it.
-        return _reject(url, year, fetched, "wrong_year", f"coverage period starts in {parse.coverage_year}")
+        status = _reject(url, year, "wrong_year", f"coverage period starts in {parse.coverage_year}")
+        # Moved aside, not deleted: the issuer may correct the file at the
+        # same URL, and only a fresh download would see it.
+        rejected = SBC_REJECTED / str(year) / f"{fetched.path.stem}-{digest[:12]}.pdf"
+        rejected.parent.mkdir(parents=True, exist_ok=True)
+        fetched.path.replace(rejected)
+        return status
 
     _store(url, year, fetched, sha256=digest, pages=len(pages), title=parse.title,
            chunks=build_chunks(url, year, parse), parser_version=PARSER_VERSION)
-    if not keep_pdf:
-        fetched.path.unlink(missing_ok=True)
     return "ok"
 
 
-def _reject(url: str, year: int, fetched: FetchResult, status: str, detail: str, discard: bool = True) -> str:
+def _reject(url: str, year: int, status: str, detail: str) -> str:
     _store(url, year, FetchResult(status, detail=detail))
-    if discard:
-        fetched.path.unlink(missing_ok=True)
     return status
 
 
@@ -152,8 +149,8 @@ def _store(url: str, year: int, fetched: FetchResult, *, sha256: str | None = No
 
 
 def execute(states: list[str], year: int, limit: int | None = None,
-            issuer_ids: Collection[str] | None = None, keep_pdfs: bool = False) -> Counter:
-    """Read every document not already stored by this parser. Returns the statuses of those read."""
+            issuer_ids: Collection[str] | None = None) -> Counter:
+    """Read every document not stored by this parser, or whose PDF is missing. Returns the statuses of those read."""
     with get_session() as session:
         documents = documents_for(session, states, year, issuer_ids)
         current = set(session.scalars(select(SbcDocument.url).where(
@@ -163,11 +160,7 @@ def execute(states: list[str], year: int, limit: int | None = None,
     if not documents:
         sys.exit(f"No catalog plans with an SBC link for {', '.join(states)} in {year}. "
                  f"Run `make ingest-plans STATES={','.join(states)}` first.")
-    pending = [url for url in documents if url not in current]
-    if not keep_pdfs:
-        # A tuning run keeps the PDFs of what it stored; the next run removes them.
-        for url in documents.keys() & current:
-            cache_path(url, year).unlink(missing_ok=True)
+    pending = [url for url in documents if url not in current or not cache_path(url, year).exists()]
     urls = pending[:limit]
     print(f"{len(documents)} SBC documents behind the {', '.join(states)} plans for {year}; "
           f"{len(documents) - len(pending)} already current, reading {len(urls)}")
@@ -175,7 +168,7 @@ def execute(states: list[str], year: int, limit: int | None = None,
     statuses = Counter()
     failures = defaultdict(list)   # (issuer, status) -> plans
     for url in tqdm(urls, desc="SBCs"):
-        status = ingest_document(url, year, keep_pdfs)
+        status = ingest_document(url, year)
         statuses[status] += 1
         if status != "ok":
             for plan in documents[url]:
@@ -204,8 +197,6 @@ def parse_args(args):
     issuers.add_argument("--top-issuers", action="store_true",
                          help="Only the largest parent companies' plans (src/ingestion/sbc/top_issuers.py)")
     issuers.add_argument("--issuers", help="Only these HIOS issuer IDs' plans, comma-separated, e.g. 40788,66252")
-    parser.add_argument("--keep-pdfs", action="store_true",
-                        help="Keep downloaded PDFs after parsing, for tuning the parser")
     parsed = parser.parse_args(args)
     try:
         parsed.states = resolve_states(parsed.states)
@@ -223,4 +214,4 @@ def parse_args(args):
 
 def main(args=sys.argv[1:]) -> None:
     parsed = parse_args(args)
-    execute(parsed.states, parsed.year, parsed.limit, parsed.issuer_ids, parsed.keep_pdfs)
+    execute(parsed.states, parsed.year, parsed.limit, parsed.issuer_ids)

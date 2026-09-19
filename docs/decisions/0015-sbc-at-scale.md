@@ -3,7 +3,9 @@
 ## Status
 
 Accepted. Phase 3. Amends ADR 0013 where it says documents are "downloaded
-once" and "every run re-parses from the cache".
+once" and "every run re-parses from the cache". **Its "PDFs are deleted once
+their text is stored" is superseded by ADR 0016:** every downloaded SBC is
+kept.
 
 ## Context
 
@@ -83,7 +85,7 @@ listed with the HIOS issuer IDs it sells under.
   replaces ADR 0013's "every run re-parses from the cache".
 - Failures are still retried on every run, as before.
 
-### PDFs are deleted once their text is stored
+### PDFs are deleted once their text is stored (superseded by ADR 0016)
 
 - The PDF is deleted after the document's text is committed. If the write
   fails, the file stays.

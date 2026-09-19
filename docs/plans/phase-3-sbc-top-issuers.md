@@ -23,8 +23,7 @@ the long tail of small regional carriers in the same step.
 - **Ingestion that scales:**
   - a document is parsed once per `PARSER_VERSION`, so a run with nothing new
     makes no request;
-  - PDFs are deleted once their text is stored, and `KEEP_PDFS=1` keeps them
-    while tuning the parser;
+  - every downloaded PDF is kept (ADR 0016; ADR 0015 first deleted them);
   - `TOP_ISSUERS=1` or `ISSUERS=…` narrows a run to the listed issuers.
 
 ## What this phase tested, and what it found

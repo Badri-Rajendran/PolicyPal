@@ -40,13 +40,18 @@ def sbc(monkeypatch, session, tmp_path):
         yield session
         session.flush()
 
+    def cached(url, year):
+        return tmp_path / f"{abs(hash(url))}.pdf"
+
     def fake_fetch(url, year):
         if served[url] is None:
             return FetchResult("blocked", detail="HTTP 403")
-        path = tmp_path / f"{abs(hash(url))}.pdf"
+        path = cached(url, year)
         path.write_bytes(url.encode())
         return FetchResult("ok", path)
 
+    monkeypatch.setattr(ingest, "cache_path", cached)
+    monkeypatch.setattr(ingest, "SBC_REJECTED", tmp_path / "rejected")
     monkeypatch.setattr(ingest, "get_session", same_session)
     monkeypatch.setattr(ingest, "fetch_pdf", fake_fetch)
     monkeypatch.setattr(ingest, "read_pdf", lambda path: served[path.read_bytes().decode()])
@@ -113,7 +118,8 @@ def test_a_document_that_now_fails_loses_its_chunks(sbc, session):
     assert _version(session, GOLD) is None
 
 
-def test_an_sbc_for_another_year_is_refused_and_its_download_discarded(sbc, session, tmp_path):
+def test_an_sbc_for_another_year_is_refused_and_moved_aside_not_deleted(sbc, session, tmp_path):
+    """Out of the cache, so a corrected file at the same URL is downloaded; kept, never deleted (ADR 0016)."""
     sbc[GOLD] = _pages(year=YEAR - 1)
 
     assert ingest.ingest_document(GOLD, YEAR) == "wrong_year"
@@ -122,6 +128,8 @@ def test_an_sbc_for_another_year_is_refused_and_its_download_discarded(sbc, sess
     detail = session.scalar(select(SbcDocument.detail).where(SbcDocument.url == GOLD))
     assert detail == f"coverage period starts in {YEAR - 1}"
     assert list(tmp_path.glob("*.pdf")) == []
+    [rejected] = (tmp_path / "rejected" / str(YEAR)).glob("*.pdf")
+    assert rejected.read_bytes() == GOLD.encode()
 
 
 def test_documents_are_grouped_by_url_within_the_states_and_year(session):
@@ -178,33 +186,25 @@ def test_a_parser_change_reads_stored_documents_again(sbc, fetches, catalog, ses
     assert _version(session, GOLD) == ingest.PARSER_VERSION
 
 
-def test_a_run_without_keep_pdfs_removes_the_pdfs_a_tuning_run_kept(sbc, fetches, catalog, session, tmp_path,
-                                                                    monkeypatch):
-    monkeypatch.setattr(ingest, "cache_path", lambda url, year: tmp_path / f"{abs(hash(url))}.pdf")
-    ingest.execute(["NH"], YEAR, keep_pdfs=True)
+def test_every_downloaded_pdf_is_kept_parsed_or_not(sbc, fetches, catalog, session, tmp_path):
+    sbc[SILVER] = []
+
+    ingest.execute(["NH"], YEAR)
+    ingest.execute(["NH"], YEAR)
+
+    assert (_status(session, GOLD), _status(session, SILVER)) == ("ok", "unparseable")
     assert len(list(tmp_path.glob("*.pdf"))) == 2
+
+
+def test_a_stored_document_whose_pdf_is_missing_is_downloaded_again(sbc, fetches, catalog, session, tmp_path):
+    ingest.execute(["NH"], YEAR)
+    ingest.cache_path(GOLD, YEAR).unlink()
 
     fetches.clear()
     ingest.execute(["NH"], YEAR)
 
-    assert fetches == []
-    assert list(tmp_path.glob("*.pdf")) == []
-
-
-def test_the_pdf_is_deleted_once_its_text_is_stored(sbc, session, tmp_path):
-    assert ingest.ingest_document(GOLD, YEAR) == "ok"
-
-    assert list(tmp_path.glob("*.pdf")) == []
-
-
-def test_keeping_pdfs_keeps_the_unparseable_ones_too(sbc, session, tmp_path):
-    """The tuning pass needs the hard cases on disk."""
-    sbc[SILVER] = []
-
-    assert ingest.ingest_document(GOLD, YEAR, keep_pdf=True) == "ok"
-    assert ingest.ingest_document(SILVER, YEAR, keep_pdf=True) == "unparseable"
-
-    assert len(list(tmp_path.glob("*.pdf"))) == 2
+    assert fetches == [GOLD]
+    assert ingest.cache_path(GOLD, YEAR).exists()
 
 
 def test_a_long_section_is_split_and_every_piece_keeps_its_heading():
