@@ -221,8 +221,7 @@ Verified API behaviour is recorded in
 
 ```bash
 make ingest-sbc STATES=NH,DE        # after make ingest-plans for the same states
-make ingest-sbc STATES=FL,TX TOP_ISSUERS=1              # only the ten largest parent companies
-make ingest-sbc STATES=FL,TX TOP_ISSUERS=1 KEEP_PDFS=1  # keep the PDFs, for tuning the parser
+make ingest-sbc STATES=FL,TX TOP_ISSUERS=1   # only the ten largest parent companies
 ```
 
 Reads the **Summary of Benefits and Coverage** behind each catalog plan's `benefits_url`:
@@ -237,9 +236,10 @@ sections into `sbc_chunks`, kept apart from the corpus that `make ingest` rebuil
 - **Parsed once.** A document stored by the current parser is skipped on the next run,
   with no request. Bumping `PARSER_VERSION` in `src/ingestion/sbc/extract.py` reads
   every document again (ADR 0015).
-- **PDFs are not kept.** A PDF is deleted from `data/sbc/raw/` (gitignored, never served
-  or committed) once its text is stored. `KEEP_PDFS=1` keeps them, so parser fixes can be
-  tried without downloading again. Tune before the final run.
+- **Every PDF is kept.** Downloaded SBCs stay in `data/sbc/raw/` (gitignored, never served
+  or committed), about 0.75 MB each. A stored document whose PDF has gone missing is
+  downloaded again, and one rejected as another year's is moved to `data/sbc/rejected/`
+  (ADR 0016).
 - **The largest issuers.** `TOP_ISSUERS=1` limits the run to the ten largest parent
   companies by 2025 enrollment, listed in `src/ingestion/sbc/top_issuers.py`;
   `ISSUERS=40788,66252` limits it to the HIOS issuer IDs given.

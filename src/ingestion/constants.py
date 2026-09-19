@@ -54,9 +54,11 @@ RAW = Path("data/corpus/raw")
 
 PLANS_RAW = Path("data/plans/raw")
 
-# Downloaded SBC PDFs, kept so a re-run never downloads twice. Never
-# committed or served: ADR 0013.
+# Downloaded SBC PDFs, every one kept for good (ADR 0016). Never committed or
+# served: ADR 0013. A file rejected as another year's is moved aside, not
+# deleted, so a corrected one can be downloaded in its place.
 SBC_RAW = Path("data/sbc/raw")
+SBC_REJECTED = Path("data/sbc/rejected")
 
 MARKDOWN = Path("data/corpus/markdown")
 

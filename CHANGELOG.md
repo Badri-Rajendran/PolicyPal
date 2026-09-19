@@ -19,8 +19,6 @@
   `src/ingestion/sbc/top_issuers.py`.
 - `sbc_documents.parser_version`: a document stored by the current parser is
   skipped on the next run, with no request and no parse.
-- `KEEP_PDFS=1` keeps downloaded SBC PDFs, unparseable ones included, for tuning
-  the parser.
 - Coverage answers from a plan's SBC: a `plan_coverage` tool reranks that plan's
   own sections and cites the best four as "plan - Summary of Benefits - section"
   (ADR 0014). General search never sees SBC text.
@@ -145,9 +143,8 @@
 
 ### Changed
 
-- SBC PDFs are deleted once their text is stored, instead of cached for good
-  (ADR 0015). A parser fix now reaches stored documents by bumping
-  `PARSER_VERSION`, not by re-parsing every run.
+- A parser fix reaches stored SBCs by bumping `PARSER_VERSION`, re-parsing
+  them from disk, instead of re-parsing every document on every run (ADR 0015).
 - The ingestion user agent is one shared `USER_AGENT` constant.
 - Chat layout columns are `minmax(0, 1fr)`: a plain `1fr` let a wide table widen
   the whole page on a phone.
@@ -219,8 +216,11 @@
 - SBC parsing: a chart label split across two cells ("If you have a" above
   "hospital stay") now completes its heading instead of landing in the row
   text. `PARSER_VERSION` is 2.
-- A run without `KEEP_PDFS` now removes the PDFs a tuning run kept. It used to
-  skip those documents as current and leave their files behind.
+- Downloaded SBC PDFs were deleted once their text was stored (ADR 0015), and
+  Phase 3's final run removed all 436. Every downloaded SBC is now kept (ADR
+  0016): no code path deletes one, a `wrong_year` file is moved to
+  `data/sbc/rejected/`, and a stored document whose PDF is missing is
+  downloaded again. `KEEP_PDFS` is gone. The 436 were downloaded again.
 - An OpenAI failure mid-request returned an HTML 500, dropped the user's
   own message, and lost whatever tokens had already billed. Now returns a
   JSON 502, keeps the message, and records the partial spend.

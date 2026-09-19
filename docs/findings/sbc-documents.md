@@ -303,12 +303,20 @@ Select Health sells only in Utah, which isn't loaded.
   line. Titles are stored but not used in answers.
 - **Disk:** the kept PDFs of the tuning pass came to 321 MB (436 files,
   0.74 MB each).
-- **The final run deleted them all.** It ran without `KEEP_PDFS`, read nothing
-  already current, and left `data/sbc/raw/` empty.
+- **The final run deleted them all,** as ADR 0015 then required. It read
+  nothing already current, and left `data/sbc/raw/` empty.
   - It took 125 s for the top issuers, retrying failures only.
   - Most of that was BCBS of North Carolina's 57 links, requested again at
     two seconds each. Blocked hosts cost nothing, because their refusal is
     cached per run.
+- **All 436 were then downloaded again, and are kept for good** (ADR 0016).
+  - Run in the same three scopes, the downloads took 1,215 s, 129 s and 68 s.
+    The file count only rose: 0, then 369, then 408, then 436.
+  - **Every one is byte-for-byte the file first parsed:** its sha256 equals
+    the one stored at the time. No issuer had changed a file.
+  - `data/sbc/raw/2026/` now holds one PDF per stored document, 321 MB in all.
+  - A further run would read only the failures (403 blocked, 56 `not_pdf`,
+    1 HTTP 404) and none of the 436.
 
 ### Is each document the plan's?
 
