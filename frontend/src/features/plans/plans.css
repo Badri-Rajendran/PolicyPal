@@ -1,0 +1,91 @@
+.plan-comparison {
+  margin-top: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+/* The table scrolls inside this box; the transcript never scrolls sideways. */
+.plan-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.plan-table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.plan-table caption {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  border-bottom: 1px solid var(--rule);
+}
+
+.plan-table th,
+.plan-table td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--rule);
+}
+
+.plan-table tbody tr:last-child th,
+.plan-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.plan-table thead th {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.plan-table tbody th {
+  font-weight: 400;
+  min-width: 14rem;
+}
+
+.plan-table td span,
+.plan-table tbody th > span,
+.plan-table tbody th > a {
+  display: block;
+}
+
+.plan-name {
+  font-weight: 600;
+}
+
+.plan-figure {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.plan-sub {
+  font-size: 0.76rem;
+  color: var(--ink-muted);
+}
+
+.plan-table a,
+.plan-footnote a {
+  color: var(--pine);
+}
+
+.plan-table tbody th > a {
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+}
+
+.plan-footnote {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}

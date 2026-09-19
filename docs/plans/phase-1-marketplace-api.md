@@ -1,6 +1,6 @@
 # Phase 1 — Marketplace API catalog and plan comparison
 
-**Status:** Steps 1–5b complete (API verified; catalog ingested; plan search in chat; plan cards saved; user profile); Step 6 next
+**Status:** Complete: API verified, catalog ingested, plan search in chat, plan cards saved, user profile, plan comparison table
 **Depends on:** [Phase 0](phase-0-hosted-llm.md) shipped green
 **Blocks:** Phases 2–4 (SBC collection needs plan IDs and document URLs) — and
 Step 1 found the API hands us candidate SBC URLs directly, see
@@ -264,18 +264,28 @@ What shipped, beyond the decisions above:
 - **`GET /api/counties?zip=`** is public (signup has no account yet) and
   rate-limited per IP address.
 
-## Step 6 — frontend
+## Step 6 — frontend (complete)
 
-- `PlanCard` component rendered inside the transcript, from the saved
-  `plans`. It says whose premium it shows (`premium_age`), and that it is
-  history: link to HealthCare.gov for today's price
-- `ChatWindow` handles messages carrying `plans`
-- No inline ZIP/age form: an incomplete profile links to the profile page
-  (Step 5b)
-- A comparison is a table, so it needs its own `overflow-x: auto` container;
-  the transcript itself must not scroll horizontally at phone width
-- Follow `frontend/CLAUDE.md`: no boilerplate, no large comments or
-  docstrings, readable and reviewable
+What shipped: `features/plans/PlanComparison`, rendered by `MessageItem` for an
+assistant message with `plans`. It is a comparison **table** rather than one
+card per plan (the user's choice), with one row per plan:
+
+- **The caption** names the metal level, the county and the date shown. Plans
+  are history, and the footnote links to HealthCare.gov for today's prices,
+  before tax credits.
+- **Premium:** "$620.15/mo · age 34", or "for the age you asked about" for a
+  child's search, whose age is never stored (ADR 0012). An unpriced plan reads
+  "Live price unavailable" with the age-27 figure labelled as such, never as a
+  live price.
+- **Deductible:** both figures when a plan has separate medical and drug
+  deductibles. Missing values read "Not listed" or "Not rated", never blank.
+- **Plan summary links** come from CMS, so only `http(s)` addresses become
+  links (`utils/safeUrl`), opened with `noopener noreferrer`.
+- **The table scrolls inside its own keyboard-focusable region.** At phone
+  width the page does not: the browser check found a plain `1fr` grid column
+  widening the page to 712 px on a 375 px screen, and `minmax(0, 1fr)` fixed it.
+- **No inline ZIP/age form**: an account without a profile gets a banner
+  linking to the profile page (Step 5b).
 
 ## Tests and evals
 

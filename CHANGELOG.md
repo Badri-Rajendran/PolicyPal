@@ -4,6 +4,10 @@
 
 ### Added
 
+- Plan comparison table in the chat transcript: premium and the age it was
+  priced for, deductibles (medical and drug when separate), out-of-pocket
+  maximum, quality rating and a plan-summary link per plan, in a region that
+  scrolls sideways on its own at phone width. Completes Phase 1.
 - User profile: signup collects ZIP code, date of birth and (for a ZIP code in
   several counties) county, and `/profile` shows and edits them. Plan questions
   use the profile, filled in on the server, so the saved ZIP code and age never
@@ -104,6 +108,8 @@
 
 ### Changed
 
+- Chat layout columns are `minmax(0, 1fr)`: a plain `1fr` let a wide table widen
+  the whole page on a phone.
 - The token response's user carries `profile_complete`, but no profile values,
   so the ZIP code and date of birth stay out of `sessionStorage`.
 - `.link` moved from `auth.css` to the shared `components.css`; three pages use it.
@@ -225,6 +231,8 @@
 
 ### Security
 
+- Plan-summary links from CMS render only as `http(s)` URLs, never `javascript:` or
+  `data:`, and open with `noopener noreferrer`.
 - Composer discloses that messages and retrieved sources are sent to
   OpenAI, and asks users to avoid sharing identifying details (ADR 0008).
 - Hardened the generation prompt against prompt injection (OWASP LLM Top 10):
