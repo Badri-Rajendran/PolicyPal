@@ -1,6 +1,8 @@
 .chat-shell {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  /* minmax(0, …): a plain 1fr column never narrows below its widest content,
+     so a plan table would widen the whole page on a phone. */
+  grid-template-columns: 280px minmax(0, 1fr);
   height: 100%;
 }
 
@@ -128,6 +130,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
 }
 
 .chat-window-header {
@@ -158,6 +161,12 @@
 
 .message {
   max-width: 68ch;
+  /* A flex child sizes to its content by default; a wide table would widen the page. */
+  min-width: 0;
+}
+
+.message-with-plans {
+  max-width: 100%;
 }
 
 .message-meta {
@@ -311,7 +320,7 @@
 
 @media (max-width: 720px) {
   .chat-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto 1fr;
   }
 

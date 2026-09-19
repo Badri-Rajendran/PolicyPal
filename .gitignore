@@ -57,3 +57,6 @@ node_modules/
 # Claude Code local tooling state. The CLAUDE.md instruction files at the
 # repo root and in frontend/ are committed; this directory is per-developer.
 .claude/
+
+# Screenshots, snapshots and console logs from the Playwright MCP browser.
+.playwright-mcp/

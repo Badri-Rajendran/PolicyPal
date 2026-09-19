@@ -4,6 +4,7 @@ import ChatWindow from "../features/chat/ChatWindow";
 import Sidebar from "../features/chat/Sidebar";
 import ProfileNudge from "../features/profile/ProfileNudge";
 import "../features/chat/chat.css";
+import "../features/plans/plans.css";
 import "../features/profile/profile.css";
 import { useThreads } from "../features/chat/useThreads";
 import { useAuth } from "../hooks/useAuth";
