@@ -4,6 +4,11 @@
 
 ### Added
 
+- `scripts/eval_sbc_ranking.py`: checks without calling a model that the
+  section answering each of ten questions is among the four `plan_coverage`
+  ranks highest, for two plans per issuer.
+- Tests that no SBC ingestion code deletes a file, that `data/` stays in
+  `.gitignore`, and that no PDF is tracked by git (ADR 0016).
 - The plan table says, in each plan's row, whether its Summary of Benefits was
   read here and why not ("the insurer blocks automated access"), and counts
   beneath the table the plans it has none for. The link reads "Summary of
@@ -157,6 +162,16 @@
 
 ### Changed
 
+- Chart rows are rebuilt from the table's ruled grid, one line per service
+  (`PARSER_VERSION` 3, ADR 0018), so a wrapped service name stays beside its
+  price. CHRISTUS's imaging row stated its price in 3 of 6 tries before and 6
+  of 6 after. All 436 stored documents were re-parsed from disk, with no
+  download, and still yield their 25 sections.
+- A PDF with no text layer is recorded as `unparseable` with that reason; no
+  OCR.
+- `unparseable` and `wrong_year` documents keep the file's `sha256` and the
+  parser version that turned them down, and `fetched_at` is now when a PDF was
+  downloaded rather than when it was last parsed (ADR 0018).
 - A coverage answer saves and shows only the corpus sources it cites; other
   answers keep every retrieved source (ADR 0017, amending ADR 0007).
 - A parser fix reaches stored SBCs by bumping `PARSER_VERSION`, re-parsing

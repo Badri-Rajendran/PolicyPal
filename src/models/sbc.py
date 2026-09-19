@@ -50,8 +50,9 @@ class SbcDocument(Base):
     pages: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # The plan name printed on the SBC, which can differ from the catalog's.
     title: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # When the PDF was downloaded; for a failed fetch, when it was tried (ADR 0018).
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # The parser that produced the chunks; NULL unless status is "ok" (ADR 0015).
+    # The parser that judged the file: "ok", "unparseable" or "wrong_year" (ADR 0015, 0018).
     parser_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

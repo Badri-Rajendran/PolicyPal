@@ -575,7 +575,7 @@ def test_the_coverage_prompt_forbids_describing_a_plan_with_no_document_from_gen
     system = " ".join(_sent_messages(client)[0]["content"].split())
     assert "never describe its coverage, costs or exclusions — not from <retrieved_context>" in system
     assert "name every plan whose document couldn't be read" in system
-    assert "Then stop: add nothing about what plans usually cover or cost" in system
+    assert "a question about that plan is not a question about plans in general" in system
     assert "sbc_readable" in system
 
 

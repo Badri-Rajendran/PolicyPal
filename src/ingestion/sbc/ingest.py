@@ -101,13 +101,16 @@ def ingest_document(url: str, year: int) -> str:
         return fetched.status
 
     digest = hashlib.sha256(fetched.path.read_bytes()).hexdigest()
+    # When the file was downloaded, not when it was last parsed (ADR 0018).
+    downloaded = datetime.fromtimestamp(fetched.path.stat().st_mtime, UTC)
     try:
         pages = read_pdf(fetched.path)
         parse = parse_sbc(pages)
     except SbcParseError as exc:
-        return _reject(url, year, "unparseable", str(exc))
+        return _reject(url, year, "unparseable", str(exc), digest, downloaded)
     if parse.coverage_year != year:
-        status = _reject(url, year, "wrong_year", f"coverage period starts in {parse.coverage_year}")
+        status = _reject(url, year, "wrong_year", f"coverage period starts in {parse.coverage_year}",
+                         digest, downloaded)
         # Moved aside, not deleted: the issuer may correct the file at the
         # same URL, and only a fresh download would see it.
         rejected = SBC_REJECTED / str(year) / f"{fetched.path.stem}-{digest[:12]}.pdf"
@@ -116,28 +119,31 @@ def ingest_document(url: str, year: int) -> str:
         return status
 
     _store(url, year, fetched, sha256=digest, pages=len(pages), title=parse.title,
-           chunks=build_chunks(url, year, parse), parser_version=PARSER_VERSION)
+           chunks=build_chunks(url, year, parse), parser_version=PARSER_VERSION, fetched_at=downloaded)
     return "ok"
 
 
-def _reject(url: str, year: int, status: str, detail: str) -> str:
-    _store(url, year, FetchResult(status, detail=detail))
+def _reject(url: str, year: int, status: str, detail: str, sha256: str, downloaded: datetime) -> str:
+    """A file the parser turned down. Which file, and which parser, are kept (ADR 0018)."""
+    _store(url, year, FetchResult(status, detail=detail), sha256=sha256, parser_version=PARSER_VERSION,
+           fetched_at=downloaded)
     return status
 
 
 def _store(url: str, year: int, fetched: FetchResult, *, sha256: str | None = None,
            pages: int | None = None, title: str | None = None, chunks: list[dict] | None = None,
-           parser_version: int | None = None) -> None:
+           parser_version: int | None = None, fetched_at: datetime | None = None) -> None:
     """Record the attempt and replace the document's chunks, in one transaction.
 
-    A document that fails now loses the chunks an earlier run gave it, and
-    its parser version: an answer must never quote an SBC that is no longer
-    the plan's, and the next run must try it again.
+    A document that fails now loses the chunks an earlier run gave it: an
+    answer must never quote an SBC that is no longer the plan's. Only a file
+    the parser judged keeps its parser version, so a parser change reads it
+    again (ADR 0018). A fetch that failed is stamped with the attempt's time.
     """
     with get_session() as session:
         upsert(session, SbcDocument, [{
             "url": url, "plan_year": year, "status": fetched.status, "detail": fetched.detail,
-            "sha256": sha256, "pages": pages, "title": title, "fetched_at": datetime.now(UTC),
+            "sha256": sha256, "pages": pages, "title": title, "fetched_at": fetched_at or datetime.now(UTC),
             "parser_version": parser_version,
         }], "uq_sbc_documents_url_plan_year", ("url", "plan_year"))
         document_id = session.scalar(

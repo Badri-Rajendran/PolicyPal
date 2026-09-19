@@ -8,10 +8,12 @@ is found by its heading, not guessed by length. Two steps:
   row as text), and the coverage examples' three side-by-side columns.
 - `parse_sbc` works on that data alone, so tests need no PDF.
 
-Table cells are not rebuilt one by one. Issuers wrap and split cells in
-different places, and a row's label is vertically centred in a merged cell,
-so the rows of one "If you…" group are read as one band of text. The band
-keeps each line's columns apart with " | ".
+A table's left column holds a group's label ("If you have a test"),
+vertically centred in a merged cell. The rest of the group is rebuilt from
+the table's ruled grid (ADR 0018): one line per service, its cells joined
+with " | ", so a service name that wraps stays beside its price. A row with
+no column rules is read as a band of layout text instead, its columns kept
+apart with " | ".
 """
 import re
 from collections import Counter
@@ -24,8 +26,8 @@ import pdfplumber
 
 # Stored with each document. Bump it when a change alters what `parse_sbc`
 # yields for a real SBC: every stored document is then read again, and one
-# whose PDF is no longer kept is downloaded again (ADR 0015).
-PARSER_VERSION = 2
+# is read again from its kept PDF (ADR 0016).
+PARSER_VERSION = 3
 
 # The template runs to about 8 pages; a file far beyond it is not an SBC.
 MAX_PAGES = 30
@@ -36,6 +38,10 @@ _COLUMN_GAP = re.compile(r" {2,}")
 _PAGE_FOOTER = re.compile(r"^(?:Page \d+ of \d+|\d+ of \d+)$")
 # A left cell narrower than this is a table's padding column, not its labels.
 _PADDING_WIDTH = 12
+# Cell edges this close are one ruling line.
+_SAME_EDGE = 1.5
+# How much of a row a rule must cover to cut it: less is a box drawn inside a cell.
+_FULL_RULE = 0.9
 
 _QUESTIONS_HEADER = "Important Questions"
 _CHART_HEADER = "Common Medical Event"
@@ -140,6 +146,8 @@ def read_pdf(path: Path) -> list[PdfPage]:
         with pdfplumber.open(path) as pdf:
             if len(pdf.pages) > MAX_PAGES:
                 raise SbcParseError(f"{len(pdf.pages)} pages, more than an SBC has")
+            if not any(page.chars for page in pdf.pages):
+                raise SbcParseError("no text layer (a scanned image; not OCRed)")
             # dedupe_chars: some issuers print a second, offset text layer.
             return [_read_page(page.dedupe_chars()) for page in pdf.pages]
     except SbcParseError:
@@ -193,8 +201,58 @@ def _table_rows(page) -> list[TableRow]:
             taken.append((top, bottom))
             edge = label_edge if cell[2] - cell[0] < _PADDING_WIDTH and label_edge else cell[2]
             label = " ".join(_band(page, (x0, top, edge, bottom), layout=False).split())
-            rows.append((top, TableRow(label, _band(page, (edge, top, x1, bottom)))))
+            body = _group_lines(table.cells, (edge, top, x1, bottom), lambda box, layout: _band(page, box, layout))
+            rows.append((top, TableRow(label, body)))
     return [row for _, row in sorted(rows, key=lambda r: r[0])]
+
+
+def _group_lines(cells, bbox, read) -> str:
+    """A group's rows, one line each: the service, then its cells, " | " between.
+
+    `read(box, layout)` is the text inside a box. A row with no column rules
+    is read as layout text, as the whole group was before (ADR 0018).
+    """
+    left, top, right, bottom = bbox
+    inside = [c for c in cells if c[0] >= left - 1 and c[2] <= right + 1 and c[1] >= top - 1 and c[3] <= bottom + 1]
+    lines = []
+    for row_top, row_bottom in _row_bands(inside, left, top, bottom):
+        edges = _column_edges(inside, left, right, row_top, row_bottom)
+        if len(edges) < 3:
+            lines.append(read((left, row_top, right, row_bottom), True))
+            continue
+        texts = (" ".join(read((a, row_top, b, row_bottom), False).split()) for a, b in pairwise(edges))
+        lines.append(" | ".join(text for text in texts if text))
+    return _join(lines)
+
+
+def _row_bands(cells, left, top, bottom) -> list[tuple[float, float]]:
+    """Where a group's rows begin and end: at each rule across the service column.
+
+    A rule counts when it starts at the column's left edge and spans most of
+    its width, padding cells included. Other columns can merge a cell across
+    rows ("None" beside two services), and some issuers draw boxes inside a
+    cell; neither ends a row.
+    """
+    firsts = [c for c in cells if abs(c[0] - left) < _SAME_EDGE and c[2] - c[0] >= _PADDING_WIDTH]
+    if not firsts:
+        return [(top, bottom)]
+    column_right = Counter(round(c[2]) for c in firsts).most_common(1)[0][0]
+    cuts = []
+    for y in sorted({round(c[1], 1) for c in cells if top + 1 < c[1] < bottom - 1}):
+        starting = [c for c in cells if abs(c[1] - y) < _SAME_EDGE]
+        span = sum(max(0.0, min(c[2], column_right) - max(c[0], left)) for c in starting)
+        if any(abs(c[0] - left) < _SAME_EDGE for c in starting) and span >= _FULL_RULE * (column_right - left):
+            cuts.append(y)
+    edges = [top, *cuts, bottom]
+    return [(a, b) for a, b in pairwise(edges) if b - a > 2]
+
+
+def _column_edges(cells, left, right, top, bottom) -> list[float]:
+    """Where a row's cells begin: at each cell running most of the row's height."""
+    height = bottom - top
+    starts = {round(c[0], 1) for c in cells
+              if c[0] > left + 1 and min(c[3], bottom) - max(c[1], top) >= _FULL_RULE * height}
+    return [left, *sorted(starts), right]
 
 
 def _label_edge(left_cells) -> float | None:

@@ -235,7 +235,10 @@ sections into `sbc_chunks`, kept apart from the corpus that `make ingest` rebuil
   requests is recorded as `blocked` and left alone. Its plans get no SBC answers.
 - **Parsed once.** A document stored by the current parser is skipped on the next run,
   with no request. Bumping `PARSER_VERSION` in `src/ingestion/sbc/extract.py` reads
-  every document again (ADR 0015).
+  every document again from its kept PDF (ADR 0015, 0016).
+- **One line per service.** Chart rows are rebuilt from the table's ruled grid, so a
+  wrapped service name stays beside its price (ADR 0018). A scanned PDF with no text
+  layer is recorded as `unparseable`; there is no OCR.
 - **Every PDF is kept.** Downloaded SBCs stay in `data/sbc/raw/` (gitignored, never served
   or committed), about 0.75 MB each. A stored document whose PDF has gone missing is
   downloaded again, and one rejected as another year's is moved to `data/sbc/rejected/`
@@ -341,6 +344,11 @@ plans, alone and in a comparison. The answer must name each such plan and must n
 cite general material or state a figure for it. Its floor is full marks, and every
 COVERAGE answer is held to the same rule. It also needs the NC catalog:
 `make ingest-plans STATES=NC` and `make ingest-sbc STATES=NC TOP_ISSUERS=1`.
+
+`uv run python -m scripts.eval_sbc_ranking` checks, without calling a model, that the
+section answering each of ten questions is among the four `plan_coverage` ranks
+highest, for two plans per issuer with stored SBCs. Run it before and after a parser
+change.
 
 Slower still than the retrieval eval — it generates once per question — and
 likewise a manual tool rather than a CI gate. Unlike the retrieval eval it

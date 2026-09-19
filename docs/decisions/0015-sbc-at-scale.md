@@ -6,6 +6,8 @@ Accepted. Phase 3. Amends ADR 0013 where it says documents are "downloaded
 once" and "every run re-parses from the cache". **Its "PDFs are deleted once
 their text is stored" is superseded by ADR 0016:** every downloaded SBC is
 kept.
+ADR 0018 records `parser_version` and `sha256` for `unparseable` and
+`wrong_year` files too, and makes `fetched_at` the download time.
 
 ## Context
 
