@@ -64,6 +64,8 @@ def test_plans_are_the_countys_own_ordered_by_their_live_premium(session):
     assert result.status == "ok"
     assert [p.hios_plan_id for p in result.plans] == ["11111TX0010002", "11111TX0010001"]
     assert [p.monthly_premium for p in result.plans] == [Decimal("390.00"), Decimal("400.00")]
+    # What a saved card needs to say whose premium, and where, without the ZIP.
+    assert {(p.premium_age, p.county_name, p.state) for p in result.plans} == {(34, "Alpha", "TX")}
     assert cms.call_args.kwargs == {
         "age": 34, "state": "TX", "countyfips": "99001", "zipcode": "00001", "year": YEAR
     }
@@ -111,6 +113,7 @@ def test_a_cms_outage_shows_catalog_prices_and_logs_no_personal_data(session, ca
     assert result.status == "ok"
     assert [p.hios_plan_id for p in result.plans] == ["11111TX0010001", "11111TX0010002"]
     assert not any(p.premium_is_live for p in result.plans)
+    assert all(p.premium_age is None for p in result.plans)
     assert result.plans[0].premium_reference == Decimal("300.00")
     assert "00001" not in caplog.text
     assert "97" not in caplog.text

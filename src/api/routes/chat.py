@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from src.api.deps import TokenBudgetExhaustedError, get_current_user, get_db, parse_body
 from src.api.limiter import limiter
 from src.core.logging import get_logger
-from src.models.chat import Message, MessageSource, Thread
+from src.models.chat import Message, MessagePlan, MessageSource, Thread
 from src.schemas.chat import (
     MessageCreateRequest,
     MessageResponse,
@@ -17,6 +17,7 @@ from src.schemas.chat import (
     ThreadResponse,
 )
 from src.services.generation import answer_query, reset_token_usage, token_usage
+from src.services.plan_search import PlanResult
 from src.services.usage import (
     budget_exhausted,
     record_tokens,
@@ -43,6 +44,29 @@ def _get_owned_thread(thread_id: str):
         abort(404)
 
     return db, thread
+
+
+def _plan_row(position: int, plan: PlanResult) -> MessagePlan:
+    return MessagePlan(
+        position=position,
+        hios_plan_id=plan.hios_plan_id,
+        plan_year=plan.plan_year,
+        name=plan.name,
+        issuer=plan.issuer,
+        metal_level=plan.metal_level,
+        plan_type=plan.plan_type,
+        monthly_premium=plan.monthly_premium,
+        premium_age=plan.premium_age,
+        premium_reference=plan.premium_reference,
+        deductible=plan.deductible,
+        drug_deductible=plan.drug_deductible,
+        out_of_pocket_max=plan.out_of_pocket_max,
+        hsa_eligible=plan.hsa_eligible,
+        quality_rating=plan.quality_rating,
+        county_name=plan.county_name,
+        state=plan.state,
+        benefits_url=plan.benefits_url,
+    )
 
 
 @bp.get("/threads")
@@ -88,11 +112,12 @@ def delete_thread(thread_id: str):
 def list_messages(thread_id: str):
     db, thread = _get_owned_thread(thread_id)
 
-    # Eager-load citations: without this the transcript is one query per message.
+    # Eager-load citations and plans: without this the transcript is two
+    # queries per message.
     stmt = (
         select(Message)
         .where(Message.thread_id == thread.id)
-        .options(selectinload(Message.sources))
+        .options(selectinload(Message.sources), selectinload(Message.plans))
         .order_by(Message.created_at)
     )
     messages = db.execute(stmt).scalars().all()
@@ -123,8 +148,6 @@ def create_message(thread_id: str):
 
     reset_token_usage()
     try:
-        # result.plans is persisted from Step 5 (message_plans); until then
-        # the plans reach the user only through the answer text.
         result = answer_query(body.content, history)
     except openai.OpenAIError:
         # Whatever billed before the failure (e.g. a successful rewrite call
@@ -144,6 +167,8 @@ def create_message(thread_id: str):
         sources=[
             MessageSource(chunk_id=c.chunk_id, source=c.source, relevance=c.score) for c in result.chunks
         ],
+        # A snapshot of what the answer showed, in the order shown (ADR 0011).
+        plans=[_plan_row(position, plan) for position, plan in enumerate(result.plans)],
     )
     db.add(assistant_message)
     db.flush()
