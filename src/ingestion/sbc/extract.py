@@ -22,6 +22,11 @@ from pathlib import Path
 
 import pdfplumber
 
+# Stored with each document. Bump it when a change alters what `parse_sbc`
+# yields for a real SBC: every stored document is then read again, and one
+# whose PDF is no longer kept is downloaded again (ADR 0015).
+PARSER_VERSION = 1
+
 # The template runs to about 8 pages; a file far beyond it is not an SBC.
 MAX_PAGES = 30
 

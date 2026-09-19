@@ -4,9 +4,10 @@ Reads the Summary of Benefits and Coverage behind every catalog plan's
 `benefits_url` in the given states, so run `make ingest-plans` first. Plans
 that share a URL share one document.
 
-Incremental, never a rebuild: each document is its own transaction, a
-downloaded PDF is never downloaded again, and anything that failed is tried
-again next run.
+Incremental, never a rebuild (ADR 0015): each document is its own
+transaction, one stored by the current parser is not read again, and anything
+that failed is tried again next run. A PDF is deleted once its text is
+stored, unless `--keep-pdfs` asks to keep it for tuning the parser.
 Its chunks go to `sbc_chunks`, apart from the corpus, which `make ingest`
 rebuilds without touching them.
 
@@ -16,6 +17,7 @@ import argparse
 import hashlib
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -31,8 +33,9 @@ from src.policypal.config import settings
 
 from ..chunking import make_recursive_splitter
 from ..plans import resolve_states, upsert
-from .extract import SbcParse, SbcParseError, parse_sbc, read_pdf
+from .extract import PARSER_VERSION, SbcParse, SbcParseError, parse_sbc, read_pdf
 from .fetch import FetchResult, fetch_pdf, url_key
+from .top_issuers import TOP_ISSUER_IDS
 
 logger = get_logger(__name__)
 
@@ -44,14 +47,21 @@ class PlanRef:
     issuer: str
 
 
-def documents_for(session, states: list[str], year: int) -> dict[str, list[PlanRef]]:
-    """Each distinct SBC URL among the states' plans, with the plans that point at it."""
-    rows = session.execute(
+def documents_for(session, states: list[str], year: int,
+                  issuer_ids: Collection[str] | None = None) -> dict[str, list[PlanRef]]:
+    """Each distinct SBC URL among the states' plans, with the plans that point at it.
+
+    `issuer_ids` narrows it to those HIOS issuers' plans.
+    """
+    stmt = (
         select(Plan.benefits_url, Plan.hios_plan_id, Plan.marketing_name, Issuer.name)
         .join(Issuer, Issuer.id == Plan.issuer_id)
         .where(Plan.plan_year == year, Plan.state.in_(states), Plan.benefits_url.is_not(None))
         .order_by(Issuer.name, Plan.hios_plan_id)
-    ).all()
+    )
+    if issuer_ids is not None:
+        stmt = stmt.where(Issuer.hios_issuer_id.in_(issuer_ids))
+    rows = session.execute(stmt).all()
     documents = defaultdict(list)
     for url, plan_id, name, issuer in rows:
         documents[url].append(PlanRef(plan_id, name, issuer))
@@ -79,49 +89,56 @@ def build_chunks(url: str, year: int, parse: SbcParse) -> list[dict]:
     return chunks
 
 
-def ingest_document(url: str, year: int) -> str:
-    """Fetch, parse and store one SBC. Returns its status."""
+def ingest_document(url: str, year: int, keep_pdf: bool = False) -> str:
+    """Fetch, parse and store one SBC. Returns its status.
+
+    The PDF is deleted once its text is committed; `keep_pdf` keeps it, and
+    an unparseable one too, so parser fixes can be tried without a download.
+    """
     fetched = fetch_pdf(url, year)
     if fetched.status != "ok":
         _store(url, year, fetched)
         return fetched.status
 
-    # Parsed again on every run, from the cached file: a fix to the parser
-    # must reach documents stored before it, and the cache already spares
-    # the issuer a second download.
     digest = hashlib.sha256(fetched.path.read_bytes()).hexdigest()
     try:
         pages = read_pdf(fetched.path)
         parse = parse_sbc(pages)
     except SbcParseError as exc:
-        return _reject(url, year, fetched, "unparseable", str(exc))
+        return _reject(url, year, fetched, "unparseable", str(exc), discard=not keep_pdf)
     if parse.coverage_year != year:
+        # Always discarded: the issuer may correct the file at the same URL,
+        # and only a fresh download would see it.
         return _reject(url, year, fetched, "wrong_year", f"coverage period starts in {parse.coverage_year}")
 
     _store(url, year, fetched, sha256=digest, pages=len(pages), title=parse.title,
-           chunks=build_chunks(url, year, parse))
+           chunks=build_chunks(url, year, parse), parser_version=PARSER_VERSION)
+    if not keep_pdf:
+        fetched.path.unlink(missing_ok=True)
     return "ok"
 
 
-def _reject(url: str, year: int, fetched: FetchResult, status: str, detail: str) -> str:
-    # The cached copy goes too: the issuer may correct the file at the same
-    # URL, and only a fresh download would see it.
-    fetched.path.unlink(missing_ok=True)
+def _reject(url: str, year: int, fetched: FetchResult, status: str, detail: str, discard: bool = True) -> str:
     _store(url, year, FetchResult(status, detail=detail))
+    if discard:
+        fetched.path.unlink(missing_ok=True)
     return status
 
 
 def _store(url: str, year: int, fetched: FetchResult, *, sha256: str | None = None,
-           pages: int | None = None, title: str | None = None, chunks: list[dict] | None = None) -> None:
+           pages: int | None = None, title: str | None = None, chunks: list[dict] | None = None,
+           parser_version: int | None = None) -> None:
     """Record the attempt and replace the document's chunks, in one transaction.
 
-    A document that fails now loses the chunks an earlier run gave it: an
-    answer must never quote an SBC that is no longer the plan's.
+    A document that fails now loses the chunks an earlier run gave it, and
+    its parser version: an answer must never quote an SBC that is no longer
+    the plan's, and the next run must try it again.
     """
     with get_session() as session:
         upsert(session, SbcDocument, [{
             "url": url, "plan_year": year, "status": fetched.status, "detail": fetched.detail,
             "sha256": sha256, "pages": pages, "title": title, "fetched_at": datetime.now(UTC),
+            "parser_version": parser_version,
         }], "uq_sbc_documents_url_plan_year", ("url", "plan_year"))
         document_id = session.scalar(
             select(SbcDocument.id).where(SbcDocument.url == url, SbcDocument.plan_year == year)
@@ -131,22 +148,34 @@ def _store(url: str, year: int, fetched: FetchResult, *, sha256: str | None = No
             session.execute(insert(SbcChunk), [{**chunk, "document_id": document_id} for chunk in chunks])
 
 
-def execute(states: list[str], year: int, limit: int | None = None) -> Counter:
+def execute(states: list[str], year: int, limit: int | None = None,
+            top_issuers: bool = False, keep_pdfs: bool = False) -> Counter:
+    """Read every document not already stored by this parser. Returns the statuses of those read."""
     with get_session() as session:
-        documents = documents_for(session, states, year)
-    urls = list(documents)[:limit]
-    print(f"{len(documents)} SBC documents behind the {', '.join(states)} plans for {year}; reading {len(urls)}")
+        documents = documents_for(session, states, year, TOP_ISSUER_IDS if top_issuers else None)
+        current = set(session.scalars(select(SbcDocument.url).where(
+            SbcDocument.plan_year == year, SbcDocument.status == "ok",
+            SbcDocument.parser_version == PARSER_VERSION,
+        )))
+    if not documents:
+        sys.exit(f"No catalog plans with an SBC link for {', '.join(states)} in {year}. "
+                 f"Run `make ingest-plans STATES={','.join(states)}` first.")
+    pending = [url for url in documents if url not in current]
+    urls = pending[:limit]
+    print(f"{len(documents)} SBC documents behind the {', '.join(states)} plans for {year}; "
+          f"{len(documents) - len(pending)} already current, reading {len(urls)}")
 
     statuses = Counter()
     failures = defaultdict(list)   # (issuer, status) -> plans
     for url in tqdm(urls, desc="SBCs"):
-        status = ingest_document(url, year)
+        status = ingest_document(url, year, keep_pdfs)
         statuses[status] += 1
         if status != "ok":
             for plan in documents[url]:
                 failures[(plan.issuer, status)].append(plan)
 
-    print("\n" + ", ".join(f"{count} {status}" for status, count in statuses.most_common()))
+    if statuses:
+        print("\n" + ", ".join(f"{count} {status}" for status, count in statuses.most_common()))
     if failures:
         print("\nPlans without a usable SBC (answers link their PDF instead):")
         for (issuer, status), plans in sorted(failures.items()):
@@ -164,6 +193,10 @@ def parse_args(args):
     parser.add_argument("--year", type=int, default=datetime.now(UTC).year,
                         help="Plan year (default: this year); must match an ingested catalog year")
     parser.add_argument("--limit", type=int, default=None, help="Read at most this many documents, for a smoke run")
+    parser.add_argument("--top-issuers", action="store_true",
+                        help="Only the largest parent companies' plans (src/ingestion/sbc/top_issuers.py)")
+    parser.add_argument("--keep-pdfs", action="store_true",
+                        help="Keep downloaded PDFs after parsing, for tuning the parser")
     parsed = parser.parse_args(args)
     try:
         parsed.states = resolve_states(parsed.states)
@@ -176,6 +209,4 @@ def parse_args(args):
 
 def main(args=sys.argv[1:]) -> None:
     parsed = parse_args(args)
-    if not execute(parsed.states, parsed.year, parsed.limit):
-        sys.exit(f"No catalog plans with an SBC link for {', '.join(parsed.states)} in {parsed.year}. "
-                 f"Run `make ingest-plans STATES={','.join(parsed.states)}` first.")
+    execute(parsed.states, parsed.year, parsed.limit, parsed.top_issuers, parsed.keep_pdfs)

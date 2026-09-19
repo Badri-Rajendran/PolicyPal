@@ -4,6 +4,13 @@
 
 ### Added
 
+- `make ingest-sbc TOP_ISSUERS=1` reads only the ten largest parent companies'
+  plans, by CMS's 2025 issuer-level enrollment (ADR 0015); the list is in
+  `src/ingestion/sbc/top_issuers.py`.
+- `sbc_documents.parser_version`: a document stored by the current parser is
+  skipped on the next run, with no request and no parse.
+- `KEEP_PDFS=1` keeps downloaded SBC PDFs, unparseable ones included, for tuning
+  the parser.
 - Coverage answers from a plan's SBC: a `plan_coverage` tool reranks that plan's
   own sections and cites the best four as "plan - Summary of Benefits - section"
   (ADR 0014). General search never sees SBC text.
@@ -128,6 +135,9 @@
 
 ### Changed
 
+- SBC PDFs are deleted once their text is stored, instead of cached for good
+  (ADR 0015). A parser fix now reaches stored documents by bumping
+  `PARSER_VERSION`, not by re-parsing every run.
 - The ingestion user agent is one shared `USER_AGENT` constant.
 - Chat layout columns are `minmax(0, 1fr)`: a plain `1fr` let a wide table widen
   the whole page on a phone.

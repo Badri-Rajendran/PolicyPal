@@ -4,6 +4,7 @@ Real Postgres through the rolled-back `session` fixture. Fetching and PDF
 reading are replaced; the parser is the real one, fed synthetic pages.
 """
 import json
+from collections import Counter
 from contextlib import contextmanager
 
 import pytest
@@ -52,6 +53,21 @@ def sbc(monkeypatch, session, tmp_path):
     return served
 
 
+@pytest.fixture
+def fetches(sbc, monkeypatch):
+    """The URLs fetched, in order."""
+    calls = []
+    fetch = ingest.fetch_pdf
+    monkeypatch.setattr(ingest, "fetch_pdf", lambda url, year: calls.append(url) or fetch(url, year))
+    return calls
+
+
+@pytest.fixture
+def catalog(monkeypatch):
+    plan = ingest.PlanRef("99999NH0010001", "Example Gold", "Example Health")
+    monkeypatch.setattr(ingest, "documents_for", lambda session, states, year, issuer_ids: {GOLD: [plan], SILVER: [plan]})
+
+
 def _chunks(session, url):
     return session.scalars(
         select(SbcChunk.content).join(SbcDocument).where(SbcDocument.url == url, SbcDocument.plan_year == YEAR)
@@ -60,6 +76,10 @@ def _chunks(session, url):
 
 def _status(session, url):
     return session.scalar(select(SbcDocument.status).where(SbcDocument.url == url, SbcDocument.plan_year == YEAR))
+
+
+def _version(session, url):
+    return session.scalar(select(SbcDocument.parser_version).where(SbcDocument.url == url))
 
 
 def test_a_document_is_stored_with_one_chunk_per_section(sbc, session):
@@ -90,6 +110,7 @@ def test_a_document_that_now_fails_loses_its_chunks(sbc, session):
 
     assert _status(session, GOLD) == "blocked"
     assert _chunks(session, GOLD) == []
+    assert _version(session, GOLD) is None
 
 
 def test_an_sbc_for_another_year_is_refused_and_its_download_discarded(sbc, session, tmp_path):
@@ -105,24 +126,72 @@ def test_an_sbc_for_another_year_is_refused_and_its_download_discarded(sbc, sess
 
 def test_documents_are_grouped_by_url_within_the_states_and_year(session):
     issuer = Issuer(hios_issuer_id="99999", plan_year=YEAR, name="Example Health", state="NH")
-    session.add(issuer)
+    other = Issuer(hios_issuer_id="88888", plan_year=YEAR, name="Other Health", state="NH")
+    session.add_all([issuer, other])
     session.flush()
-    for plan_id, state, url, year in [
-        ("99999NH0010001", "NH", GOLD, YEAR),
-        ("99999NH0010002", "NH", GOLD, YEAR),
-        ("99999NH0010003", "NH", SILVER, YEAR - 1),
-        ("99999NH0010004", "DE", SILVER, YEAR),
-        ("99999NH0010005", "NH", None, YEAR),
+    for owner, plan_id, state, url, year in [
+        (issuer, "99999NH0010001", "NH", GOLD, YEAR),
+        (issuer, "99999NH0010002", "NH", GOLD, YEAR),
+        (issuer, "99999NH0010003", "NH", SILVER, YEAR - 1),
+        (issuer, "99999NH0010004", "DE", SILVER, YEAR),
+        (issuer, "99999NH0010005", "NH", None, YEAR),
+        (other, "88888NH0010001", "NH", SILVER, YEAR),
     ]:
-        session.add(Plan(issuer_id=issuer.id, hios_plan_id=plan_id, plan_year=year, marketing_name=plan_id,
+        session.add(Plan(issuer_id=owner.id, hios_plan_id=plan_id, plan_year=year, marketing_name=plan_id,
                          metal_level="Gold", plan_type="HMO", state=state, benefits_url=url,
                          hsa_eligible=False, has_national_network=False))
     session.flush()
 
     documents = ingest.documents_for(session, ["NH"], YEAR)
 
-    assert list(documents) == [GOLD]
+    assert list(documents) == [GOLD, SILVER]
     assert [plan.hios_plan_id for plan in documents[GOLD]] == ["99999NH0010001", "99999NH0010002"]
+    assert list(ingest.documents_for(session, ["NH"], YEAR, frozenset({"99999"}))) == [GOLD]
+
+
+def test_a_document_stored_by_this_parser_is_not_read_again(sbc, fetches, catalog, session):
+    ingest.execute(["NH"], YEAR)
+    assert fetches == [GOLD, SILVER]
+
+    fetches.clear()
+    assert ingest.execute(["NH"], YEAR) == Counter()
+    assert fetches == []
+
+
+def test_an_empty_catalog_says_to_ingest_plans_first(sbc, monkeypatch):
+    monkeypatch.setattr(ingest, "documents_for", lambda session, states, year, issuer_ids: {})
+
+    with pytest.raises(SystemExit, match="make ingest-plans STATES=NH"):
+        ingest.execute(["NH"], YEAR)
+
+
+def test_a_parser_change_reads_stored_documents_again(sbc, fetches, catalog, session, monkeypatch):
+    ingest.execute(["NH"], YEAR)
+
+    monkeypatch.setattr(ingest, "PARSER_VERSION", ingest.PARSER_VERSION + 1)
+    sbc[GOLD] = _pages(test_cost="$75")
+    fetches.clear()
+    ingest.execute(["NH"], YEAR)
+
+    assert fetches == [GOLD, SILVER]
+    assert _chunks(session, GOLD) == ["If you have a test\nImaging $75 copay"]
+    assert _version(session, GOLD) == ingest.PARSER_VERSION
+
+
+def test_the_pdf_is_deleted_once_its_text_is_stored(sbc, session, tmp_path):
+    assert ingest.ingest_document(GOLD, YEAR) == "ok"
+
+    assert list(tmp_path.glob("*.pdf")) == []
+
+
+def test_keeping_pdfs_keeps_the_unparseable_ones_too(sbc, session, tmp_path):
+    """The tuning pass needs the hard cases on disk."""
+    sbc[SILVER] = []
+
+    assert ingest.ingest_document(GOLD, YEAR, keep_pdf=True) == "ok"
+    assert ingest.ingest_document(SILVER, YEAR, keep_pdf=True) == "unparseable"
+
+    assert len(list(tmp_path.glob("*.pdf"))) == 2
 
 
 def test_a_long_section_is_split_and_every_piece_keeps_its_heading():

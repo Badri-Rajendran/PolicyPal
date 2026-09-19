@@ -13,9 +13,11 @@ ingest-plans:
 
 # Summary of Benefits PDFs for the catalog plans in STATES; run ingest-plans
 # first. Required for the same reason. e.g. make ingest-sbc STATES=NH,DE
+# TOP_ISSUERS=1 reads only the largest parent companies' plans; KEEP_PDFS=1
+# keeps the downloaded PDFs, for tuning the parser (ADR 0015).
 ingest-sbc:
 	@test -n "$(STATES)" || { echo "STATES is required, e.g. make ingest-sbc STATES=NH,DE (or STATES=ALL)"; exit 2; }
-	uv run python -m src.ingestion.sbc --states $(STATES)
+	uv run python -m src.ingestion.sbc --states $(STATES) $(if $(TOP_ISSUERS),--top-issuers) $(if $(KEEP_PDFS),--keep-pdfs)
 
 migrate:
 	uv run alembic upgrade head
