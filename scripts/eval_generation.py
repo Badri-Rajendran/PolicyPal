@@ -80,14 +80,14 @@ MIN_CORRECT = 8
 MIN_REFUSED = 4
 MIN_FOLLOW_UPS = 3
 MIN_PLAN_SEARCHES = 4
-# ADR 0014's sets, measured over three runs: boundary 2/2 every time; coverage
-# 6/6 twice and 5/6 once (one answer left out the term), hence one short.
-# Phase 3 added four cases (ADR 0015); coverage then ran 9/10, 9/10 and 10/10.
-# Both misses were CHRISTUS's imaging price, which states "no charge" in 3 of
-# 6 tries alone: its row text wraps the service name around the price.
-# The plan-search profile case also varies: 6/8 searches on main at this
+# ADR 0014's sets, measured over three runs: boundary 2/2 every time.
+# Coverage was one short of full marks through Phases 2 and 3, for CHRISTUS's
+# imaging price: its row wrapped the service name around the price, and the
+# answer stated it in 3 of 6 tries. Parser 3 reads that row as one line
+# (ADR 0018), the answer states it 6 of 6, and coverage ran 10/10 three times.
+# The plan-search profile case varies: 6/8 searches on main at this
 # point, so re-run a single miss there before calling it a regression.
-MIN_COVERAGE = 9
+MIN_COVERAGE = 10
 MIN_BOUNDARY = 2
 # ADR 0017: full marks, like the refusals. An answer that describes a plan
 # with no document is the failure Phase 4 exists to prevent.
