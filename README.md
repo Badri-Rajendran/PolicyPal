@@ -221,6 +221,8 @@ Verified API behaviour is recorded in
 
 ```bash
 make ingest-sbc STATES=NH,DE        # after make ingest-plans for the same states
+make ingest-sbc STATES=FL,TX TOP_ISSUERS=1              # only the ten largest parent companies
+make ingest-sbc STATES=FL,TX TOP_ISSUERS=1 KEEP_PDFS=1  # keep the PDFs, for tuning the parser
 ```
 
 Reads the **Summary of Benefits and Coverage** behind each catalog plan's `benefits_url`:
@@ -232,8 +234,14 @@ sections into `sbc_chunks`, kept apart from the corpus that `make ingest` rebuil
 - **Polite and never pushy.** HTTPS to public hosts only, `robots.txt` obeyed, two
   seconds between requests to one host, and a 15 MB cap. A host that refuses automated
   requests is recorded as `blocked` and left alone. Its plans get no SBC answers.
-- **Downloaded once.** PDFs are cached in `data/sbc/raw/` (gitignored, never served or
-  committed); a re-run requests no file it already has, and re-parses it from the cache.
+- **Parsed once.** A document stored by the current parser is skipped on the next run,
+  with no request. Bumping `PARSER_VERSION` in `src/ingestion/sbc/extract.py` reads
+  every document again (ADR 0015).
+- **PDFs are not kept.** A PDF is deleted from `data/sbc/raw/` (gitignored, never served
+  or committed) once its text is stored. `KEEP_PDFS=1` keeps them, so parser fixes can be
+  tried without downloading again. Tune before the final run.
+- **The largest issuers.** `TOP_ISSUERS=1` limits the run to the ten largest parent
+  companies by 2025 enrollment, listed in `src/ingestion/sbc/top_issuers.py`.
 - **Plan year is checked.** A document whose coverage period is for another year is
   refused.
 - **Every attempt is recorded** in `sbc_documents`, and the run ends by naming the

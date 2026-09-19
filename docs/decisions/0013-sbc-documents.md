@@ -3,7 +3,8 @@
 ## Status
 
 Accepted. Phase 2, first half: ingestion. Retrieval over these documents is
-ADR 0014.
+ADR 0014. Amended by ADR 0015: a document is parsed once per parser version,
+not on every run, and its PDF is deleted once its text is stored.
 
 ## Context
 

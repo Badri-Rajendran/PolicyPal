@@ -48,6 +48,8 @@ class SbcDocument(Base):
     # The plan name printed on the SBC, which can differ from the catalog's.
     title: Mapped[str | None] = mapped_column(String(300), nullable=True)
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The parser that produced the chunks; NULL unless status is "ok" (ADR 0015).
+    parser_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
