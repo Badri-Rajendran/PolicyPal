@@ -82,12 +82,13 @@ def test_an_unknown_tool_is_refused():
     assert json.loads(outcome.content)["status"] == "error"
 
 
-def _result_plan(plan_id, *, live, drug=None):
+def _result_plan(plan_id, *, live, drug=None, sbc_status="ok"):
     return PlanResult(
         hios_plan_id=plan_id, plan_year=2026, name="Plan", issuer="Issuer", metal_level="Bronze",
         plan_type="HMO", monthly_premium=Decimal("620.26") if live else None,
         premium_reference=Decimal("535.35"), deductible=Decimal("0.00"), drug_deductible=drug,
         out_of_pocket_max=Decimal("10600.00"), hsa_eligible=False, quality_rating=None,
+        sbc_status=sbc_status,
     )
 
 
@@ -114,6 +115,25 @@ def test_the_model_reads_each_deductible_by_what_it_covers():
     assert "reference_premium_age_27" not in split
     assert "75801" not in outcome.content
     assert outcome.plans == result.plans
+
+
+def test_a_search_result_says_whether_each_plans_sbc_can_be_read_and_why_not():
+    """ADR 0017: known before plan_coverage is called, in plain words, never the stored detail."""
+    result = PlanSearchResult(
+        "ok", total_matching=3, plan_year=2026, county=CountyOption("48001", "Anderson", "TX"),
+        plans=(_result_plan("11111TX0010001", live=True),
+               _result_plan("11111TX0010002", live=True, sbc_status="not_pdf"),
+               _result_plan("11111TX0010003", live=True, sbc_status="no_link")),
+    )
+    with patch("src.services.tools.search_plans", return_value=result), patch("src.services.tools.get_session"):
+        outcome = run_tool("search_plans", _args(zip_code="75801", age=34))
+
+    readable, challenged, unlisted = json.loads(outcome.content)["plans"]
+    assert readable["sbc_readable"] is True
+    assert "sbc_missing_reason" not in readable
+    assert (challenged["sbc_readable"], challenged["sbc_missing_reason"]) == (
+        False, "the insurer's link returned a web page, not the document")
+    assert unlisted["sbc_missing_reason"] == "HealthCare.gov lists no Summary of Benefits and Coverage for this plan"
 
 
 # The saved profile (ADR 0012)
@@ -193,7 +213,8 @@ def test_coverage_returns_each_plans_passages_as_data_and_as_citations():
     passage = RetrievedChunk("c1", "If you have a test\nImaging $100", "Gold - Summary of Benefits - If you have a test.pdf", 0.4)
     coverages = [
         PlanCoverage("12345NH0010001", "ok", "Gold", "Example", 2026, "https://sbc.example.com/g.pdf", (passage,)),
-        PlanCoverage("12345NH0010002", "unavailable", "Silver", "Example", 2026, "https://sbc.example.com/s.pdf"),
+        PlanCoverage("12345NH0010002", "unavailable", "Silver", "Example", 2026, "https://sbc.example.com/s.pdf",
+                     sbc_status="blocked"),
         PlanCoverage("12345NH0010003", "not_found"),
     ]
     with patch("src.services.tools.coverage_for", return_value=coverages) as read, patch("src.services.tools.get_session"):
@@ -205,6 +226,7 @@ def test_coverage_returns_each_plans_passages_as_data_and_as_citations():
     rows = json.loads(outcome.content)["plans"]
     assert rows[0]["passages"] == [{"source": passage.source, "text": passage.content}]
     assert rows[1] == {"plan_id": "12345NH0010002", "status": "unavailable", "name": "Silver",
-                       "issuer": "Example", "plan_year": 2026, "sbc_url": "https://sbc.example.com/s.pdf"}
+                       "issuer": "Example", "plan_year": 2026, "sbc_url": "https://sbc.example.com/s.pdf",
+                       "reason": "the insurer's website doesn't allow automated downloads"}
     assert rows[2] == {"plan_id": "12345NH0010003", "status": "not_found"}
     assert outcome.chunks == (passage,)

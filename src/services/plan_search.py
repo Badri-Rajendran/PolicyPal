@@ -24,6 +24,9 @@ from src.core.marketplace_api import (
     age_rated_premiums,
 )
 from src.models.plan import Issuer, Plan, PlanCostShare, PlanCounty, ZipCounty
+from src.models.sbc import SbcDocument
+
+from .sbc_status import plan_sbc_status, sbc_document_join
 
 logger = get_logger(__name__)
 
@@ -81,6 +84,8 @@ class PlanResult:
     state: str = ""
     # The age monthly_premium was priced for; None when it was not priced.
     premium_age: int | None = None
+    # Whether its Summary of Benefits can be read here, or why not (ADR 0017).
+    sbc_status: str | None = None
 
     @property
     def premium_is_live(self) -> bool:
@@ -204,9 +209,11 @@ def find_plans(session, *, countyfips: str, year: int, filters: PlanFilters, lim
 
     base = (
         select(Plan, Issuer.name.label("issuer_name"), deductible.label("deductible"),
-               shares.c.drug, shares.c.moop)
+               shares.c.drug, shares.c.moop, plan_sbc_status().label("sbc_status"))
         .join(Issuer, Issuer.id == Plan.issuer_id)
         .outerjoin(shares, shares.c.plan_id == Plan.id)
+        # One row at most: a document is unique by link and year.
+        .outerjoin(SbcDocument, sbc_document_join())
         .where(*conditions)
     )
     total = session.scalar(select(func.count()).select_from(base.subquery()))
@@ -234,8 +241,9 @@ def find_plans(session, *, countyfips: str, year: int, filters: PlanFilters, lim
             quality_rating=plan.quality_rating_global,
             benefits_url=plan.benefits_url,
             state=plan.state,
+            sbc_status=sbc_status,
         )
-        for plan, issuer_name, ded, drug, moop in rows
+        for plan, issuer_name, ded, drug, moop, sbc_status in rows
     ], total
 
 

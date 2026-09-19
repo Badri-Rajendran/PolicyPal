@@ -4,6 +4,10 @@
 
 Accepted. Phase 2, second half. Ingestion is ADR 0013.
 
+Amended by ADR 0017: each status now also carries its precise reason (`no_link`,
+`not_read`, or the document's failure), and a coverage answer lists only the
+corpus sources it cites.
+
 ## Context
 
 ADR 0013 stores each plan's Summary of Benefits and Coverage (SBC) as one

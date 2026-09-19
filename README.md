@@ -254,8 +254,11 @@ Per-issuer results of the live run are in
 
 Once loaded, chat answers coverage questions about those plans from their SBC,
 citing each passage as "plan name - Summary of Benefits - section". For a plan
-whose SBC could not be read, the answer links the issuer's PDF; links in answers
-are clickable (https only).
+whose SBC could not be read, the answer says so by name, gives the reason, links
+the issuer's PDF, and stops: it never describes that plan from general material. A
+comparison names every plan it has no document for, and each saved plan card
+records whether its SBC could be read (ADR 0017). Links in answers are clickable
+(https only).
 
 ## Testing
 
@@ -331,6 +334,13 @@ requires each plan's SBC term, cited from that plan's SBC alone. BOUNDARY asks
 no yes or no. Both need the NH, DE, TX and FL SBCs: `make ingest-plans STATES=NH,DE,TX,FL`,
 then `make ingest-sbc STATES=NH,DE`, `make ingest-sbc STATES=TX,FL TOP_ISSUERS=1` and
 `make ingest-sbc STATES=TX ISSUERS=40788,66252` (Baylor Scott & White and CHRISTUS).
+
+MISSING DOCUMENTS (ADR 0017) asks about plans whose SBC couldn't be read: a
+bot-challenged BCBS of North Carolina plan, and blocked UnitedHealthcare and Oscar
+plans, alone and in a comparison. The answer must name each such plan and must not
+cite general material or state a figure for it. Its floor is full marks, and every
+COVERAGE answer is held to the same rule. It also needs the NC catalog:
+`make ingest-plans STATES=NC` and `make ingest-sbc STATES=NC TOP_ISSUERS=1`.
 
 Slower still than the retrieval eval — it generates once per question — and
 likewise a manual tool rather than a CI gate. Unlike the retrieval eval it

@@ -33,6 +33,11 @@ This runs the full `answer_query()` path and checks two things:
   BOUNDARY — does "will my claim be paid?" get the fixed boundary sentence
              and the plan's terms, never a yes or no?
 
+  MISSING DOCUMENTS — a plan whose SBC can't be read here must be named as
+             such, with its PDF, and never described from general material
+             (ADR 0017). Also needs the NC catalog: `make ingest-plans STATES=NC`.
+             Every coverage answer is held to the same rule.
+
 Slow by nature — it loads the LLM and generates once per question — so like
 the retrieval eval this is a manual tool, not a CI gate. Run it after any
 change to the corpus, retrieval, the prompt, or the model:
@@ -43,15 +48,22 @@ import re
 import sys
 from dataclasses import dataclass
 
+from sqlalchemy import select
+
+from src.core.db import get_session
+from src.models.plan import Plan
+from src.models.sbc import SbcDocument
 from src.services.generation import (
     BOUNDARY_SENTENCE,
     NO_ANSWER_RESPONSE,
     ShownPlan,
     answer_query,
+    cited_labels,
     reset_token_usage,
     token_usage,
 )
 from src.services.profile import PlanProfile
+from src.services.sbc_status import plan_sbc_status, sbc_document_join
 
 # Floors, set at the measured baseline — every set scored full marks on
 # gpt-5-mini (rewrites on gpt-5-nano), up from 7/8 and 2/3 under the local
@@ -77,6 +89,9 @@ MIN_PLAN_SEARCHES = 4
 # point, so re-run a single miss there before calling it a regression.
 MIN_COVERAGE = 9
 MIN_BOUNDARY = 2
+# ADR 0017: full marks, like the refusals. An answer that describes a plan
+# with no document is the failure Phase 4 exists to prevent.
+MIN_MISSING = 4
 
 
 @dataclass
@@ -157,7 +172,23 @@ _BCBS_TX = ShownPlan(1, "33602TX0460553", "Blue Advantage Silver HMO℠ 205", "B
 # Oscar's SBC host disallows every path in robots.txt: blocked in ingestion.
 _OSCAR = ShownPlan(2, "20069TX0100006", "Silver Classic", "Oscar Insurance Company", "Silver", 2026)
 _OSCAR_SBC = "https://d3ul0st9g52g6o.cloudfront.net/2026/TX/sbc/2026_20069TX010000601.pdf"
+# BCBS of North Carolina answers every link with a bot challenge: not_pdf.
+_BCBS_NC = ShownPlan(1, "11512NC0060002", "Blue Advantage Silver Preferred | 3 Free PCP | $10 Tier 1 Rx | "
+                     "Integrated | Nationwide Doctors", "Blue Cross and Blue Shield of NC", "Silver", 2026)
+_BCBS_NC_SBC = "https://www.bcbsnc.com/assets/shopper/public/pdf/sbc/Blue_Advantage_Silver_Preferred_2800_2026.pdf"
 _SBC = " - Summary of Benefits - "
+
+
+@dataclass(frozen=True)
+class Missing:
+    """A shown plan whose SBC can't be read here (ADR 0017)."""
+
+    plan: ShownPlan
+    # Its status in the database, checked before the case is scored: a case
+    # whose plan has since been read must fail as a fixture, never pass.
+    status: str
+    # Part of its name the answer must use to say which plan it can't read.
+    named: str
 
 
 @dataclass
@@ -165,30 +196,53 @@ class CoverageCase:
     query: str
     shown: tuple[ShownPlan, ...]
     must_state: tuple[str, ...]
-    # The plan whose SBC must be cited, alone; None when no SBC may be cited.
-    cites: ShownPlan | None
+    # The plans whose SBC must be cited, and no other's.
+    cites: tuple[ShownPlan, ...] = ()
+    missing: tuple[Missing, ...] = ()
+    # Only a definitional question may cite general material.
+    corpus_ok: bool = False
 
 
 COVERAGE_SET = [
     CoverageCase("Does the first one cover MRIs, and what do they cost?", (_WELLSENSE, _HIGHMARK),
-                 ("40%",), _WELLSENSE),
+                 ("40%",), (_WELLSENSE,)),
     CoverageCase("What does the second plan charge for an emergency room visit?", (_WELLSENSE, _HIGHMARK),
-                 ("50%",), _HIGHMARK),
+                 ("50%",), (_HIGHMARK,)),
     CoverageCase("Does the first plan cover imaging like an MRI?", (_CHRISTUS, _UHC),
-                 ("no charge",), _CHRISTUS),
+                 ("no charge",), (_CHRISTUS,)),
     # Blocked host: nothing to cite, and the answer must hand over the PDF.
-    CoverageCase("Does the second plan cover MRIs?", (_CHRISTUS, _UHC), (_UHC_SBC,), None),
+    CoverageCase("Does the second plan cover MRIs?", (_CHRISTUS, _UHC), (_UHC_SBC,),
+                 missing=(Missing(_UHC, "blocked", "Silver Standard"),)),
     # A definitional question is the corpus's, never one plan's numbers.
-    CoverageCase("What is coinsurance?", (_WELLSENSE, _HIGHMARK), ("coinsurance",), None),
+    CoverageCase("What is coinsurance?", (_WELLSENSE, _HIGHMARK), ("coinsurance",), corpus_ok=True),
     # Shown for a year the catalog doesn't hold: no other year's SBC may stand in.
     CoverageCase("Does the first one cover MRIs?",
-                 (ShownPlan(1, "13219NH0010002", _WELLSENSE.name, _WELLSENSE.issuer, "Silver", 2025),), (), None),
-    CoverageCase("What does the first plan charge for lab work?", (_FLORIDA_BLUE, _MOLINA), ("$10",), _FLORIDA_BLUE),
+                 (ShownPlan(1, "13219NH0010002", _WELLSENSE.name, _WELLSENSE.issuer, "Silver", 2025),), ()),
+    CoverageCase("What does the first plan charge for lab work?", (_FLORIDA_BLUE, _MOLINA), ("$10",),
+                 (_FLORIDA_BLUE,)),
     CoverageCase("What does the second one charge for a primary care visit?", (_FLORIDA_BLUE, _MOLINA),
-                 ("$50",), _MOLINA),
+                 ("$50",), (_MOLINA,)),
     CoverageCase("What does the first plan charge for an emergency room visit?", (_BCBS_TX, _OSCAR),
-                 ("$1,000",), _BCBS_TX),
-    CoverageCase("Does the second plan cover MRIs?", (_BCBS_TX, _OSCAR), (_OSCAR_SBC,), None),
+                 ("$1,000",), (_BCBS_TX,)),
+    CoverageCase("Does the second plan cover MRIs?", (_BCBS_TX, _OSCAR), (_OSCAR_SBC,),
+                 missing=(Missing(_OSCAR, "blocked", "Silver Classic"),)),
+]
+
+# ADR 0017: plans with no readable document, where general material is right
+# there in the context to fill the gap.
+MISSING_SET = [
+    CoverageCase("Does this plan cover MRIs, and what would I pay?", (_BCBS_NC,), (_BCBS_NC_SBC,),
+                 missing=(Missing(_BCBS_NC, "not_pdf", "Silver Preferred"),)),
+    # Every Marketplace plan covers preventive care: the corpus says so, but
+    # not what this plan charges or excludes.
+    CoverageCase("Does the second plan cover preventive care, and is it free?", (_CHRISTUS, _UHC), (_UHC_SBC,),
+                 missing=(Missing(_UHC, "blocked", "Silver Standard"),)),
+    # Mixed: two read, one not. The one not read must be named, not skipped.
+    CoverageCase("Compare what these three plans charge for an MRI.", (_FLORIDA_BLUE, _MOLINA, _OSCAR),
+                 (_OSCAR_SBC,), (_FLORIDA_BLUE, _MOLINA),
+                 missing=(Missing(_OSCAR, "blocked", "Silver Classic"),)),
+    CoverageCase("What does the second one charge for an ER visit, and what's its deductible?", (_BCBS_TX, _OSCAR),
+                 (_OSCAR_SBC,), missing=(Missing(_OSCAR, "blocked", "Silver Classic"),)),
 ]
 
 # "Will it be paid?" turns on medical necessity, prior authorization and the
@@ -315,44 +369,106 @@ def run_plan_searches() -> int:
 
 
 def _sbc_plans(result) -> set[str]:
-    """The plan names whose SBC an answer cites."""
+    """The plan names whose SBC an answer drew on."""
     return {c.source.split(_SBC)[0] for c in result.chunks if _SBC in c.source}
 
 
-def run_coverage() -> int:
+_URL = re.compile(r"https?://\S+")
+_FIGURE = re.compile(r"\$\s?\d|\d\s?%")
+
+
+def corpus_citations(text: str) -> list[str]:
+    """The general-material labels an answer cites. An SBC label names its plan,
+    and a link is the issuer's own PDF: neither is general material."""
+    return sorted(label for label in cited_labels(text) if _SBC not in label and not _URL.match(label))
+
+
+def score_coverage(case: CoverageCase, text: str, cited: set[str],
+                   statuses: dict[str, str | None]) -> tuple[str, str] | None:
+    """What is wrong with a coverage answer, as a tag and a detail; None when nothing is.
+
+    Judged on the answer's own text, never on what was retrieved: general
+    material always reaches the model, and only citing it is the failure.
+    """
+    for gap in case.missing:
+        if statuses.get(gap.plan.plan_id) != gap.status:
+            return "FIXTURE", f"{gap.plan.plan_id} is {statuses.get(gap.plan.plan_id)}, not {gap.status}: pick another plan"
+    if text == NO_ANSWER_RESPONSE:
+        return ("NO ANSWER", "declined") if case.must_state or case.missing else None
+    expected = {plan.name for plan in case.cites}
+    if cited != expected:
+        return "WRONG CITE", f"cited {sorted(cited)}, expected {sorted(expected)}"
+    if not case.corpus_ok and (labels := corpus_citations(text)):
+        return "CORPUS", f"cited general material for a plan: {labels}"
+    if unnamed := [gap.named for gap in case.missing if gap.named.lower() not in text.lower()]:
+        return "SILENT", f"did not name {unnamed} as unreadable"
+    if case.missing and not case.cites and (figure := _FIGURE.search(_without_names(text, case))):
+        return "FABRICATED", f"stated {figure.group(0)!r} with no document to state it from"
+    if missing := [term for term in case.must_state if term.lower() not in text.lower()]:
+        return "INCOMPLETE", f"did not state {missing}"
+    return None
+
+
+def _without_names(text: str, case: CoverageCase) -> str:
+    """The answer without links or plan names, whose own figures ("$10 Tier 1 Rx") are no claim."""
+    for plan in case.shown:
+        text = text.replace(plan.name, "")
+    return _URL.sub("", text)
+
+
+def _statuses(cases: list[CoverageCase]) -> dict[str, str | None]:
+    """Each missing plan's SBC status now, for the year it was shown."""
+    gaps = [gap.plan for case in cases for gap in case.missing]
+    with get_session() as session:
+        return {
+            plan.plan_id: session.scalar(
+                select(plan_sbc_status())
+                .select_from(Plan)
+                .outerjoin(SbcDocument, sbc_document_join())
+                .where(Plan.hios_plan_id == plan.plan_id, Plan.plan_year == plan.plan_year)
+            )
+            for plan in gaps
+        }
+
+
+def _run_coverage_cases(title: str, cases: list[CoverageCase]) -> int:
     print("\n" + "=" * 78)
-    print("COVERAGE — is a shown plan's term stated from its own SBC?")
+    print(title)
     print("=" * 78)
 
+    statuses = _statuses(cases)
     correct = 0
     tokens = []
-    for case in COVERAGE_SET:
+    for case in cases:
         reset_token_usage()
         result = answer_query(case.query, shown_plans=case.shown)
         tokens.append(token_usage())
-        cited = _sbc_plans(result)
-        expected = {case.cites.name} if case.cites else set()
-        missing = [term for term in case.must_state if term.lower() not in result.text.lower()]
+        problem = score_coverage(case, result.text, _sbc_plans(result), statuses)
         corpus = sum(_SBC not in c.source for c in result.chunks)
 
-        if result.text == NO_ANSWER_RESPONSE and case.must_state:
-            print(f"  [NO ANSWER]  {case.query}")
-        elif cited != expected:
-            print(f"  [WRONG CITE] {case.query}")
-            print(f"               cited {sorted(cited)}, expected {sorted(expected)}")
-        elif missing:
-            print(f"  [INCOMPLETE] {case.query}")
-            print(f"               did not state {missing}")
+        if problem:
+            tag, detail = problem
+            print(f"  {'[' + tag + ']':<12} {case.query}")
+            print(f"               {detail}")
         else:
             correct += 1
             print(f"  [ok]         {case.query}")
-        print(f"               {corpus} corpus chunks, {len(result.chunks) - corpus} SBC passages, "
+        print(f"               {corpus} corpus sources listed, {len(result.chunks) - corpus} SBC passages, "
               f"{tokens[-1]} tokens")
         print(f"               -> {result.text.strip()[:220]}")
 
-    print(f"\n  {correct}/{len(COVERAGE_SET)} coverage answers stated the term from the right SBC")
+    print(f"\n  {correct}/{len(cases)} answers held")
     print(f"  tokens per answer: {min(tokens)}-{max(tokens)}, mean {sum(tokens) // len(tokens)}")
     return correct
+
+
+def run_coverage() -> int:
+    return _run_coverage_cases("COVERAGE — is a shown plan's term stated from its own SBC?", COVERAGE_SET)
+
+
+def run_missing() -> int:
+    return _run_coverage_cases("MISSING DOCUMENTS — a plan with no readable SBC is named, never described",
+                               MISSING_SET)
 
 
 def run_boundary() -> int:
@@ -392,6 +508,7 @@ def main() -> int:
     searched = run_plan_searches()
     covered = run_coverage()
     bounded = run_boundary()
+    honest = run_missing()
 
     print("\n" + "=" * 78)
     failures = []
@@ -424,6 +541,12 @@ def main() -> int:
         failures.append(
             f"boundary {bounded} < floor {MIN_BOUNDARY} — a situational question got a verdict "
             "or lost the boundary sentence"
+        )
+
+    if honest < MIN_MISSING:
+        failures.append(
+            f"missing documents {honest} < floor {MIN_MISSING} — a plan with no readable SBC was "
+            "described, cited from general material, or left unnamed"
         )
 
     if failures:
