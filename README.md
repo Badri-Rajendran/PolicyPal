@@ -241,7 +241,8 @@ sections into `sbc_chunks`, kept apart from the corpus that `make ingest` rebuil
   or committed) once its text is stored. `KEEP_PDFS=1` keeps them, so parser fixes can be
   tried without downloading again. Tune before the final run.
 - **The largest issuers.** `TOP_ISSUERS=1` limits the run to the ten largest parent
-  companies by 2025 enrollment, listed in `src/ingestion/sbc/top_issuers.py`.
+  companies by 2025 enrollment, listed in `src/ingestion/sbc/top_issuers.py`;
+  `ISSUERS=40788,66252` limits it to the HIOS issuer IDs given.
 - **Plan year is checked.** A document whose coverage period is for another year is
   refused.
 - **Every attempt is recorded** in `sbc_documents`, and the run ends by naming the
@@ -327,8 +328,9 @@ only in Anderson County, TX, so load that county first:
 Two more check plan coverage (ADR 0014). COVERAGE asks about shown plans and
 requires each plan's SBC term, cited from that plan's SBC alone. BOUNDARY asks
 "will it be paid?" and requires the boundary sentence and the plan's terms, with
-no yes or no. Both need the NH, DE and TX SBCs: `make ingest-plans STATES=NH,DE`,
-then `make ingest-sbc STATES=NH,DE,TX`.
+no yes or no. Both need the NH, DE, TX and FL SBCs: `make ingest-plans STATES=NH,DE,TX,FL`,
+then `make ingest-sbc STATES=NH,DE`, `make ingest-sbc STATES=TX,FL TOP_ISSUERS=1` and
+`make ingest-sbc STATES=TX ISSUERS=40788,66252` (Baylor Scott & White and CHRISTUS).
 
 Slower still than the retrieval eval — it generates once per question — and
 likewise a manual tool rather than a CI gate. Unlike the retrieval eval it

@@ -4,6 +4,16 @@
 
 ### Added
 
+- Phase 3 live ingest: the catalog for FL, TX, NC, TN, AL and SC, and the SBCs
+  of the ten largest parent companies there. 436 documents are stored and 890
+  of the top parents' 1,410 plans have an SBC; results are in
+  `docs/findings/sbc-documents.md`.
+- `make ingest-sbc ISSUERS=40788,66252` narrows a run to the HIOS issuer IDs
+  given.
+- Three 2026 issuer IDs of top parents (Oscar FL and AL, UnitedHealthcare TX),
+  found by comparing the catalog with the list.
+- COVERAGE eval cases for Florida Blue, Molina, BCBS of Texas and a blocked
+  Oscar plan.
 - `make ingest-sbc TOP_ISSUERS=1` reads only the ten largest parent companies'
   plans, by CMS's 2025 issuer-level enrollment (ADR 0015); the list is in
   `src/ingestion/sbc/top_issuers.py`.
@@ -206,6 +216,11 @@
 
 ### Fixed
 
+- SBC parsing: a chart label split across two cells ("If you have a" above
+  "hospital stay") now completes its heading instead of landing in the row
+  text. `PARSER_VERSION` is 2.
+- A run without `KEEP_PDFS` now removes the PDFs a tuning run kept. It used to
+  skip those documents as current and leave their files behind.
 - An OpenAI failure mid-request returned an HTML 500, dropped the user's
   own message, and lost whatever tokens had already billed. Now returns a
   JSON 502, keeps the message, and records the partial spend.
