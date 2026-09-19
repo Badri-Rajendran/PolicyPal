@@ -1,5 +1,9 @@
-.PHONY: ingest ingest-plans ingest-sbc migrate api \
+.PHONY: ingest ingest-plans ingest-sbc sbc-report migrate api \
         ui-dev ui-build ui-lint ui-preview ui-test
+
+# The plan year to work on; the commands default to the calendar year, which
+# is the wrong one once the next year's plans are on sale. e.g. YEAR=2027
+YEAR_ARG = $(if $(YEAR),--year $(YEAR))
 
 ingest:
 	uv run python -m src.ingestion.pipeline
@@ -9,7 +13,7 @@ ingest:
 # requests. e.g. make ingest-plans STATES=TX,FL
 ingest-plans:
 	@test -n "$(STATES)" || { echo "STATES is required, e.g. make ingest-plans STATES=TX,FL (or STATES=ALL)"; exit 2; }
-	uv run python -m src.ingestion.plans --states $(STATES)
+	uv run python -m src.ingestion.plans --states $(STATES) $(YEAR_ARG)
 
 # Summary of Benefits PDFs for the catalog plans in STATES; run ingest-plans
 # first. Required for the same reason. e.g. make ingest-sbc STATES=NH,DE
@@ -17,7 +21,13 @@ ingest-plans:
 # only those HIOS issuers' (ADR 0015). Downloaded PDFs are always kept (ADR 0016).
 ingest-sbc:
 	@test -n "$(STATES)" || { echo "STATES is required, e.g. make ingest-sbc STATES=NH,DE (or STATES=ALL)"; exit 2; }
-	uv run python -m src.ingestion.sbc --states $(STATES) $(if $(TOP_ISSUERS),--top-issuers) $(if $(ISSUERS),--issuers $(ISSUERS))
+	uv run python -m src.ingestion.sbc --states $(STATES) $(YEAR_ARG) $(if $(TOP_ISSUERS),--top-issuers) $(if $(ISSUERS),--issuers $(ISSUERS))
+
+# How much of the catalog has a Summary of Benefits behind it, and what is
+# missing, per state and issuer. Reads only. VERIFY=1 also hashes every kept
+# PDF. e.g. make sbc-report YEAR=2026 STATES=FL,TX VERIFY=1
+sbc-report:
+	uv run python -m src.ingestion.sbc.report $(YEAR_ARG) $(if $(STATES),--states $(STATES)) $(if $(VERIFY),--verify-files)
 
 migrate:
 	uv run alembic upgrade head

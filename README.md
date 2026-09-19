@@ -252,6 +252,19 @@ sections into `sbc_chunks`, kept apart from the corpus that `make ingest` rebuil
   plans left without an SBC. Failures are retried on the next run.
 - For a quick check: `uv run python -m src.ingestion.sbc --states NH --limit 5`.
 
+### Coverage report
+
+```bash
+make sbc-report YEAR=2026                       # every state with plans
+make sbc-report YEAR=2026 STATES=FL,TX VERIFY=1 # and hash every kept PDF
+```
+
+Counts, per state and issuer, how many catalog plans have a Summary of Benefits
+with text behind them and what stopped the rest: no link at all, never read, or a
+failure with its reason. It also reports documents no plan points at any more,
+documents an older parser stored, plans the latest catalog run did not return, and
+how much disk the kept PDFs use. It reads and writes nothing.
+
 Per-issuer results of the live run are in
 [`docs/findings/sbc-documents.md`](docs/findings/sbc-documents.md).
 
