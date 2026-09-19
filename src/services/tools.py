@@ -20,6 +20,7 @@ from .plan_coverage import PlanCoverage, coverage_for
 from .plan_search import PlanFilters, PlanResult, PlanSearchResult, search_plans
 from .profile import PlanProfile
 from .retrieval import RetrievedChunk
+from .sbc_status import missing_reason
 
 logger = get_logger(__name__)
 
@@ -177,6 +178,11 @@ def _plan_row(plan: PlanResult) -> dict:
         row["medical_deductible"] = plan.deductible
         row["drug_deductible"] = plan.drug_deductible
     row["out_of_pocket_max"] = plan.out_of_pocket_max
+    # Known before plan_coverage is called, so a comparison can name the
+    # plans it has no document for (ADR 0017).
+    row["sbc_readable"] = plan.sbc_status == "ok"
+    if reason := missing_reason(plan.sbc_status):
+        row["sbc_missing_reason"] = reason
     return row
 
 
@@ -210,6 +216,8 @@ def _coverage_row(coverage: PlanCoverage) -> dict:
         return row
     row |= {"name": coverage.name, "issuer": coverage.issuer, "plan_year": coverage.plan_year,
             "sbc_url": coverage.sbc_url}
+    if reason := missing_reason(coverage.sbc_status):
+        row["reason"] = reason
     if coverage.passages:
         row["passages"] = [{"source": p.source, "text": p.content} for p in coverage.passages]
     return row

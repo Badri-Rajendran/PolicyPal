@@ -47,6 +47,8 @@ class PlanCardResponse(BaseModel):
     county_name: str
     state: str
     benefits_url: str | None
+    # Whether its Summary of Benefits could be read here; null on older cards (ADR 0017).
+    sbc_status: str | None = None
 
 
 class MessageResponse(BaseModel):

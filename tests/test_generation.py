@@ -500,8 +500,68 @@ def test_coverage_is_read_for_the_year_shown_and_its_passages_are_cited(_no_plan
         result = answer("Does the second one cover MRIs?", [corpus], shown_plans=_SHOWN)
 
     assert tool.call_args.args[3] == {"11111NH0010001": 2026, "11111NH0010002": 2025}
-    assert result.chunks == [corpus, passage]
+    # The corpus chunk went to the model but wasn't cited, so it isn't listed (ADR 0017).
+    assert result.chunks == [passage]
     assert "plan_coverage" in client.chat.completions.create.call_args.kwargs["messages"][0]["content"]
+
+
+def _coverage_answer(reply, chunks):
+    client = MagicMock()
+    client.chat.completions.create.side_effect = [_completion(tool_calls=[_coverage_call()]), _completion(reply)]
+    with patch("src.services.generation._llm", return_value=client), \
+         patch("src.services.generation.run_tool", return_value=ToolOutcome('{"status": "ok"}')):
+        return answer("Does the second one cover MRIs, and what is coinsurance?", chunks, shown_plans=_SHOWN)
+
+
+def test_a_coverage_answer_lists_only_the_general_material_it_cites(_no_plan_catalog):
+    """Uncited sources would read as backing for a plan it has no document for (ADR 0017)."""
+    _no_plan_catalog.return_value = True
+    cited = RetrievedChunk("c1", "Coinsurance is your share.", "hcg_glossary_coinsurance.md", 0.9)
+    uncited = RetrievedChunk("c2", "A deductible is...", "Deductible", 0.8)
+
+    result = _coverage_answer(
+        "Silver's Summary of Benefits couldn't be read here. Coinsurance is your share of a cost, "
+        "and a Deductible is not the same thing. [Source: hcg_glossary_coinsurance.md]", [cited, uncited])
+
+    # "Deductible" is in the prose, but only a label inside [Source: …] counts as cited.
+    assert result.chunks == [cited]
+
+
+def test_a_label_inside_another_cited_label_is_not_cited(_no_plan_catalog):
+    """Labels are matched whole: citing prefix_X.md is no citation of X.md."""
+    _no_plan_catalog.return_value = True
+    cited = RetrievedChunk("c1", "text", "hcg_article_Preventive_care.md", 0.9)
+    inside = RetrievedChunk("c2", "text", "Preventive_care.md", 0.8)
+    also = RetrievedChunk("c3", "text", "Health_insurance", 0.7)
+
+    result = _coverage_answer("Terms. [Source: hcg_article_Preventive_care.md; Health_insurance]",
+                              [cited, inside, also])
+
+    assert result.chunks == [cited, also]
+
+
+def test_an_answer_without_a_coverage_read_keeps_every_source(_no_plan_catalog):
+    """A definitional answer cites through the list itself (ADR 0007)."""
+    chunk = _make_chunk()
+
+    with patch("src.services.generation._llm", return_value=_fake_client("A deductible is what you pay first.")):
+        result = answer("What is a deductible?", [chunk])
+
+    assert result.chunks == [chunk]
+
+
+def test_the_coverage_prompt_forbids_describing_a_plan_with_no_document_from_general_material(_no_plan_catalog):
+    _no_plan_catalog.return_value = True
+    client = _fake_client("an answer")
+
+    with patch("src.services.generation._llm", return_value=client):
+        answer("What is a deductible?", [_make_chunk()])
+
+    system = " ".join(_sent_messages(client)[0]["content"].split())
+    assert "never describe its coverage, costs or exclusions — not from <retrieved_context>" in system
+    assert "name every plan whose document couldn't be read" in system
+    assert "Then stop: add nothing about what plans usually cover or cost" in system
+    assert "sbc_readable" in system
 
 
 def test_a_coverage_answer_with_no_corpus_match_is_still_grounded(_no_plan_catalog):

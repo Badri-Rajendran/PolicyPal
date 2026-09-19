@@ -12,7 +12,7 @@ from src.policypal.config import settings
 from .plan_search import PlanResult, plan_catalog_available
 from .profile import PlanProfile
 from .retrieval import RetrievedChunk, search
-from .tools import TOOLS, run_tool
+from .tools import PLAN_COVERAGE, TOOLS, run_tool
 
 logger = get_logger(__name__)
 
@@ -104,10 +104,21 @@ COVERAGE_PROMPT = (
     "Only when the user asks whether their own care or claim will be covered "
     "or paid for, begin with exactly this sentence: \"" + BOUNDARY_SENTENCE + "\" "
     "Then give the plan's terms from the passages, and never answer yes or no. "
-    "By plan status: not_found — no such plan, ask which plan they mean; "
-    "no_document — its Summary of Benefits and Coverage isn't loaded, give its "
-    "sbc_url if there is one, otherwise point to HealthCare.gov; unavailable — "
-    "it couldn't be read here, give its sbc_url so they can read it there."
+    "sbc_readable in a search_plans result says whether a plan's Summary of "
+    "Benefits and Coverage can be read here. A plan whose document can't be "
+    "(sbc_readable false, or plan_coverage status no_document or unavailable) "
+    "has no source here for what it covers: say so by the plan's name, with "
+    "the reason given, and never describe its coverage, costs or exclusions — "
+    "not from <retrieved_context>, which is general material and never "
+    "describes a specific plan, and not from another plan's passages. Then "
+    "stop: add nothing about what plans usually cover or cost, and no general "
+    "rules or definitions, unless the user asked what a term means. When an "
+    "answer covers several plans, name every plan whose document couldn't be "
+    "read beside those that could, and name any plan asked about that you "
+    "didn't read. By plan status: not_found — no such plan, ask which plan "
+    "they mean; no_document — give the reason, and its sbc_url if there is "
+    "one, otherwise point to HealthCare.gov; unavailable — give the reason and "
+    "its sbc_url so they can read it there."
 )
 
 # At most this many search rounds per answer. The call after the last one
@@ -157,6 +168,9 @@ class Answer:
 _DELIMITER_TAGS = re.compile(
     r"</?(?:user_question|retrieved_context|conversation|plans_shown)>", re.IGNORECASE
 )
+
+# What an answer cites: "[Source: a.md]", or several labels in one bracket.
+_CITATIONS = re.compile(r"\[Source:([^\]]*)\]")
 
 # A rewrite is one question. Anything longer is the model rambling or being
 # steered, and is discarded in favour of the raw query.
@@ -367,9 +381,9 @@ def answer(query: str, chunks: list[RetrievedChunk],
     plans: dict[str, PlanResult] = {}
     # Each plan's year, from where the user saw it: coverage is read for that year.
     plan_years = {p.plan_id: p.plan_year for p in shown_plans}
-    cited = list(chunks)
+    passages: list[RetrievedChunk] = []
     needs: tuple[str, ...] = ()
-    searched = False
+    searched = coverage_read = False
 
     for round_ in range(_MAX_TOOL_ROUNDS + 1):
         last = round_ == _MAX_TOOL_ROUNDS
@@ -383,11 +397,12 @@ def answer(query: str, chunks: list[RetrievedChunk],
         for call in calls:
             outcome = run_tool(call.function.name, call.function.arguments, profile, dict(plan_years))
             searched = True
+            coverage_read = coverage_read or call.function.name == PLAN_COVERAGE
             needs = outcome.needs_input or needs
             for plan in outcome.plans:
                 plans.setdefault(plan.hios_plan_id, plan)
                 plan_years[plan.hios_plan_id] = plan.plan_year
-            cited += outcome.chunks
+            passages += outcome.chunks
             # Plan and issuer names come from CMS: data, and delimited as such.
             messages.append({"role": "tool", "tool_call_id": call.id,
                              "content": _neutralize_delimiters(outcome.content)})
@@ -412,7 +427,18 @@ def answer(query: str, chunks: list[RetrievedChunk],
     logger.info("generated answer (%d chars) for question (len=%d, %d prior turns, %d plans)",
                 len(answer_text), len(query), len(history or []), len(plans))
 
-    return Answer(answer_text, _distinct(cited), tuple(plans.values()), needs)
+    # A coverage answer lists only the general material it cites: sources it
+    # never used would read as backing for a plan it has no document for
+    # (ADR 0017). Other answers cite through the list itself (ADR 0007).
+    if coverage_read:
+        cited = cited_labels(answer_text)
+        chunks = [c for c in chunks if c.source in cited]
+    return Answer(answer_text, _distinct(chunks + passages), tuple(plans.values()), needs)
+
+
+def cited_labels(text: str) -> set[str]:
+    """Every source label an answer cites, exactly as written inside [Source: …]."""
+    return {label.strip() for bracket in _CITATIONS.findall(text) for label in bracket.split(";") if label.strip()}
 
 
 def _distinct(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:

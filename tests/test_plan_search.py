@@ -13,6 +13,7 @@ import requests
 
 from src.ingestion.marketplace_api import County
 from src.ingestion.plans import _write_county, _write_zip_counties
+from src.models.sbc import SbcDocument
 from src.services.plan_search import PlanFilters, search_plans
 
 YEAR = 1999
@@ -24,9 +25,9 @@ def _share(amount, csr=NO_CSR, cost_share_type="Combined Medical and Drug EHB De
             "network_tier": "In-Network", "family_cost": "Individual"}
 
 
-def _plan(plan_id, premium, metal_level="Silver", deductibles=None):
+def _plan(plan_id, premium, metal_level="Silver", deductibles=None, benefits_url=None):
     return {
-        "id": plan_id, "name": f"Plan {plan_id}", "metal_level": metal_level, "type": "HMO", "state": "TX",
+        "id": plan_id, "benefits_url": benefits_url, "name": f"Plan {plan_id}", "metal_level": metal_level, "type": "HMO", "state": "TX",
         "premium": premium, "hsa_eligible": False, "has_national_network": False,
         "issuer": {"id": "11111", "name": "Test Issuer", "state": "TX"},
         "deductibles": deductibles or [_share(2000)],
@@ -156,3 +157,32 @@ def test_mid_rollover_a_zip_uses_the_latest_year_its_county_is_loaded_for(sessio
 
     assert result.status == "ok"
     assert result.plan_year == YEAR
+
+
+def test_each_plan_found_carries_whether_its_sbc_can_be_read(session):
+    """ADR 0017: read, blocked, never read, or no link at all. Another year's
+    document under the same link never makes a plan readable."""
+    _write_zip_counties(session, [County("TX", "99001", "Alpha", ("00001",))], YEAR)
+    urls = {plan_id: f"https://sbc.example.com/{plan_id}.pdf" for plan_id in ("11111TX0010001", "11111TX0010002",
+                                                                               "11111TX0010003", "11111TX0010004")}
+    _write_county(session, [
+        _plan("11111TX0010001", 100, benefits_url=urls["11111TX0010001"]),
+        _plan("11111TX0010002", 110, benefits_url=urls["11111TX0010002"]),
+        _plan("11111TX0010003", 120, benefits_url=urls["11111TX0010003"]),
+        _plan("11111TX0010004", 130, benefits_url=urls["11111TX0010004"]),
+        _plan("11111TX0010005", 140),
+    ], "99001", YEAR)
+    session.add_all([
+        SbcDocument(url=urls["11111TX0010001"], plan_year=YEAR, status="ok"),
+        SbcDocument(url=urls["11111TX0010002"], plan_year=YEAR, status="blocked"),
+        SbcDocument(url=urls["11111TX0010004"], plan_year=YEAR - 1, status="ok"),
+    ])
+    session.flush()
+
+    result, _ = _search(session)
+
+    assert result.total_matching == 5
+    assert [(p.hios_plan_id, p.sbc_status) for p in result.plans] == [
+        ("11111TX0010001", "ok"), ("11111TX0010002", "blocked"), ("11111TX0010003", "not_read"),
+        ("11111TX0010004", "not_read"), ("11111TX0010005", "no_link"),
+    ]

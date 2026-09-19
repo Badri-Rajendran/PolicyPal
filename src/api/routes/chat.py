@@ -74,6 +74,7 @@ def _plan_row(position: int, plan: PlanResult) -> MessagePlan:
         county_name=plan.county_name,
         state=plan.state,
         benefits_url=plan.benefits_url,
+        sbc_status=plan.sbc_status,
     )
 
 

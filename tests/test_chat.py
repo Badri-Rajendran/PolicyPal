@@ -246,7 +246,7 @@ def test_delete_thread(client):
 
 # Plan cards (ADR 0011)
 
-def _plan(plan_id, premium, *, drug=None):
+def _plan(plan_id, premium, *, drug=None, sbc_status="ok"):
     """A plan as search_plans returns it; `premium=None` means CMS gave no live price."""
     return PlanResult(
         hios_plan_id=plan_id, plan_year=2026, name=f"Plan {plan_id}", issuer="CHRISTUS Health Plan",
@@ -255,7 +255,7 @@ def _plan(plan_id, premium, *, drug=None):
         premium_reference=Decimal("535.35"), deductible=Decimal("5990.00"), drug_deductible=drug,
         out_of_pocket_max=Decimal("9200.00"), hsa_eligible=False, quality_rating=3,
         benefits_url="https://example.com/sbc.pdf", county_name="Anderson", state="TX",
-        premium_age=None if premium is None else 34,
+        premium_age=None if premium is None else 34, sbc_status=sbc_status,
     )
 
 
@@ -289,7 +289,7 @@ def test_plans_survive_reopening_the_thread_exactly_as_shown(client):
         "monthly_premium": "620.15", "premium_age": 34, "premium_reference": "535.35",
         "deductible": "5990.00", "drug_deductible": None, "out_of_pocket_max": "9200.00",
         "hsa_eligible": False, "quality_rating": 3, "county_name": "Anderson", "state": "TX",
-        "benefits_url": "https://example.com/sbc.pdf",
+        "benefits_url": "https://example.com/sbc.pdf", "sbc_status": "ok",
     }
     assert live[2]["drug_deductible"] == "5500.00"
     assert next(m for m in reopened if m["role"] == "assistant")["plans"] == live
@@ -301,6 +301,18 @@ def test_an_unpriced_plan_stays_unpriced_after_a_reload(client):
 
     card = next(m for m in reopened if m["role"] == "assistant")["plans"][0]
     assert (card["monthly_premium"], card["premium_age"], card["premium_reference"]) == (None, None, "535.35")
+
+
+def test_a_card_keeps_whether_its_sbc_could_be_read_when_shown(client):
+    """ADR 0017: a plan with no readable document says so, live and after a reload.
+    A card saved before this was recorded reads as null, not as readable."""
+    plans = (_plan("66252TX0380010", "620.15", sbc_status="blocked"), _plan("33602TX0460725", "601.05"),
+             _plan("40220TX0080031", "620.26", sbc_status=None))
+    _, _, sent, reopened = _ask(client, Answer("Three plans.", [], plans))
+
+    live = sent.get_json()["plans"]
+    assert [p["sbc_status"] for p in live] == ["blocked", "ok", None]
+    assert next(m for m in reopened if m["role"] == "assistant")["plans"] == live
 
 
 def test_messages_without_plans_carry_none(client):

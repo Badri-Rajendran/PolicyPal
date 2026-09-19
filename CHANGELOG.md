@@ -4,6 +4,15 @@
 
 ### Added
 
+- Answers say which plans have no SBC text (ADR 0017). `search_plans` tells the
+  model whether each plan's SBC can be read, `plan_coverage` gives the precise
+  reason (no link, never read, blocked, not a PDF, wrong year…), and the prompt
+  forbids describing such a plan from general material. Saved plan cards record
+  the status in `message_plans.sbc_status` (new migration).
+- MISSING DOCUMENTS eval set (full-marks floor), and coverage answers are now
+  scored on their own text: citing general material, leaving an unreadable plan
+  unnamed, or stating a figure with no document all fail. The scorer has its own
+  tests.
 - Phase 3 live ingest: the catalog for FL, TX, NC, TN, AL and SC, and the SBCs
   of the ten largest parent companies there. 436 documents are stored and 890
   of the top parents' 1,410 plans have an SBC; results are in
@@ -143,6 +152,8 @@
 
 ### Changed
 
+- A coverage answer saves and shows only the corpus sources it cites; other
+  answers keep every retrieved source (ADR 0017, amending ADR 0007).
 - A parser fix reaches stored SBCs by bumping `PARSER_VERSION`, re-parsing
   them from disk, instead of re-parsing every document on every run (ADR 0015).
 - The ingestion user agent is one shared `USER_AGENT` constant.

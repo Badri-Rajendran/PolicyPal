@@ -18,6 +18,7 @@ from src.models.plan import Issuer, Plan
 from src.models.sbc import SbcChunk, SbcDocument
 
 from .retrieval import RetrievedChunk
+from .sbc_status import plan_sbc_status, sbc_document_join
 
 logger = get_logger(__name__)
 
@@ -38,6 +39,8 @@ class PlanCoverage:
     plan_year: int | None = None
     sbc_url: str | None = None
     passages: tuple[RetrievedChunk, ...] = ()
+    # The precise status behind `status` (ADR 0017): "blocked", "not_read"…
+    sbc_status: str | None = None
 
 
 def coverage_for(session, plan_ids: list[str], question: str,
@@ -52,8 +55,10 @@ def coverage_for(session, plan_ids: list[str], question: str,
 
 def _coverage(session, plan_id: str, question: str, year: int | None) -> PlanCoverage:
     stmt = (
-        select(Plan.marketing_name, Plan.plan_year, Plan.benefits_url, Issuer.name)
+        select(Plan.marketing_name, Plan.plan_year, Plan.benefits_url, Issuer.name,
+               SbcDocument.id, plan_sbc_status())
         .join(Issuer, Issuer.id == Plan.issuer_id)
+        .outerjoin(SbcDocument, sbc_document_join())
         .where(Plan.hios_plan_id == plan_id)
         .order_by(Plan.plan_year.desc())
         .limit(1)
@@ -64,23 +69,14 @@ def _coverage(session, plan_id: str, question: str, year: int | None) -> PlanCov
     if row is None:
         return PlanCoverage(plan_id, "not_found")
 
-    name, plan_year, url, issuer = row
-    found = PlanCoverage(plan_id, "no_document", name, issuer, plan_year, url)
-    if url is None:
-        return found
-
-    document = session.execute(
-        select(SbcDocument.id, SbcDocument.status)
-        .where(SbcDocument.url == url, SbcDocument.plan_year == plan_year)
-    ).first()
-    if document is None:
-        return found
-    if document.status != "ok":
-        return PlanCoverage(plan_id, "unavailable", name, issuer, plan_year, url)
+    name, plan_year, url, issuer, document_id, sbc_status = row
+    if sbc_status != "ok":
+        status = "no_document" if sbc_status in ("no_link", "not_read") else "unavailable"
+        return PlanCoverage(plan_id, status, name, issuer, plan_year, url, sbc_status=sbc_status)
 
     chunks = session.execute(
         select(SbcChunk.chunk_id, SbcChunk.section, SbcChunk.content)
-        .where(SbcChunk.document_id == document.id)
+        .where(SbcChunk.document_id == document_id)
     ).all()
     by_id = {chunk.chunk_id: chunk for chunk in chunks}
     ranked = rerank(question, [(chunk.chunk_id, chunk.content) for chunk in chunks], PASSAGES_PER_PLAN)
@@ -95,7 +91,7 @@ def _coverage(session, plan_id: str, question: str, year: int | None) -> PlanCov
     )
     # Scores are logged, not gated on (ADR 0014); never the question itself.
     logger.info("plan_coverage %s: %s", plan_id, [round(p.score, 3) for p in passages])
-    return PlanCoverage(plan_id, "ok", name, issuer, plan_year, url, passages)
+    return PlanCoverage(plan_id, "ok", name, issuer, plan_year, url, passages, sbc_status)
 
 
 def source_label(plan_name: str, section: str) -> str:

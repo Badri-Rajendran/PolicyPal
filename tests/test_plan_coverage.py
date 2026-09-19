@@ -100,20 +100,35 @@ def test_a_document_for_another_year_is_never_used(session, issuer):
     assert (latest.status, latest.plan_year, latest.passages) == ("no_document", YEAR + 1, ())
 
 
-@pytest.mark.parametrize(("url", "document_status", "expected"), [
-    (None, None, "no_document"),
-    (SHARED, None, "no_document"),
-    (SHARED, "blocked", "unavailable"),
-    (SHARED, "unparseable", "unavailable"),
+@pytest.mark.parametrize(("url", "document_status", "expected", "sbc_status"), [
+    (None, None, "no_document", "no_link"),
+    (SHARED, None, "no_document", "not_read"),
+    (SHARED, "blocked", "unavailable", "blocked"),
+    (SHARED, "http_error", "unavailable", "http_error"),
+    (SHARED, "not_pdf", "unavailable", "not_pdf"),
+    (SHARED, "too_large", "unavailable", "too_large"),
+    (SHARED, "wrong_year", "unavailable", "wrong_year"),
+    (SHARED, "unparseable", "unavailable", "unparseable"),
 ])
-def test_a_plan_without_a_usable_document_says_why(session, issuer, url, document_status, expected):
+def test_a_plan_without_a_usable_document_says_why(session, issuer, url, document_status, expected, sbc_status):
+    """ADR 0017: the precise reason survives, so the answer can give it."""
     _plan(session, issuer, "99999NH0010001", url)
     if document_status:
         _document(session, SHARED, status=document_status)
 
     [coverage] = coverage_for(session, ["99999NH0010001"], "MRI?")
 
-    assert (coverage.status, coverage.sbc_url, coverage.passages) == (expected, url, ())
+    assert (coverage.status, coverage.sbc_status, coverage.sbc_url, coverage.passages) == (
+        expected, sbc_status, url, ())
+
+
+def test_a_readable_plan_says_so(session, issuer):
+    _plan(session, issuer, "99999NH0010001", SHARED)
+    _document(session, SHARED, test="Imaging $100 copay")
+
+    [coverage] = coverage_for(session, ["99999NH0010001"], "MRI?")
+
+    assert (coverage.status, coverage.sbc_status) == ("ok", "ok")
 
 
 def test_an_unknown_plan_is_not_found(session):

@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted. Amended by ADR 0017: an answer that called `plan_coverage`
+saves only the corpus sources it cites.
 
 ## Context
 

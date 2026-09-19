@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from src.core.db import Base
+from src.models.sbc import PLAN_SBC_STATUSES
 
 if TYPE_CHECKING:
     from src.models.user import User
@@ -109,6 +110,8 @@ class MessagePlan(Base):
     __table_args__ = (
         # message_id leads, so this index also serves loading a message's plans.
         UniqueConstraint("message_id", "position", name="uq_message_plans_message_id_position"),
+        CheckConstraint(f"sbc_status IS NULL OR sbc_status IN {PLAN_SBC_STATUSES}",
+                        name="ck_message_plans_sbc_status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -134,5 +137,8 @@ class MessagePlan(Base):
     county_name: Mapped[str] = mapped_column(String(100), nullable=False)
     state: Mapped[str] = mapped_column(String(2), nullable=False)
     benefits_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Whether its Summary of Benefits could be read when shown (ADR 0017).
+    # Null on cards saved before this was recorded.
+    sbc_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     message: Mapped["Message"] = relationship(back_populates="plans")
