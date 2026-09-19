@@ -4,6 +4,16 @@
 
 ### Added
 
+- Plan documents: `make ingest-sbc STATES=...` reads each catalog plan's Summary of
+  Benefits and Coverage into `sbc_documents` and `sbc_chunks`, one chunk per section
+  of the federal template, kept apart from the corpus (ADR 0013).
+- SBC fetching is polite and bounded: HTTPS public hosts only (re-checked on every
+  redirect), `robots.txt` obeyed, per-host pacing, a 15 MB cap and a PDF check. A
+  refusing host is recorded as `blocked`, never worked around.
+- SBC ingestion is incremental: per-document transactions, a local PDF cache so a
+  re-run downloads nothing it already has, a plan-year check, and a report naming
+  plans left without an SBC.
+- Dependency: `pdfplumber` (MIT), pinned and audited.
 - Plan comparison table in the chat transcript: premium and the age it was
   priced for, deductibles (medical and drug when separate), out-of-pocket
   maximum, quality rating and a plan-summary link per plan, in a region that
@@ -108,6 +118,7 @@
 
 ### Changed
 
+- The ingestion user agent is one shared `USER_AGENT` constant.
 - Chat layout columns are `minmax(0, 1fr)`: a plain `1fr` let a wide table widen
   the whole page on a phone.
 - The token response's user carries `profile_complete`, but no profile values,

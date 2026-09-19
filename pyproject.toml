@@ -28,6 +28,7 @@ dependencies = [
     "transformers>=5.12.1",
     "requests>=2.32.0",
     "wikipedia-api>=0.15.0",
+    "pdfplumber>=0.11.10",
 ]
 
 [build-system]

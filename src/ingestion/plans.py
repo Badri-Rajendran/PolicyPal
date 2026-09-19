@@ -138,7 +138,7 @@ def _cost_share_rows(plan: dict, plan_id) -> list[dict]:
     return list(rows.values())
 
 
-def _upsert(session, model, rows: list[dict], constraint: str, key: tuple[str, ...]) -> None:
+def upsert(session, model, rows: list[dict], constraint: str, key: tuple[str, ...]) -> None:
     """Insert, or overwrite every non-key column: the latest sync wins.
 
     `updated_at` is set explicitly because ON CONFLICT DO UPDATE writes only
@@ -165,7 +165,7 @@ def _write_county(session, plans: list[dict], countyfips: str, year: int) -> tup
     plans = list(by_id.values())
 
     issuer_rows = {str(p["issuer"]["id"]): _issuer_row(p["issuer"], year) for p in plans}
-    _upsert(session, Issuer, list(issuer_rows.values()),
+    upsert(session, Issuer, list(issuer_rows.values()),
             "uq_issuers_hios_issuer_id_plan_year", ("hios_issuer_id", "plan_year"))
     issuer_ids = dict(session.execute(
         select(Issuer.hios_issuer_id, Issuer.id).where(
@@ -174,7 +174,7 @@ def _write_county(session, plans: list[dict], countyfips: str, year: int) -> tup
     ).all())
 
     plan_rows = [_plan_row(p, year, issuer_ids[str(p["issuer"]["id"])]) for p in plans]
-    _upsert(session, Plan, plan_rows, "uq_plans_hios_plan_id_plan_year", ("hios_plan_id", "plan_year"))
+    upsert(session, Plan, plan_rows, "uq_plans_hios_plan_id_plan_year", ("hios_plan_id", "plan_year"))
     plan_ids = dict(session.execute(
         select(Plan.hios_plan_id, Plan.id).where(Plan.hios_plan_id.in_(by_id), Plan.plan_year == year)
     ).all())

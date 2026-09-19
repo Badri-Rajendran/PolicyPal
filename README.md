@@ -59,12 +59,13 @@ Both halves share the same embedding model (`src/core/embedding.py`) so ingestio
 PolicyPal/
 ├── src/
 │   ├── core/           # shared: db, embedding, reranker, device, logging
-│   ├── models/         # SQLAlchemy ORM (users, threads, messages, chunks)
+│   ├── models/         # SQLAlchemy ORM (users, threads, messages, chunks, plans, SBCs)
 │   ├── schemas/        # Pydantic request/response models
 │   ├── api/            # Flask app factory, routes, rate limiting, auth deps
 │   ├── services/       # retrieval, generation, auth logic
 │   ├── ingestion/      # fetch → normalize → chunk → embed pipeline
-│   │   └── sources/    # one module per corpus source (see ADR 0003)
+│   │   ├── sources/    # one module per corpus source (see ADR 0003)
+│   │   └── sbc/        # plan documents: fetch, parse, store (ADR 0013)
 │   └── policypal/      # settings (config.py)
 ├── migrations/         # Alembic revisions
 ├── docs/decisions/     # ADRs for material architectural choices
@@ -213,6 +214,32 @@ ingested before that table existed, re-run once. Needs `CMS_MARKETPLACE_API_KEY`
 The county list is cached per plan year in `data/plans/raw/`; delete it to refresh.
 Verified API behaviour is recorded in
 [`docs/findings/cms-marketplace-api.md`](docs/findings/cms-marketplace-api.md).
+
+### Plan documents (SBC)
+
+```bash
+make ingest-sbc STATES=NH,DE        # after make ingest-plans for the same states
+```
+
+Reads the **Summary of Benefits and Coverage** behind each catalog plan's `benefits_url`:
+the federally standardized document that says what a plan covers, what it excludes and
+what each common medical event costs. The text is split along the template's own
+sections into `sbc_chunks`, kept apart from the corpus that `make ingest` rebuilds
+(ADR 0013).
+
+- **Polite and never pushy.** HTTPS to public hosts only, `robots.txt` obeyed, two
+  seconds between requests to one host, and a 15 MB cap. A host that refuses automated
+  requests is recorded as `blocked` and left alone. Its plans get no SBC answers.
+- **Downloaded once.** PDFs are cached in `data/sbc/raw/` (gitignored, never served or
+  committed); a re-run requests no file it already has, and re-parses it from the cache.
+- **Plan year is checked.** A document whose coverage period is for another year is
+  refused.
+- **Every attempt is recorded** in `sbc_documents`, and the run ends by naming the
+  plans left without an SBC. Failures are retried on the next run.
+- For a quick check: `uv run python -m src.ingestion.sbc --states NH --limit 5`.
+
+Per-issuer results of the live run are in
+[`docs/findings/sbc-documents.md`](docs/findings/sbc-documents.md).
 
 ## Testing
 
