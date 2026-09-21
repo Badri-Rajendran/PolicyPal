@@ -23,7 +23,9 @@
 - `make sbc-report`: how much of the catalog has a Summary of Benefits behind
   it, per state and issuer, with the reasons for the rest, orphaned documents,
   plans the latest catalog run did not return, and the disk the kept PDFs use.
-  `VERIFY=1` also hashes every kept PDF. It reads and writes nothing.
+  `VERIFY=1` also hashes every kept PDF. It reads and writes nothing, and
+  counts the versions a refresh replaced in `data/sbc/archive/` alongside the
+  current ones.
 - `make ingest-plans`, `make ingest-sbc` and `make sbc-report` take `YEAR=2027`,
   so a run during open enrollment does not default to the calendar year.
 - `scripts/eval_sbc_ranking.py`: checks without calling a model that the

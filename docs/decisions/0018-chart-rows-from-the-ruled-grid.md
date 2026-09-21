@@ -56,7 +56,14 @@ A scanned SBC has no characters to read. `read_pdf` refuses it as "no text
 layer (a scanned image; not OCRed)", and the ingest report counts it.
 
 There is no OCR. Misreading a digit in a dollar amount would be worse than
-linking the PDF. OCR will be decided once Phase 4 measures how many there are.
+linking the PDF.
+
+**Phase 4 measured it, and the answer is none.** Of 1,189 documents from 137
+issuers in eighteen states, **zero** had no text layer: no issuer publishes a
+scanned SBC. OCR would buy nothing, and is not revisited. The only documents
+the run could not parse — five from 22 Health — held text this parser could
+not yet read, not an image: their font carries no space character. All five
+are read now.
 
 ### A document with no spaces is read again at a tighter word gap (version 4)
 
