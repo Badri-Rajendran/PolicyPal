@@ -107,3 +107,11 @@ def test_citing_the_unreadable_plans_own_pdf_is_not_general_material():
 
     assert corpus_citations(text) == []
     assert _score(_ONLY_MISSING, text) is None
+
+
+def test_naming_an_unreadable_plan_in_a_citation_is_not_citing_general_material():
+    """The model writes "[Source: Silver Classic — reason: …]": that names a plan, not a document."""
+    text = "[Source: Silver Classic — reason: the insurer's website doesn't allow automated downloads]"
+
+    assert corpus_citations(text) == ["Silver Classic — reason: the insurer's website doesn't allow automated downloads"]
+    assert corpus_citations(text, ("Silver Classic",)) == []

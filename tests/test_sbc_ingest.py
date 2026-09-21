@@ -8,13 +8,22 @@ import os
 from collections import Counter
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, insert, select
 
 from src.ingestion import embed
 from src.ingestion.sbc import ingest
-from src.ingestion.sbc.extract import PdfPage, SbcParse, Section, TableRow
+from src.ingestion.sbc.extract import (
+    EVENT_HEADINGS,
+    QUESTION_HEADINGS,
+    PdfPage,
+    SbcParse,
+    Section,
+    TableRow,
+    parse_sbc,
+)
 from src.ingestion.sbc.fetch import FetchResult
 from src.models.chunk import Chunk
 from src.models.plan import Issuer, Plan
@@ -26,9 +35,17 @@ GOLD = "https://sbc.example.com/gold.pdf"
 SILVER = "https://sbc.example.com/silver.pdf"
 
 
+def _template_rows(test_cost):
+    """The federal template's questions and chart groups, so a document is whole."""
+    return [("Important Questions", "Answers | Why This Matters:")] + [
+        (heading, "No.") for heading in QUESTION_HEADINGS] + [("Common Medical Event", "")] + [
+        (heading, f"Imaging {test_cost} copay" if heading == "If you have a test" else "No charge")
+        for heading in EVENT_HEADINGS]
+
+
 def _pages(year=YEAR, test_cost="$60"):
     header = f"Coverage Period: 01/01/{year}-12/31/{year}\n: Example Gold | Coverage for: Individual"
-    rows = (TableRow("Common Medical Event", ""), TableRow("If you have a test", f"Imaging {test_cost} copay"))
+    rows = tuple(TableRow(label, body) for label, body in _template_rows(test_cost))
     return [PdfPage(text=header, rows=rows)]
 
 
@@ -57,7 +74,11 @@ def sbc(monkeypatch, session, tmp_path):
     monkeypatch.setattr(ingest, "SBC_REJECTED", tmp_path / "rejected")
     monkeypatch.setattr(ingest, "get_session", same_session)
     monkeypatch.setattr(ingest, "fetch_pdf", fake_fetch)
-    monkeypatch.setattr(ingest, "read_pdf", lambda path: served[path.read_bytes().decode()])
+    def read_parsed(path):
+        pages = served[path.read_bytes().decode()]
+        return pages, parse_sbc(pages)
+
+    monkeypatch.setattr(ingest, "read_parsed", read_parsed)
     return served
 
 
@@ -77,9 +98,17 @@ def catalog(monkeypatch):
 
 
 def _chunks(session, url):
-    return session.scalars(
-        select(SbcChunk.content).join(SbcDocument).where(SbcDocument.url == url, SbcDocument.plan_year == YEAR)
-    ).all()
+    """The chart row the tests vary; the rest of the template is the same in every fixture."""
+    return [content for content in session.scalars(
+        select(SbcChunk.content).join(SbcDocument).where(SbcDocument.url == url, SbcDocument.plan_year == YEAR))
+        if content.startswith("If you have a test")]
+
+
+def _row(session, url):
+    """The stored row as `execute` reads it: status, parser version and hash."""
+    return session.execute(
+        select(SbcDocument.url, SbcDocument.status, SbcDocument.parser_version, SbcDocument.sha256)
+        .where(SbcDocument.url == url)).first()
 
 
 def _status(session, url):
@@ -286,3 +315,52 @@ def test_a_run_is_narrowed_to_the_issuers_asked_for(args, expected):
 def test_issuers_must_be_hios_ids_and_not_mixed_with_the_top_list(args):
     with pytest.raises(SystemExit):
         ingest.parse_args(["--states", "TX", *args])
+
+
+def test_a_parser_that_now_reads_the_year_judges_the_file_it_turned_down_again(sbc, session, tmp_path):
+    """A later parser reads the kept file from disk, not from the issuer again (ADR 0018)."""
+    sbc[GOLD] = _pages(year=YEAR - 1)
+    assert ingest.ingest_document(GOLD, YEAR) == "wrong_year"
+    row = _row(session, GOLD)
+
+    sbc[GOLD] = _pages()                                      # the same file, read by a better parser
+
+    assert ingest.ingest_document(GOLD, YEAR, row) == "ok"
+
+    assert _chunks(session, GOLD) == ["If you have a test\nImaging $60 copay"]
+    assert list((tmp_path / "rejected" / str(YEAR)).glob("*.pdf")) == []
+    assert ingest.cache_path(GOLD, YEAR).read_bytes() == GOLD.encode()
+
+
+def test_a_run_reads_a_wrong_year_document_again_only_when_the_parser_changed(sbc, session):
+    def judged_by(version):
+        return SimpleNamespace(status="wrong_year", parser_version=version, sha256="a" * 64)
+
+    assert ingest._needs_reading(GOLD, judged_by(ingest.PARSER_VERSION - 1), YEAR, refresh=False) is True
+    assert ingest._needs_reading(GOLD, judged_by(ingest.PARSER_VERSION), YEAR, refresh=False) is False
+
+
+def test_a_document_without_the_chart_is_partial_and_keeps_the_text_it_has(sbc, session):
+    """University of Utah's chart is no table pdfplumber finds; what was read is still the plan's (ADR 0017)."""
+    header = f"Coverage Period: 01/01/{YEAR}-12/31/{YEAR}\n: Example Gold | Coverage for: Individual"
+    questions = [("Important Questions", "Answers")] + [(heading, "No.") for heading in QUESTION_HEADINGS]
+    sbc[GOLD] = [PdfPage(text=header, rows=tuple(TableRow(*row) for row in questions))]
+
+    assert ingest.ingest_document(GOLD, YEAR) == "partial"
+
+    assert _status(session, GOLD) == "partial"
+    detail = session.scalar(select(SbcDocument.detail).where(SbcDocument.url == GOLD))
+    assert detail == "missing the whole costs chart"
+    stored = session.scalars(select(SbcChunk.content).join(SbcDocument).where(SbcDocument.url == GOLD)).all()
+    assert any(content.startswith("What is the overall deductible?") for content in stored)
+
+
+def test_a_document_missing_some_of_its_questions_says_how_many(sbc, session):
+    pages = _pages()
+    kept = [row for row in pages[0].rows if row.label not in QUESTION_HEADINGS[:3]]
+    sbc[GOLD] = [PdfPage(text=pages[0].text, rows=tuple(kept))]
+
+    assert ingest.ingest_document(GOLD, YEAR) == "partial"
+
+    detail = session.scalar(select(SbcDocument.detail).where(SbcDocument.url == GOLD))
+    assert detail == "missing 3 of the 7 questions"

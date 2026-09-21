@@ -387,3 +387,161 @@ where they were, except COVERAGE, which is now 9.
   corpus or its prompts.
 - **Tokens per coverage answer:** 2,431–5,628, a mean of about 4,500. That is
   as in Phase 2.
+
+## Phase 4: every issuer, eighteen states
+
+Run on 19–20 September 2026 against the 2026 plan year, from a clean `main`
+with PRs #21–#26 merged. Ten states were added to Phase 3's eight, and every
+issuer in all eighteen was read, not only the ten largest parents (ADR 0015,
+"Phase 4's scope").
+
+### The catalog
+
+`make ingest-plans` one state at a time, 717 counties in **29 minutes**, with
+**no county failing** in any state.
+
+| State | Counties | Plan writes | Time |
+| --- | --- | --- | --- |
+| OH | 88 | 9,038 | 7m49s |
+| MO | 115 | 4,970 | 4m02s |
+| IN | 92 | 4,429 | 3m36s |
+| OK | 77 | 3,724 | 3m04s |
+| MI | 83 | 3,314 | 2m50s |
+| MS | 82 | 2,834 | 2m30s |
+| WI | 72 | 2,651 | 2m06s |
+| LA | 64 | 2,218 | 1m50s |
+| UT | 29 | 699 | 40s |
+| AZ | 15 | 574 | 33s |
+
+The ten states hold **1,403 plans behind 1,186 distinct SBC links**, and
+**not one plan lacks a link** — the `no_link` status has no instance in any of
+the eighteen states, so the eval case for it could not be written from live
+data.
+
+Compared against `top_issuers.py`, the new states' 74 issuers yielded exactly
+**one** 2026 HIOS ID belonging to a listed parent: Oscar Health Plan, Inc.
+(20635) in Mississippi. The other 41 unlisted issuers are genuinely separate
+companies — Quartz, Priority Health, Medica, CareSource, the state Blues —
+which is what "every issuer, not only the parents" was for.
+
+### What was read
+
+| | Phase 3 | Phase 4 |
+| --- | --- | --- |
+| States | 8 | **18** |
+| Catalog plans | 1,873 | **3,276** |
+| Issuers | 43 | **137** |
+| Documents stored | 436 | **1,189** |
+| Plans with a document read whole | 957 (51.1%) | **1,861 (56.8%)** |
+| SBC sections | 10,904 | **29,763** |
+| Disk | 321 MB | **947 MB** |
+| Corpus chunks | 1,568 | **1,568** |
+
+The corpus is the point of that last row: SBC text lives in `sbc_chunks` and
+general search never reads it (ADR 0014), so tripling the documents changed
+nothing about definitional questions.
+
+**Why the rest have no document**, all eighteen states:
+
+| Reason | Plans |
+| --- | --- |
+| `blocked` — the insurer refuses automated requests | 1,190 |
+| `not_pdf` — a bot challenge answers the link | 115 |
+| `http_error` — the link or the host fails | 88 |
+| `partial` — read, but not all of the template | 22 |
+
+- **Blocked stays blocked.** 1,190 plans, 36% of the catalog, behind hosts
+  whose `robots.txt` disallows the path (483 documents), or that answer 403
+  (375) or 401 (124). None was worked around (ADR 0013). 30 more are links
+  HealthCare.gov gives as plain `http`, which the fetcher will not follow.
+- **Paramount Healthcare (Ohio) fails TLS.** 26 documents end in
+  `network error (SSLError)`: their certificate chain, not this code. Turning
+  off verification to read an insurer's PDF is not a trade this project makes.
+
+### Six ways a real PDF defeated the parser
+
+Every one was found by running against 750 documents this code had never
+seen. All six are fixed, with tests, and the parser went from version 3 to 9
+— each bump re-reading every stored document **from disk, with no request to
+any issuer** (ADR 0016).
+
+| What | Who | Was | Now |
+| --- | --- | --- | --- |
+| No space characters in the font | 22 Health (FL) | 5 documents unparseable | read at a tighter word gap |
+| Header drawn twice, letters alternating | BridgeSpan, Regence (UT) | refused as the wrong year | read once |
+| "Beginning on or after 01/01/2026"; `01-01-2026` | Aspirus, McLaren, Network Health | refused as the wrong year | read |
+| A NUL byte in the character map | Group Health Cooperative (WI) | **ended a 17-minute run** | stripped; a refused document no longer stops a run |
+| A chart ruled across but not down | University of Utah (UT) | no chart at all | rows read from the bands between rules |
+| A table header wrapped over two rows | BCBS Oklahoma (OK) | no chart at all | a label that begins a header counts as it |
+
+44 documents had been refused as the wrong plan year although they were 2026.
+That is the failure this phase most needed to find: a real document, dropped
+quietly, with the plan's own prices in it.
+
+### Documents read in part
+
+`find_tables` returns nothing for a chart ruled across but not down, and some
+issuers wrap a table's own header across two rows. Both left documents stored
+as `ok` with no prices in them at all.
+
+- **Rows are now read from the bands between horizontal rules** when a page
+  has no findable table, and a label that *begins* a table's header counts as
+  that header.
+- BCBS of Oklahoma went from no chart to the full 25 sections; University of
+  Utah from boilerplate alone to 9–12 of the chart's 10 groups.
+- **The template's own closing sentence was being stored as a cost row.**
+  "If your plan doesn't meet the Minimum Value Standards…" begins "If you"
+  like the chart's ten groups do, so it was filed as one and then cited as
+  though it were a price. The chart now ends there.
+- **Partial documents fell from 62 to 22** of 1,189 (1.8%): 12 MedMutual
+  missing 3 of the 7 Important Questions, and 10 University of Utah whose
+  questions column interleaves its answers into the question text.
+- Those 22 are recorded as `partial`, not `ok` (ADR 0017): their text is kept
+  and searched, the plan card says the costs chart is not all there, and an
+  answer that finds nothing says so rather than implying the plan excludes it.
+- **A partial document usually still holds the words, under fewer headings.**
+  Writing the eval case for one took three attempts: asked for its deductible
+  it answered from a coverage example, and asked what it charges for mental
+  health it answered from text that had landed under the hospital-stay
+  heading. Only the seven Important Questions are truly absent from
+  University of Utah's — "referral" appears nowhere in its stored text — which
+  is what the eval case now asks about. The lesson for the status is the one
+  ADR 0017 already takes: say what was read, and let the answer be judged on
+  whether it can point at the words.
+
+Measured again after every parser fix, the ranking is **identical**:
+1,126/1,140 and 966/1,140, because the sections those fixes added rank where
+they belong and the junk ones they removed never ranked at all.
+
+### Is it still the right section, and the right plan?
+
+- **Ranking, `scripts/eval_sbc_ranking.py`, 1,140 questions over 57 issuers:**
+  the right section is in `plan_coverage`'s top 4 **1,126 times (98.8%)** and
+  ranked first 966 (84.7%). Phase 3 measured 99.4% and 84.4% over a third as
+  many issuers, so widening the corpus of documents cost 0.6 points of top-4
+  and nothing at all of first place. The weakest issuer is BCBS of Oklahoma at
+  16/20, whose chart this phase recovered.
+- **Identity, 120 documents sampled:** 50 print a HIOS plan ID in the PDF, and
+  **every one matched a plan that links it**. No document is filed under a
+  plan that doesn't point at it.
+- **Every stored file verified by hash** (`make sbc-report VERIFY=1`): 0
+  missing, 0 changed.
+- **No PDF was deleted at any point.** Every re-parse ran between two
+  `stat` snapshots of `data/sbc/`; the only differences were files moved from
+  `rejected/` back into `raw/` to be judged again, with their size and
+  modification time unchanged.
+
+### Latency
+
+Measured with the SBC outer join in `find_plans` (ADR 0017), best of three:
+
+| | |
+| --- | --- |
+| `find_plans`, Miami-Dade FL (189 plans) | 5.8 ms |
+| `find_plans`, Harris TX (121) | 5.9 ms |
+| `find_plans`, Cuyahoga OH (119) | 6.3 ms |
+| `find_plans`, Maricopa AZ (86) | 5.4 ms |
+| `search()`, corpus | ~255 ms |
+
+The join is on the unique `(url, plan_year)` index and costs nothing
+measurable.

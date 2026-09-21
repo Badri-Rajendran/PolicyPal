@@ -36,7 +36,9 @@ fail quietly, because general material is always there to fill the gap.
 
 A plan's SBC status is one of:
 
-- `ok`: its document was read;
+- `ok`: its document was read, whole;
+- `partial`: its document was read, but without all of the template's
+  questions or its costs chart (see below);
 - `no_link`: HealthCare.gov lists no SBC for it;
 - `not_read`: it has a link that has never been read;
 - the document's own failure: `blocked`, `http_error`, `not_pdf`,
@@ -53,6 +55,25 @@ unique on those two, so the join adds no rows.
   `no_document`, `unavailable`) and adds the reason.
 - **Reasons are sentences written in that module,** never the stored `detail`,
   which can hold an HTTP code or robots wording meant for the ingest report.
+
+### A document read in part says so
+
+Phase 4's run found 62 documents of 1,189 whose PDF gives up its text but not
+all of the template: the chart is drawn in a way that yields no table, or the
+questions column interleaves its answers. Recorded as `ok`, they are the same
+silent failure this ADR exists to stop — an answer would search a document
+that has no prices in it and conclude the plan says nothing.
+
+- **Its text is kept and searched.** What was read is the plan's own words,
+  and half a document beats none.
+- **`sbc_readable` stays true,** and `plan_coverage` still returns its
+  passages, but `sbc_missing_reason` says what is absent.
+- **The prompt closes the gap:** when no passage answers and the document is
+  partial, the answer says the part that would answer isn't among what was
+  read, and links the PDF — never that the plan doesn't cover it.
+- **The completeness rule is the template's own:** all seven Important
+  Questions, and at least the chart's ten "If you…" groups. 1,127 of 1,189
+  documents meet it.
 
 ### The plan card keeps the status it was shown with
 

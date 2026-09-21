@@ -9,9 +9,15 @@ from sqlalchemy import and_, case
 from src.models.plan import Plan
 from src.models.sbc import SbcDocument
 
+# A document whose text is stored and searchable. `partial` is read, but the
+# federal template's questions or chart are not all in it, so an answer that
+# cannot find a term must not conclude the plan lacks it.
+READ_STATUSES = ("ok", "partial")
+
 REASONS = {
     "no_link": "HealthCare.gov lists no Summary of Benefits and Coverage for this plan",
     "not_read": "its Summary of Benefits and Coverage hasn't been loaded here yet",
+    "partial": "only part of its Summary of Benefits could be read: the costs chart is not all there",
     "blocked": "the insurer's website doesn't allow automated downloads",
     "http_error": "the insurer's link didn't return the document",
     "not_pdf": "the insurer's link returned a web page, not the document",

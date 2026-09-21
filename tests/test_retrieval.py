@@ -103,7 +103,6 @@ def test_compound_query_falls_back_to_subqueries_when_nothing_clears_the_gate():
 
     assert [r.chunk_id for r in results] == ["c1"]
 
-
 def test_subquery_fallback_does_not_run_when_the_whole_query_already_matched():
     """Best-of scoring can only raise scores, so it must never widen a query
     that already worked — that would weaken the relevance gate."""

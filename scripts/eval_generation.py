@@ -91,7 +91,7 @@ MIN_COVERAGE = 10
 MIN_BOUNDARY = 2
 # ADR 0017: full marks, like the refusals. An answer that describes a plan
 # with no document is the failure Phase 4 exists to prevent.
-MIN_MISSING = 4
+MIN_MISSING = 5
 
 
 @dataclass
@@ -176,6 +176,10 @@ _OSCAR_SBC = "https://d3ul0st9g52g6o.cloudfront.net/2026/TX/sbc/2026_20069TX0100
 _BCBS_NC = ShownPlan(1, "11512NC0060002", "Blue Advantage Silver Preferred | 3 Free PCP | $10 Tier 1 Rx | "
                      "Integrated | Nationwide Doctors", "Blue Cross and Blue Shield of NC", "Silver", 2026)
 _BCBS_NC_SBC = "https://www.bcbsnc.com/assets/shopper/public/pdf/sbc/Blue_Advantage_Silver_Preferred_2800_2026.pdf"
+# Its PDF gives up part of its chart but none of the seven Important
+# Questions, so nothing it holds says whether a referral is needed: partial.
+_U_UTAH = ShownPlan(1, "42261UT0060024", "U Health Plus Bronze", "University of Utah Health Plans", "Bronze", 2026)
+_U_UTAH_SBC = "https://doc.uhealthplan.utah.edu/individual/2026/sbc/uhealthplus/2871148.pdf"
 _SBC = " - Summary of Benefits - "
 
 
@@ -243,6 +247,12 @@ MISSING_SET = [
                  missing=(Missing(_OSCAR, "blocked", "Silver Classic"),)),
     CoverageCase("What does the second one charge for an ER visit, and what's its deductible?", (_BCBS_TX, _OSCAR),
                  (_OSCAR_SBC,), missing=(Missing(_OSCAR, "blocked", "Silver Classic"),)),
+    # Read in part: none of the seven Important Questions is in what was read,
+    # so "referral" appears nowhere in this document's text. The answer must
+    # say so rather than conclude the plan needs none (ADR 0017).
+    CoverageCase("Does this plan need a referral before I see a specialist?", (_U_UTAH,),
+                 (_U_UTAH_SBC, "among what was read"), cites=(_U_UTAH,),
+                 missing=(Missing(_U_UTAH, "partial", "U Health Plus"),)),
 ]
 
 # "Will it be paid?" turns on medical necessity, prior authorization and the
@@ -377,10 +387,16 @@ _URL = re.compile(r"https?://\S+")
 _FIGURE = re.compile(r"\$\s?\d|\d\s?%")
 
 
-def corpus_citations(text: str) -> list[str]:
-    """The general-material labels an answer cites. An SBC label names its plan,
-    and a link is the issuer's own PDF: neither is general material."""
-    return sorted(label for label in cited_labels(text) if _SBC not in label and not _URL.match(label))
+def corpus_citations(text: str, shown: tuple[str, ...] = ()) -> list[str]:
+    """The general-material labels an answer cites.
+
+    An SBC label names its plan, a link is the issuer's own PDF, and a label
+    that is a shown plan's name is the answer saying which plan it could not
+    read — none of the three is general material.
+    """
+    return sorted(label for label in cited_labels(text)
+                  if _SBC not in label and not _URL.match(label)
+                  and not any(label.startswith(name) for name in shown))
 
 
 def score_coverage(case: CoverageCase, text: str, cited: set[str],
@@ -398,7 +414,7 @@ def score_coverage(case: CoverageCase, text: str, cited: set[str],
     expected = {plan.name for plan in case.cites}
     if cited != expected:
         return "WRONG CITE", f"cited {sorted(cited)}, expected {sorted(expected)}"
-    if not case.corpus_ok and (labels := corpus_citations(text)):
+    if not case.corpus_ok and (labels := corpus_citations(text, tuple(plan.name for plan in case.shown))):
         return "CORPUS", f"cited general material for a plan: {labels}"
     if unnamed := [gap.named for gap in case.missing if gap.named.lower() not in text.lower()]:
         return "SILENT", f"did not name {unnamed} as unreadable"

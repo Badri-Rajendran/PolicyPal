@@ -110,6 +110,21 @@ describe("PlanComparison", () => {
     expect(blocked).toHaveTextContent("Summary of Benefits not read here: the insurer blocks automated access");
   });
 
+  it("says when only part of a plan's Summary of Benefits was read, and still counts it as read", () => {
+    render(
+      <PlanComparison
+        plans={[plan(), plan({ hios_plan_id: "x2", name: "U Health Plus", sbc_status: "partial" })]}
+        shownAt={SHOWN_AT}
+      />,
+    );
+
+    expect(
+      screen.getByText("Summary of Benefits only partly read here: its costs chart is not all there"),
+    ).toBeInTheDocument();
+    expect(within(rowFor("U Health Plus")).getByRole("link", { name: /Summary of Benefits \(PDF\)/ })).toBeInTheDocument();
+    expect(screen.queryByText(/have no Summary of Benefits read here/)).not.toBeInTheDocument();
+  });
+
   it("keeps the link to the insurer's PDF when the document couldn't be read here", () => {
     render(<PlanComparison plans={[plan({ sbc_status: "not_pdf" })]} shownAt={SHOWN_AT} />);
 
