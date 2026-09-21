@@ -4,6 +4,10 @@
 
 ### Added
 
+- A coverage answer names the plan it could not read even when that plan is
+  the only one shown, and cites no glossary entry when asked what a plan does
+  or charges. Measured over three runs, the MISSING DOCUMENTS set went from
+  5, 3 and 4 of 5 to 5, 5 and 5.
 - A document read in part is recorded as `partial`, not `ok` (ADR 0017): its
   text is kept and searched, but the plan card says its costs chart is not all
   there, and an answer that finds nothing says the part that would answer

@@ -531,6 +531,44 @@ they belong and the junk ones they removed never ranked at all.
   `rejected/` back into `raw/` to be judged again, with their size and
   modification time unchanged.
 
+### How reliably does the model obey the honesty rule?
+
+This is the phase's own claim, so it is worth stating plainly: **the guard is
+the prompt and the eval, and the model's compliance is not 100%.** Three runs
+of the MISSING DOCUMENTS set, before the prompt was sharpened, scored 5, 3 and
+4 of 5. Every failure was one of three kinds, and none of them was the model
+inventing a plan's terms:
+
+- **It said "this plan" instead of the plan's name.** True but not what ADR
+  0017 asks for: a reader comparing plans needs to know which one.
+- **It cited two glossary entries** — Referral, POS Plans — while answering
+  whether a specific plan needs a referral. General material, in a plan
+  answer.
+- **It stated a figure once** for a plan whose document it could not read.
+
+The prompt now says to name the plan even when it is the only one shown, and
+that asking whether a plan does or charges something is not asking what a word
+means, so such an answer cites no glossary entry at all. What that is worth is
+measured, not asserted:
+
+| Set | Floor | Before the change | After |
+| --- | --- | --- | --- |
+| MISSING DOCUMENTS | 5 | 5, 3, 4 | **5, 5, 5** |
+| COVERAGE | 10 | 10, 10, 10 | 10, 10, 9 |
+| ANSWERS | 8 | 8, 8, 7 | 8, 8, 8 |
+| REFUSALS | 4 | 4, 4, 4 | 4, 4, 4 |
+| PLAN SEARCH | 4 | 4, 4, 4 | 4, 4, 4 |
+| BOUNDARY | 2 | 2, 2, 2 | 2, 2, 2 |
+| FOLLOW-UPS | 3 | 2, 3, 3 | 3, 3, 2 |
+
+Two sets still vary by one answer between runs, and both have varied that way
+since Phase 2: "How is that different from coinsurance?" occasionally declines
+after the rewrite, and CHRISTUS's imaging row is occasionally described
+without its "no charge". Neither is an honesty failure — the first answers
+nothing, the second states the plan's terms from the plan's own document —
+and re-running either alone passes. The floors are left where they are so
+that a real regression still trips them.
+
 ### Latency
 
 Measured with the SBC outer join in `find_plans` (ADR 0017), best of three:
