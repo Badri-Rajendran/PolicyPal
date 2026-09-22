@@ -9,12 +9,19 @@ from itertools import pairwise
 
 import pytest
 
+from src.ingestion.sbc import extract
 from src.ingestion.sbc.extract import (
+    TIGHT_WORD_GAP,
+    WORD_GAP,
     PdfPage,
     SbcParseError,
     TableRow,
+    _band,
     _group_lines,
+    _heading_of,
+    _uninterleave,
     parse_sbc,
+    read_parsed,
     read_pdf,
 )
 
@@ -265,3 +272,143 @@ def test_a_pdf_with_no_text_layer_is_refused_as_a_scanned_image(tmp_path):
 
     with pytest.raises(SbcParseError, match="no text layer"):
         read_pdf(tmp_path / "scanned.pdf")
+
+
+def _readable():
+    return _page(rows=[("Common Medical Event", ""), ("If you have a test", "Imaging | $60 copay")])
+
+
+def _spaceless(page):
+    """A page as an issuer whose PDF prints no space characters at all."""
+    return PdfPage(text=page.text.replace(" ", ""),
+                   rows=tuple(TableRow(r.label.replace(" ", ""), r.body.replace(" ", "")) for r in page.rows))
+
+
+def test_a_pdf_whose_text_has_no_spaces_is_read_again_at_a_tighter_word_gap(monkeypatch):
+    """22 Health's generator prints no space glyphs, so every gap is inferred."""
+    page = _readable()
+    read = {}
+
+    def fake(path, word_gap=WORD_GAP):
+        read[word_gap] = read.get(word_gap, 0) + 1
+        return [page if word_gap == TIGHT_WORD_GAP else _spaceless(page)]
+
+    monkeypatch.setattr(extract, "read_pdf", fake)
+
+    pages, parse = read_parsed("any.pdf")
+
+    assert (parse.coverage_year, parse.title) == (2026, "Example Gold HMO")
+    assert pages[0] is page
+    assert read == {WORD_GAP: 1, TIGHT_WORD_GAP: 1}
+
+
+def test_a_pdf_that_reads_normally_is_never_read_a_second_time(monkeypatch):
+    page = _readable()
+    gaps = []
+
+    def fake(path, word_gap=WORD_GAP):
+        gaps.append(word_gap)
+        return [page]
+
+    monkeypatch.setattr(extract, "read_pdf", fake)
+
+    assert read_parsed("any.pdf")[1].coverage_year == 2026
+    assert gaps == [WORD_GAP]
+
+
+def test_a_pdf_that_is_no_sbc_at_either_gap_is_still_refused(monkeypatch):
+    monkeypatch.setattr(extract, "read_pdf", lambda path, word_gap=WORD_GAP: [PdfPage(text="a receipt")])
+
+    with pytest.raises(SbcParseError, match="none of the template's sections"):
+        read_parsed("any.pdf")
+
+
+def test_a_header_printed_twice_over_itself_still_gives_its_coverage_year():
+    """BridgeSpan and Regence print a bold header over the plain one; the letters alternate."""
+    doubled = ("Summary of Benefits and Coverage "
+               "CCoovveerraaggee PPeerriioodd:: 0011//0011//22002266 – 1122//3311//22002266\n"
+               ": BridgeSpan Standard Bronze | Coverage for: Individual")
+    parse = parse_sbc([_page(text=doubled, rows=[("Common Medical Event", ""), ("If you have a test", "x")])])
+
+    assert parse.coverage_year == 2026
+
+
+def test_a_word_that_merely_repeats_letters_is_left_alone():
+    assert _uninterleave("Coverage Period: 01/01/2026 bookkeeper llama") == (
+        "Coverage Period: 01/01/2026 bookkeeper llama")
+
+
+class _FakePage:
+    """The smallest thing `_band` reads: a page that returns text for a box."""
+
+    bbox = (0, 0, 100, 100)
+
+    def __init__(self, text):
+        self._text = text
+
+    def filter(self, keep):
+        return self
+
+    def extract_text(self, **kwargs):
+        return self._text
+
+
+def test_a_control_character_in_a_pdf_never_reaches_the_text():
+    """Group Health Cooperative's file yields a NUL, which Postgres text cannot hold at all."""
+    page = _FakePage("What is the overall deductible?\x00\n$6,500\x0b/Individual")
+
+    assert _band(page, page.bbox) == "What is the overall deductible?\n$6,500/Individual"
+
+
+@pytest.mark.parametrize("period", [
+    "Coverage Period: 01/01/2026 – 12/31/2026",
+    "Coverage Period: Beginning on or after 01/01/2026",      # the template's own wording
+    "Coverage Period: 01-01-2026 – 12-31-2026",               # Network Health
+])
+def test_the_coverage_year_is_read_however_the_issuer_prints_the_period(period):
+    text = f"Summary of Benefits and Coverage {period}\n: Example Gold | Coverage for: Individual"
+
+    parse = parse_sbc([_page(text=text, rows=[("Common Medical Event", ""), ("If you have a test", "x")])])
+
+    assert parse.coverage_year == 2026
+
+
+def test_a_period_for_another_year_is_still_read_as_that_year():
+    text = "Coverage Period: Beginning on or after 01/01/2025\n: Example Gold | Coverage for: Individual"
+
+    parse = parse_sbc([_page(text=text, rows=[("Common Medical Event", ""), ("If you have a test", "x")])])
+
+    assert parse.coverage_year == 2025
+
+
+def test_a_wrapped_table_header_is_read_as_the_header_it_begins():
+    """University of Utah wraps "Common" above "Medical Event"; the chart is read by that heading."""
+    assert _heading_of("Common | Limitations, Exceptions") == "Common Medical Event"
+    assert _heading_of("Important | Answers") == "Important Questions"
+    assert _heading_of("If you have a test | $60") == "If you have a test"
+    assert _heading_of("Diagnostic test (x-ray) | 40% coinsurance") is None
+    assert _heading_of("") is None
+
+
+def test_a_table_header_split_across_two_rows_still_opens_its_table():
+    """BCBS of Oklahoma prints "Common" and "Medical Event" as rows of their own."""
+    sections = _sections(_page(rows=[
+        ("Common", ""),
+        ("Medical Event", "Services You May Need"),
+        ("If you have a test", "Imaging | $60 copay"),
+    ]))
+
+    assert sections["If you have a test"] == "Imaging | $60 copay"
+
+
+def test_the_minimum_value_sentence_is_not_read_as_a_chart_group():
+    """It begins "If your plan…", and a section filed under it would be cited as a cost row."""
+    sections = _sections(_page(rows=[
+        ("Common Medical Event", "Services You May Need"),
+        ("If you have a test", "Imaging | $60 copay"),
+        ("If your plan doesn't meet the Minimum Value Standards, you may be eligible for a premium tax credit",
+         "Contact the Marketplace."),
+    ]))
+
+    assert "If you have a test" in sections
+    assert not [heading for heading in sections if heading.startswith("If your plan")]

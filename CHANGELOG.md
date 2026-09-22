@@ -4,6 +4,15 @@
 
 ### Added
 
+- A coverage answer names the plan it could not read even when that plan is
+  the only one shown, and cites no glossary entry when asked what a plan does
+  or charges. Measured over three runs, the MISSING DOCUMENTS set went from
+  5, 3 and 4 of 5 to 5, 5 and 5.
+- A document read in part is recorded as `partial`, not `ok` (ADR 0017): its
+  text is kept and searched, but the plan card says its costs chart is not all
+  there, and an answer that finds nothing says the part that would answer
+  wasn't read here rather than implying the plan doesn't cover it. 62 of 1,189
+  documents are partial (new migration).
 - `make refresh-sbc`: asks every stored SBC whether the issuer has changed it,
   with a conditional request, and retries recorded failures (ADR 0019). A
   changed file is downloaded and the one it replaces is moved to
@@ -14,7 +23,9 @@
 - `make sbc-report`: how much of the catalog has a Summary of Benefits behind
   it, per state and issuer, with the reasons for the rest, orphaned documents,
   plans the latest catalog run did not return, and the disk the kept PDFs use.
-  `VERIFY=1` also hashes every kept PDF. It reads and writes nothing.
+  `VERIFY=1` also hashes every kept PDF. It reads and writes nothing, and
+  counts the versions a refresh replaced in `data/sbc/archive/` alongside the
+  current ones.
 - `make ingest-plans`, `make ingest-sbc` and `make sbc-report` take `YEAR=2027`,
   so a run during open enrollment does not default to the calendar year.
 - `scripts/eval_sbc_ranking.py`: checks without calling a model that the
@@ -179,6 +190,29 @@
   what an older parser stored, and any stored document whose PDF has gone
   missing, and says how many failures it skipped (ADR 0019). Re-requesting a
   blocked host is now `make refresh-sbc`'s job, once a month.
+- A document whose PDF carries no space characters, so that its text reads
+  `SummaryofBenefitsandCoverage`, is read again at a tighter word gap
+  (`PARSER_VERSION` 4, ADR 0018). It applies only to a document the normal
+  reading finds no template section in, so nothing that already parses can
+  change.
+- A chart ruled across but not down is read from the bands between its rules,
+  and a table header wrapped over two rows ("Common" above "Medical Event")
+  still opens its table (`PARSER_VERSION` 7 and 8, ADR 0018). BCBS of Oklahoma
+  and University of Utah were storing no costs chart at all.
+- The federal template's closing sentence, "If your plan doesn't meet the
+  Minimum Value Standards…", is no longer filed as a chart row and cited as
+  though it were a price (`PARSER_VERSION` 9).
+- A control character in a PDF's own character map is stripped from the text
+  it yields. One Wisconsin document held a NUL byte, which Postgres text
+  cannot hold at all, and it ended the whole run; a document the database
+  refuses is now recorded as unparseable and the run carries on.
+- The coverage period is read however the issuer prints it: doubled letters
+  from a header drawn twice (`CCoovveerraaggee PPeerriioodd::`), the
+  template's own "Beginning on or after 01/01/2026", and dashed dates
+  (`01-01-2026`) — `PARSER_VERSION` 5 and 6, ADR 0018. 44 documents were being
+  refused as the wrong year although they were 2026, and their text dropped.
+  `make ingest-sbc` now judges a `wrong_year` file again when the parser has
+  changed, reading the copy kept aside rather than asking the issuer for it.
 - Chart rows are rebuilt from the table's ruled grid, one line per service
   (`PARSER_VERSION` 3, ADR 0018), so a wrapped service name stays beside its
   price. CHRISTUS's imaging row stated its price in 3 of 6 tries before and 6

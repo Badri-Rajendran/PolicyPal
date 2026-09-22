@@ -577,6 +577,10 @@ def test_the_coverage_prompt_forbids_describing_a_plan_with_no_document_from_gen
     assert "name every plan whose document couldn't be read" in system
     assert "a question about that plan is not a question about plans in general" in system
     assert "sbc_readable" in system
+    # A plan shown alone is still named: "this plan" reads as any plan.
+    assert 'even when it is the only plan shown, never "this plan"' in system
+    assert "cite no glossary entry or article in that answer" in system
+    assert "say the part that would answer isn't among what was read" in system
 
 
 def test_a_coverage_answer_with_no_corpus_match_is_still_grounded(_no_plan_catalog):

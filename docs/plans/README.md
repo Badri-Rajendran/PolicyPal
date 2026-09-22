@@ -6,9 +6,13 @@ PolicyPal answers *definitional* insurance questions from a RAG corpus
 situational coverage questions from plan documents.
 
 Each phase is a reference document to execute from, not a commitment to build
-in order tomorrow. Phase 0 and Phase 1 are the immediate work; Phases 2–4 are
-written down now so the decisions they depend on are made deliberately rather
-than discovered late.
+in order tomorrow. They were written down in advance so the decisions they
+depend on were made deliberately rather than discovered late; all five are
+now built, and what each run actually measured is in
+[`docs/findings/sbc-documents.md`](../findings/sbc-documents.md).
+
+Keeping the documents current is no longer a phase but a routine:
+[`docs/runbooks/sbc.md`](../runbooks/sbc.md).
 
 ## Phases
 
@@ -18,7 +22,7 @@ than discovered late.
 | [1](phase-1-marketplace-api.md) | Marketplace API catalog + plan comparison | Complete |
 | [2](phase-2-sbc-narrow-slice.md) | SBC ingestion, one or two states | Complete (ADR 0013, 0014) |
 | [3](phase-3-sbc-top-issuers.md) | SBC for the largest issuers nationally | Complete (ADR 0015) |
-| [4](phase-4-sbc-full-coverage.md) | SBC across all 30 HealthCare.gov states | Documented only |
+| [4](phase-4-sbc-full-coverage.md) | SBC across the largest HealthCare.gov states | Complete (ADR 0017, 0018, 0019) |
 
 Verified, dated facts about external systems (API behavior confirmed against
 a real key, not just documentation) live in

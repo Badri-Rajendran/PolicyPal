@@ -27,14 +27,30 @@ import pdfplumber
 # Stored with each document. Bump it when a change alters what `parse_sbc`
 # yields for a real SBC: every stored document is then read again, and one
 # is read again from its kept PDF (ADR 0016).
-PARSER_VERSION = 3
+PARSER_VERSION = 9
 
 # The template runs to about 8 pages; a file far beyond it is not an SBC.
 MAX_PAGES = 30
 
-_COVERAGE_PERIOD = re.compile(r"Coverage Period:\s*\d{1,2}/\d{1,2}/(\d{4})")
+# How far apart two characters must be to be different words. 3 points is
+# pdfplumber's own default, stated here because the fallback below changes it.
+WORD_GAP = 3
+# Some issuers' PDFs hold no space characters at all, so every word boundary
+# has to be inferred from the distance between letters, and this generator's
+# gaps are narrower than the default. Used only for a document the default
+# reading finds none of the template's sections in, so nothing that already
+# parses can change.
+TIGHT_WORD_GAP = 2
+
+# "Coverage Period: 01/01/2026 – 12/31/2026", and the ways issuers vary it:
+# "Beginning on or after 01/01/2026" (the template's own wording for a plan
+# with no fixed period) and "01-01-2026".
+_COVERAGE_PERIOD = re.compile(r"Coverage Period:[^\d\n]{0,40}\d{1,2}[/-]\d{1,2}[/-](\d{4})")
 _TITLE = re.compile(r"^[:|\s]*(.+?)[\s|]+Coverage for:", re.MULTILINE)
 _COLUMN_GAP = re.compile(r" {2,}")
+# Control characters a PDF's own character map can yield. Postgres text cannot
+# hold a NUL at all, and none of them are anything an SBC printed.
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 _PAGE_FOOTER = re.compile(r"^(?:Page \d+ of \d+|\d+ of \d+)$")
 # A left cell narrower than this is a table's padding column, not its labels.
 _PADDING_WIDTH = 12
@@ -42,6 +58,12 @@ _PADDING_WIDTH = 12
 _SAME_EDGE = 1.5
 # How much of a row a rule must cover to cut it: less is a box drawn inside a cell.
 _FULL_RULE = 0.9
+# The shortest word read as printed twice over itself; below it, "ll" would be one "l".
+_MIN_DOUBLED = 6
+# The shortest band between two rules that can hold a row of the chart.
+_MIN_BAND = 6
+# The shortest start of a table's own header read as that header ("Common").
+_MIN_HEADER = 6
 
 _QUESTIONS_HEADER = "Important Questions"
 _CHART_HEADER = "Common Medical Event"
@@ -53,8 +75,10 @@ _MIN_FUZZY = 25
 # The shortest start of a chart heading matched as its beginning ("If you need drugs to").
 _MIN_PREFIX = 12
 # Where the chart ends: the template's next headings, read as table rows too.
+# "If your plan doesn't meet the Minimum Value Standards…" is the template's
+# own closing sentence, not a chart row, but it begins "If you" like one.
 _CHART_END = ("Excluded Services", "Services Your Plan", "Other Covered Services",
-              "About these Coverage Examples", "This is not a cost estimator")
+              "About these Coverage Examples", "This is not a cost estimator", "If your plan")
 # The template's questions and chart rows as it words them. A printed heading
 # is filed under the one it matches: issuers reword them slightly ("Do I need
 # a referral"), wrap them ("out-of- pocket") and lose spaces ("theout–of–
@@ -141,7 +165,17 @@ class SbcParse:
     sections: tuple[Section, ...]
 
 
-def read_pdf(path: Path) -> list[PdfPage]:
+def read_parsed(path: Path) -> tuple[list[PdfPage], SbcParse]:
+    """A PDF's pages and the template's sections, read again at a tighter word gap if need be."""
+    pages = read_pdf(path)
+    try:
+        return pages, parse_sbc(pages)
+    except SbcParseError:
+        spaced = read_pdf(path, word_gap=TIGHT_WORD_GAP)
+        return spaced, parse_sbc(spaced)
+
+
+def read_pdf(path: Path, word_gap: float = WORD_GAP) -> list[PdfPage]:
     try:
         with pdfplumber.open(path) as pdf:
             if len(pdf.pages) > MAX_PAGES:
@@ -149,19 +183,19 @@ def read_pdf(path: Path) -> list[PdfPage]:
             if not any(page.chars for page in pdf.pages):
                 raise SbcParseError("no text layer (a scanned image; not OCRed)")
             # dedupe_chars: some issuers print a second, offset text layer.
-            return [_read_page(page.dedupe_chars()) for page in pdf.pages]
+            return [_read_page(page.dedupe_chars(), word_gap) for page in pdf.pages]
     except SbcParseError:
         raise
     except Exception as exc:
         raise SbcParseError(f"unreadable PDF ({type(exc).__name__})") from exc
 
 
-def _read_page(page) -> PdfPage:
-    return PdfPage(text=_band(page, page.bbox), rows=tuple(_table_rows(page)),
-                   examples=tuple(_example_columns(page)))
+def _read_page(page, word_gap: float) -> PdfPage:
+    return PdfPage(text=_band(page, page.bbox, word_gap=word_gap), rows=tuple(_table_rows(page, word_gap)),
+                   examples=tuple(_example_columns(page, word_gap)))
 
 
-def _band(page, bbox, layout: bool = True) -> str:
+def _band(page, bbox, layout: bool = True, word_gap: float = WORD_GAP) -> str:
     """The text whose characters sit inside `bbox`, one line per printed line.
 
     Selected by each character's midpoint, not `page.crop`: cropping clips a
@@ -175,12 +209,12 @@ def _band(page, bbox, layout: bool = True) -> str:
                 and x0 <= (obj["x0"] + obj["x1"]) / 2 <= x1
                 and top <= (obj["top"] + obj["bottom"]) / 2 <= bottom)
 
-    text = page.filter(inside).extract_text(layout=layout) or ""
+    text = _CONTROL.sub("", page.filter(inside).extract_text(layout=layout, x_tolerance=word_gap) or "")
     lines = (_COLUMN_GAP.sub(" | ", line.strip()) for line in text.splitlines())
     return "\n".join(line for line in lines if line)
 
 
-def _table_rows(page) -> list[TableRow]:
+def _table_rows(page, word_gap: float = WORD_GAP) -> list[TableRow]:
     """Each left-column cell of each table, with the rest of its row, top to bottom.
 
     A merged left cell spans every row of its group, so its band carries the
@@ -190,6 +224,8 @@ def _table_rows(page) -> list[TableRow]:
     taken: list[tuple[float, float]] = []
     rows = []
     tables = sorted(page.find_tables(), key=lambda t: (t.bbox[2] - t.bbox[0]) * (t.bbox[3] - t.bbox[1]), reverse=True)
+    if not tables:
+        return _lined_rows(page, word_gap)
     for table in tables:
         x0, _, x1, _ = table.bbox
         left_cells = sorted((c for c in table.cells if abs(c[0] - x0) < 2), key=lambda c: c[1])
@@ -200,10 +236,61 @@ def _table_rows(page) -> list[TableRow]:
                 continue
             taken.append((top, bottom))
             edge = label_edge if cell[2] - cell[0] < _PADDING_WIDTH and label_edge else cell[2]
-            label = " ".join(_band(page, (x0, top, edge, bottom), layout=False).split())
-            body = _group_lines(table.cells, (edge, top, x1, bottom), lambda box, layout: _band(page, box, layout))
+            label = " ".join(_band(page, (x0, top, edge, bottom), layout=False, word_gap=word_gap).split())
+            body = _group_lines(table.cells, (edge, top, x1, bottom),
+                                lambda box, layout: _band(page, box, layout, word_gap))
             rows.append((top, TableRow(label, body)))
     return [row for _, row in sorted(rows, key=lambda r: r[0])]
+
+
+def _lined_rows(page, word_gap: float) -> list[TableRow]:
+    """Rows for a chart ruled across but not down, so pdfplumber finds no cells.
+
+    University of Utah Health Plans rules its chart with 20 horizontal lines
+    and no vertical ones, so there is nothing to make a cell from and the
+    whole chart was being lost. A row is then the band between two rules, and
+    its label is whichever of the band's lines is one of the template's
+    headings: ADR 0013's reading, kept for the layouts that defeat the grid.
+    """
+    rules = sorted({round(edge["top"], 1) for edge in page.edges if edge["orientation"] == "h"})
+    x0, _, x1, _ = page.bbox
+    rows = []
+    for top, bottom in pairwise(rules):
+        if bottom - top < _MIN_BAND:
+            continue
+        lines = _band(page, (x0, top, x1, bottom), word_gap=word_gap).splitlines()
+        printed = next(((line, _heading_of(line)) for line in lines if _heading_of(line)), None)
+        line, label = printed or ("", "")
+        body = _join([other for other in lines if other != line])
+        if label or body:
+            rows.append(TableRow(label, body))
+    return rows
+
+
+def _is_header(label: str, header: str) -> bool:
+    """Whether a row's label is a table's own header, printed whole or wrapped.
+
+    BCBS of Oklahoma puts "Common" and "Medical Event" in rows of their own,
+    so a label that begins the header counts as it.
+    """
+    return label.startswith(header) or (len(label) >= _MIN_HEADER and header.startswith(label))
+
+
+def _heading_of(line: str) -> str | None:
+    """The heading this printed line is, as the chart is read by it, or None.
+
+    A table's own header wraps ("Common" above "Medical Event"), so a line
+    that begins one is returned as the whole thing.
+    """
+    text = line.split(" | ", 1)[0].strip()
+    if not text:
+        return None
+    if text.startswith(_EVENT_PREFIX) or _template_heading(text, QUESTION_HEADINGS) in QUESTION_HEADINGS:
+        return text
+    for header in (_CHART_HEADER, _QUESTIONS_HEADER):
+        if _is_header(text, header):
+            return header
+    return None
 
 
 def _group_lines(cells, bbox, read) -> str:
@@ -265,20 +352,52 @@ def _label_edge(left_cells) -> float | None:
     return edges.most_common(1)[0][0] if edges else None
 
 
-def _example_columns(page) -> list[str]:
+def _example_columns(page, word_gap: float = WORD_GAP) -> list[str]:
     """The three coverage examples, cut apart at each column's left edge.
 
     Titles are centred, so they don't mark where a column starts; the
     template's left-aligned "This EXAMPLE event includes" line does, once
     per column.
     """
-    titles = [page.search(title) for title, _ in COVERAGE_EXAMPLES]
-    anchors = sorted(hit["x0"] for hit in page.search(_EXAMPLE_ANCHOR))
+    titles = [page.search(title, x_tolerance=word_gap) for title, _ in COVERAGE_EXAMPLES]
+    anchors = sorted(hit["x0"] for hit in page.search(_EXAMPLE_ANCHOR, x_tolerance=word_gap))
     if not all(titles) or len(anchors) != len(COVERAGE_EXAMPLES):
         return []
     top = min(hits[0]["top"] for hits in titles)
     edges = [page.bbox[0], *(x - 1 for x in anchors[1:]), page.bbox[2]]
-    return [_band(page, (left, top, right, page.bbox[3]), layout=False) for left, right in pairwise(edges)]
+    return [_band(page, (left, top, right, page.bbox[3]), layout=False, word_gap=word_gap)
+            for left, right in pairwise(edges)]
+
+
+def what_is_missing(parse: SbcParse) -> str | None:
+    """What the federal template has and this reading doesn't, or None if it is whole.
+
+    The questions carry the deductible and the out-of-pocket limit; the chart
+    carries every price. A document without them was read but cannot answer
+    what it is asked for, and ADR 0017 says that has to be visible.
+    """
+    headings = {section.heading for section in parse.sections}
+    questions = len(headings & set(QUESTION_HEADINGS))
+    events = len(headings & set(EVENT_HEADINGS))
+    missing = []
+    if questions < len(QUESTION_HEADINGS):
+        missing.append(f"{len(QUESTION_HEADINGS) - questions} of the {len(QUESTION_HEADINGS)} questions")
+    if events < len(EVENT_HEADINGS):
+        missing.append("the whole costs chart" if not events
+                       else f"{len(EVENT_HEADINGS) - events} of the {len(EVENT_HEADINGS)} chart's groups")
+    return " and ".join(missing) or None
+
+
+def _uninterleave(text: str) -> str:
+    """The same text with any word printed twice over itself read once.
+
+    BridgeSpan prints its header line as two overlapping runs, one bold, so
+    the characters come back alternating: `CCoovveerraaggee PPeerriioodd::
+    0011//0011//22002266`. A word is collapsed only when its characters pair
+    up exactly, which no ordinary word of this length does.
+    """
+    words = (w[0::2] if len(w) >= _MIN_DOUBLED and w[0::2] == w[1::2] else w for w in text.split(" "))
+    return " ".join(words)
 
 
 def parse_sbc(pages: list[PdfPage]) -> SbcParse:
@@ -286,7 +405,7 @@ def parse_sbc(pages: list[PdfPage]) -> SbcParse:
     if not pages:
         raise SbcParseError("no pages")
     first = pages[0].text
-    year = _COVERAGE_PERIOD.search(first)
+    year = _COVERAGE_PERIOD.search(first) or _COVERAGE_PERIOD.search(_uninterleave(first))
     title = _TITLE.search(first)
 
     rows = [row for page in pages for row in page.rows]
@@ -311,10 +430,10 @@ def _questions(rows: list[TableRow]) -> list[Section]:
     label, body = [], []
     active = False
     for row in rows:
-        if row.label.startswith(_QUESTIONS_HEADER):
+        if _is_header(row.label, _QUESTIONS_HEADER):
             active = True
             continue
-        if row.label.startswith(_CHART_HEADER):
+        if _is_header(row.label, _CHART_HEADER):
             break
         if not active:
             continue
@@ -340,7 +459,7 @@ def _events(rows: list[TableRow]) -> list[Section]:
     sections: list[Section] = []
     active = False
     for row in rows:
-        if row.label.startswith(_CHART_HEADER):
+        if _is_header(row.label, _CHART_HEADER):
             active = True
             continue
         if not active:

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Phase 4. Amends ADR 0013's "table cells are not rebuilt one by
+Accepted. Phase 4 (parser versions 3 to 6). Amends ADR 0013's "table cells are not rebuilt one by
 one", and ADR 0015's "`parser_version` is NULL unless `ok`".
 
 ## Context
@@ -56,7 +56,73 @@ A scanned SBC has no characters to read. `read_pdf` refuses it as "no text
 layer (a scanned image; not OCRed)", and the ingest report counts it.
 
 There is no OCR. Misreading a digit in a dollar amount would be worse than
-linking the PDF. OCR will be decided once Phase 4 measures how many there are.
+linking the PDF.
+
+**Phase 4 measured it, and the answer is none.** Of 1,189 documents from 137
+issuers in eighteen states, **zero** had no text layer: no issuer publishes a
+scanned SBC. OCR would buy nothing, and is not revisited. The only documents
+the run could not parse — five from 22 Health — held text this parser could
+not yet read, not an image: their font carries no space character. All five
+are read now.
+
+### A document with no spaces is read again at a tighter word gap (version 4)
+
+Phase 4's live run found five documents from one Florida issuer whose text
+came out as `SummaryofBenefitsandCoverage`. They are not scanned: the PDF's
+font carries no space character at all, so every word boundary has to be
+inferred from the distance between letters, and this generator sets its words
+closer together than pdfplumber's default gap of 3 points.
+
+- **The retry is a fallback, not a new default.** A document is read as
+  before; only if `parse_sbc` then finds none of the template's sections is it
+  read again at a 2-point gap. Nothing that already parses can change, which
+  the re-parse of every stored document confirms.
+- **It is `read_parsed`,** the one entry point ingestion uses, so the two
+  readings cannot drift apart.
+- **A narrower gap is not tried.** At 2 points these documents are exact;
+  below that, a wide letter pair inside a word would start splitting words,
+  and a wrong word is worse than an unread document.
+
+### The coverage period is read however the issuer prints it (versions 5, 6)
+
+The year decides whether a document is this plan year's at all, so a period
+the parser cannot read costs the whole document: it is refused as
+`wrong_year` and its text dropped. Phase 4's run found 44 documents refused
+that way which were the right year all along — a real document discarded
+quietly, which is worse than never fetching it.
+
+Three printings defeated the original expression:
+
+- **A header printed twice over itself.** BridgeSpan and Regence, both Cambia
+  companies, draw the line bold over plain, so the characters alternate:
+  `CCoovveerraaggee PPeerriioodd:: 0011//0011//22002266`. A word whose
+  characters pair up exactly is read once — tried only after the plain
+  expression finds nothing, and only on words of six characters or more, so
+  `ll` in an ordinary word is never halved.
+- **"Beginning on or after 01/01/2026",** which is the federal template's own
+  wording for a plan with no fixed period (Aspirus, McLaren).
+- **Dashes instead of slashes**, `01-01-2026` (Network Health).
+
+The expression now allows up to 40 non-digit characters between the label and
+the date, and either separator.
+
+**A `wrong_year` file is judged again when the parser changes.** It is read
+from the copy kept in `rejected/`, moved back into place first, with no
+request to the issuer, so `ingest-sbc` now re-reads `ok`, `unparseable` **and**
+`wrong_year` rows stored by an older parser. A refresh could not do this: the
+bytes are unchanged, so it would correctly report "unchanged" and never look
+at the file again.
+
+### A control character never reaches the database
+
+One Wisconsin document's character map yields a NUL byte, which a Postgres
+text column cannot hold at any length. It ended a seventeen-minute run over
+thousands of documents.
+
+- **The parser strips C0 control characters** from every band it reads. None
+  of them is anything an SBC printed.
+- **A document the database still refuses is recorded as `unparseable`,** with
+  that reason, and the run carries on. One file must not end a run.
 
 ### Every file the parser judged records which file and which parser
 

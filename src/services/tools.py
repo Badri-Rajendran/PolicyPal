@@ -20,7 +20,7 @@ from .plan_coverage import PlanCoverage, coverage_for
 from .plan_search import PlanFilters, PlanResult, PlanSearchResult, search_plans
 from .profile import PlanProfile
 from .retrieval import RetrievedChunk
-from .sbc_status import missing_reason
+from .sbc_status import READ_STATUSES, missing_reason
 
 logger = get_logger(__name__)
 
@@ -180,7 +180,7 @@ def _plan_row(plan: PlanResult) -> dict:
     row["out_of_pocket_max"] = plan.out_of_pocket_max
     # Known before plan_coverage is called, so a comparison can name the
     # plans it has no document for (ADR 0017).
-    row["sbc_readable"] = plan.sbc_status == "ok"
+    row["sbc_readable"] = plan.sbc_status in READ_STATUSES
     if reason := missing_reason(plan.sbc_status):
         row["sbc_missing_reason"] = reason
     return row

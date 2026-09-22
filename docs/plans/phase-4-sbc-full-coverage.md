@@ -1,6 +1,14 @@
 # Phase 4 — SBC across all 30 HealthCare.gov states
 
-**Status:** documented only, not built
+**Status:** complete, 20 September 2026 — built for **eighteen** states, not
+thirty. The ten largest unloaded states were added to Phase 3's eight, which
+is 93.1% of HealthCare.gov enrollment; the remaining twelve, under 7% between
+them, were left out deliberately (ADR 0015, "Phase 4's scope"). Every issuer
+in the eighteen was read, not only the largest parents.
+What the run measured is in
+[`docs/findings/sbc-documents.md`](../findings/sbc-documents.md), the
+decisions it produced are ADRs 0017, 0018 and 0019, and keeping it current is
+[`docs/runbooks/sbc.md`](../runbooks/sbc.md).
 **Depends on:** [Phase 3](phase-3-sbc-top-issuers.md) — scale behaviour
 measured and indexed
 

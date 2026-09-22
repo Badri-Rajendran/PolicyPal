@@ -3,6 +3,7 @@ const NOT_READ = "Summary of Benefits not read here";
 // Why a plan's Summary of Benefits could or couldn't be read (ADR 0017).
 const NOTES = {
   ok: "Summary of Benefits read",
+  partial: "Summary of Benefits only partly read here: its costs chart is not all there",
   no_link: "No Summary of Benefits listed",
   not_read: "Summary of Benefits not loaded yet",
   blocked: `${NOT_READ}: the insurer blocks automated access`,
@@ -18,6 +19,7 @@ export function sbcNote(status) {
   return Object.hasOwn(NOTES, status) ? NOTES[status] : null;
 }
 
+// A partial document was read: its plan is not counted among those with none.
 export function isUnreadable(status) {
-  return Object.hasOwn(NOTES, status) && status !== "ok";
+  return Object.hasOwn(NOTES, status) && status !== "ok" && status !== "partial";
 }

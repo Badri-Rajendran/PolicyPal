@@ -22,7 +22,7 @@ from src.models.plan import Issuer, Plan
 from src.models.sbc import SbcDocument
 from src.services.sbc_status import plan_sbc_status, sbc_document_join
 
-from ..constants import SBC_RAW, SBC_REJECTED
+from ..constants import SBC_ARCHIVE, SBC_RAW, SBC_REJECTED
 from ..plans import resolve_states
 from .extract import PARSER_VERSION
 from .fetch import cache_path
@@ -141,7 +141,7 @@ def _stale_plans(session, year: int, states: list[str] | None) -> dict[str, int]
 
 def _files(year: int) -> dict[str, tuple[int, int]]:
     folders = {}
-    for name, folder in (("raw", SBC_RAW), ("rejected", SBC_REJECTED)):
+    for name, folder in (("raw", SBC_RAW), ("rejected", SBC_REJECTED), ("archive", SBC_ARCHIVE)):
         files = sorted((folder / str(year)).glob("*.pdf"))
         folders[name] = (len(files), sum(f.stat().st_size for f in files))
     return folders

@@ -18,7 +18,7 @@ from src.models.plan import Issuer, Plan
 from src.models.sbc import SbcChunk, SbcDocument
 
 from .retrieval import RetrievedChunk
-from .sbc_status import plan_sbc_status, sbc_document_join
+from .sbc_status import READ_STATUSES, plan_sbc_status, sbc_document_join
 
 logger = get_logger(__name__)
 
@@ -70,7 +70,7 @@ def _coverage(session, plan_id: str, question: str, year: int | None) -> PlanCov
         return PlanCoverage(plan_id, "not_found")
 
     name, plan_year, url, issuer, document_id, sbc_status = row
-    if sbc_status != "ok":
+    if sbc_status not in READ_STATUSES:
         status = "no_document" if sbc_status in ("no_link", "not_read") else "unavailable"
         return PlanCoverage(plan_id, status, name, issuer, plan_year, url, sbc_status=sbc_status)
 

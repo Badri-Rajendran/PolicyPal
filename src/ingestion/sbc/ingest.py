@@ -21,10 +21,11 @@ import re
 import sys
 from collections import Counter, defaultdict
 from collections.abc import Collection
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, insert, select, update
+from sqlalchemy.exc import DataError
 from tqdm import tqdm
 
 from src.core.db import get_session
@@ -33,11 +34,18 @@ from src.core.text import count_tokens
 from src.models.plan import Issuer, Plan
 from src.models.sbc import SbcChunk, SbcDocument
 from src.policypal.config import settings
+from src.services.sbc_status import READ_STATUSES
 
 from ..chunking import make_recursive_splitter
 from ..constants import SBC_ARCHIVE, SBC_REJECTED
 from ..plans import resolve_states, upsert
-from .extract import PARSER_VERSION, SbcParse, SbcParseError, parse_sbc, read_pdf
+from .extract import (
+    PARSER_VERSION,
+    SbcParse,
+    SbcParseError,
+    read_parsed,
+    what_is_missing,
+)
 from .fetch import (
     NOT_MODIFIED,
     FetchResult,
@@ -103,8 +111,9 @@ def build_chunks(url: str, year: int, parse: SbcParse) -> list[dict]:
     return chunks
 
 
-def ingest_document(url: str, year: int) -> str:
+def ingest_document(url: str, year: int, stored=None) -> str:
     """Fetch, parse and store one SBC. Returns its status. The PDF is always kept."""
+    _restore_rejected(url, year, stored)
     fetched = fetch_pdf(url, year)
     if fetched.status != "ok":
         _store(url, year, fetched)
@@ -114,8 +123,7 @@ def ingest_document(url: str, year: int) -> str:
     # When the file was downloaded, not when it was last parsed (ADR 0018).
     downloaded = datetime.fromtimestamp(fetched.path.stat().st_mtime, UTC)
     try:
-        pages = read_pdf(fetched.path)
-        parse = parse_sbc(pages)
+        pages, parse = read_parsed(fetched.path)
     except SbcParseError as exc:
         return _reject(url, year, "unparseable", str(exc), digest, downloaded)
     if parse.coverage_year != year:
@@ -128,9 +136,33 @@ def ingest_document(url: str, year: int) -> str:
         fetched.path.replace(rejected)
         return status
 
-    _store(url, year, fetched, sha256=digest, pages=len(pages), title=parse.title,
-           chunks=build_chunks(url, year, parse), parser_version=PARSER_VERSION, fetched_at=downloaded)
-    return "ok"
+    # Its text is kept either way: what a partial document does have is the
+    # plan's own words, and the status says what it is missing (ADR 0017).
+    missing = what_is_missing(parse)
+    read = replace(fetched, status="partial", detail=f"missing {missing}") if missing else fetched
+    try:
+        _store(url, year, read, sha256=digest, pages=len(pages), title=parse.title,
+               chunks=build_chunks(url, year, parse), parser_version=PARSER_VERSION, fetched_at=downloaded)
+    except DataError:
+        # One document the database refuses must not end a run over thousands.
+        return _reject(url, year, "unparseable", "text the database refuses", digest, downloaded)
+    return read.status
+
+
+def _restore_rejected(url: str, year: int, stored) -> None:
+    """Put a file an older parser moved aside back where documents are read from.
+
+    A `wrong_year` file is kept in `rejected/` (ADR 0018). A parser that reads
+    the coverage period differently has to judge that same file again, from
+    disk, rather than ask the issuer for it a second time.
+    """
+    if stored is None or stored.status != "wrong_year" or not stored.sha256:
+        return
+    current = cache_path(url, year)
+    rejected = SBC_REJECTED / str(year) / f"{current.stem}-{stored.sha256[:12]}.pdf"
+    if rejected.exists() and not current.exists():
+        current.parent.mkdir(parents=True, exist_ok=True)
+        rejected.replace(current)
 
 
 def _reject(url: str, year: int, status: str, detail: str, sha256: str, downloaded: datetime) -> str:
@@ -224,9 +256,10 @@ def _needs_reading(url: str, row, year: int, refresh: bool) -> bool:
     """
     if row is None or refresh:
         return True
-    if row.status not in ("ok", "unparseable"):
+    if row.status not in (*READ_STATUSES, "unparseable", "wrong_year"):
         return False
-    return row.parser_version != PARSER_VERSION or (row.status == "ok" and not cache_path(url, year).exists())
+    return (row.parser_version != PARSER_VERSION
+            or (row.status in READ_STATUSES and not cache_path(url, year).exists()))
 
 
 def execute(states: list[str], year: int, limit: int | None = None,
@@ -258,10 +291,10 @@ def execute(states: list[str], year: int, limit: int | None = None,
     failures = defaultdict(list)   # (issuer, status) -> plans
     for url in tqdm(urls, desc="SBCs"):
         row = stored.get(url)
-        status = refresh_document(url, year, row) if refresh and row and row.status == "ok" \
-            else ingest_document(url, year)
+        status = refresh_document(url, year, row) if refresh and row and row.status in READ_STATUSES \
+            else ingest_document(url, year, row)
         statuses[status] += 1
-        if status not in ("ok", "unchanged", "changed:ok", "unreachable"):
+        if status not in ("ok", "partial", "unchanged", "changed:ok", "changed:partial", "unreachable"):
             for plan in documents[url]:
                 failures[(plan.issuer, status)].append(plan)
 

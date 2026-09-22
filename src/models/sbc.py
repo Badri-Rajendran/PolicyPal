@@ -16,7 +16,8 @@ from sqlalchemy.sql import func
 
 from src.core.db import Base
 
-SBC_STATUSES = ("ok", "blocked", "http_error", "not_pdf", "too_large", "wrong_year", "unparseable")
+SBC_STATUSES = ("ok", "partial", "blocked", "http_error", "not_pdf", "too_large", "wrong_year",
+                "unparseable")
 # A plan's view of its document (ADR 0017): no link to one, a link never
 # read, or the document's own status.
 PLAN_SBC_STATUSES = ("no_link", "not_read", *SBC_STATUSES)

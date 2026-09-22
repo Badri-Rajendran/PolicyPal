@@ -123,13 +123,16 @@ def test_the_report_writes_nothing(session, catalog):
 
 
 def test_kept_pdfs_are_counted_by_folder(session, catalog, monkeypatch, tmp_path):
-    for folder, name in ((tmp_path / "raw", "kept"), (tmp_path / "rejected", "aside")):
+    """Including the versions a refresh replaced: they are kept, so they take disk (ADR 0019)."""
+    for folder, name in ((tmp_path / "raw", "kept"), (tmp_path / "rejected", "aside"),
+                         (tmp_path / "archive", "replaced")):
         (folder / str(YEAR)).mkdir(parents=True)
         (folder / str(YEAR) / f"{name}.pdf").write_bytes(b"x" * 1024)
     monkeypatch.setattr(sbc_report, "SBC_RAW", tmp_path / "raw")
     monkeypatch.setattr(sbc_report, "SBC_REJECTED", tmp_path / "rejected")
+    monkeypatch.setattr(sbc_report, "SBC_ARCHIVE", tmp_path / "archive")
 
-    assert collect(session, YEAR).files == {"raw": (1, 1024), "rejected": (1, 1024)}
+    assert collect(session, YEAR).files == {"raw": (1, 1024), "rejected": (1, 1024), "archive": (1, 1024)}
 
 
 def test_verifying_files_names_a_missing_one_and_one_whose_hash_changed(session, catalog, monkeypatch, tmp_path):

@@ -8,6 +8,8 @@ their text is stored" is superseded by ADR 0016:** every downloaded SBC is
 kept.
 ADR 0018 records `parser_version` and `sha256` for `unparseable` and
 `wrong_year` files too, and makes `fetched_at` the download time.
+**Its "known limits, left to Phase 4" are answered by ADR 0019**, and its
+scope is widened by "Phase 4's scope" below.
 
 ## Context
 
@@ -76,6 +78,24 @@ listed with the HIOS issuer IDs it sells under.
   `ISSUERS=40788,66252` only the IDs given. That second form is how Phase 2's
   other Texas issuers stay current. Without either, every plan in the states
   is read, as in Phase 2.
+
+### Phase 4's scope: every issuer, in eighteen states
+
+Phase 3 read the ten parents above in eight states. Phase 4
+(docs/plans/phase-4-sbc-full-coverage.md) widens that twice over:
+
+- **Ten more states**, the largest of the 22 not yet loaded by the same
+  enrollment PUF: OH, MI, UT, AZ, MO, IN, WI, LA, MS and OK. With the eight
+  already loaded, that is **93.1%** of the 14,842,856 enrollees in the
+  HealthCare.gov states.
+- **Every issuer in all eighteen**, not only the ten parents. A smaller
+  carrier's plans are the ones a comparison is most likely to be missing a
+  document for, and they are a minority of the links.
+
+`TOP_ISSUERS` keeps two jobs after this: it groups issuers under their parent
+in `make sbc-report`, and it still narrows a run when one is wanted. The
+remaining twelve states, under 7% of enrollment between them, stay out of
+scope; so do the state-based exchanges, which are not in this API at all.
 
 ### A document is parsed once per parser version
 

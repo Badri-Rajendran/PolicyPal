@@ -13,7 +13,13 @@ import pytest
 from sqlalchemy import select
 
 from src.ingestion.sbc import ingest
-from src.ingestion.sbc.extract import PdfPage, TableRow
+from src.ingestion.sbc.extract import (
+    EVENT_HEADINGS,
+    QUESTION_HEADINGS,
+    PdfPage,
+    TableRow,
+    parse_sbc,
+)
 from src.ingestion.sbc.fetch import NOT_MODIFIED, FetchResult
 from src.models.plan import Issuer, Plan
 from src.models.sbc import SbcChunk, SbcDocument
@@ -22,9 +28,17 @@ YEAR = 1999
 GOLD = "https://sbc.example.com/gold.pdf"
 
 
+def _template_rows(test_cost):
+    """The federal template's questions and chart groups, so a document is whole."""
+    return [("Important Questions", "Answers | Why This Matters:")] + [
+        (heading, "No.") for heading in QUESTION_HEADINGS] + [("Common Medical Event", "")] + [
+        (heading, f"Imaging {test_cost} copay" if heading == "If you have a test" else "No charge")
+        for heading in EVENT_HEADINGS]
+
+
 def _pages(test_cost="$60"):
     header = f"Coverage Period: 01/01/{YEAR}-12/31/{YEAR}\n: Example Gold | Coverage for: Individual"
-    rows = (TableRow("Common Medical Event", ""), TableRow("If you have a test", f"Imaging {test_cost} copay"))
+    rows = tuple(TableRow(label, body) for label, body in _template_rows(test_cost))
     return [PdfPage(text=header, rows=rows)]
 
 
@@ -73,7 +87,11 @@ def issuer(monkeypatch, session, tmp_path):
     monkeypatch.setattr(ingest, "get_session", same_session)
     monkeypatch.setattr(ingest, "fetch_pdf", fetch)
     monkeypatch.setattr(ingest, "revalidate", site.revalidate)
-    monkeypatch.setattr(ingest, "read_pdf", lambda path: site.pages[path.read_bytes()])
+    def read_parsed(path):
+        pages = site.pages[path.read_bytes()]
+        return pages, parse_sbc(pages)
+
+    monkeypatch.setattr(ingest, "read_parsed", read_parsed)
     monkeypatch.setattr(ingest, "save", lambda body, target: target.write_bytes(body))
     return site
 
@@ -94,7 +112,10 @@ def _document(session):
 
 
 def _chunks(session):
-    return session.scalars(select(SbcChunk.content).join(SbcDocument).where(SbcDocument.url == GOLD)).all()
+    """The chart row the tests vary; the rest of the template is fixed."""
+    return [content for content in
+            session.scalars(select(SbcChunk.content).join(SbcDocument).where(SbcDocument.url == GOLD))
+            if content.startswith("If you have a test")]
 
 
 def _pdfs(tmp_path):
