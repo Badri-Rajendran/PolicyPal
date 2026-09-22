@@ -121,11 +121,12 @@ jobs:
       - name: Scan the image
         env:
           IMAGE: policypal-api:${{ github.sha }}
-          TRIVY_VERSION: "0.64.1"
+          # Pinned by digest: a tag can be moved to different bytes.
+          TRIVY: "aquasec/trivy:0.64.1@sha256:a8ca29078522f30393bdb34225e4c0994d38f37083be81a42da3a2a7e1488e9e"
         run: |
           set -euo pipefail
           docker save "$IMAGE" -o "$RUNNER_TEMP/image.tar"
-          docker run --rm -v "$RUNNER_TEMP:/scan" "aquasec/trivy:${TRIVY_VERSION}" image \
+          docker run --rm -v "$RUNNER_TEMP:/scan" "$TRIVY" image \
             --input /scan/image.tar \
             --format table --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL
           rm -f "$RUNNER_TEMP/image.tar"

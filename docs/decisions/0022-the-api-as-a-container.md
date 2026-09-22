@@ -75,6 +75,15 @@ also writes JSON to stdout, where the platform collects it; in development it
 does not, so an ingestion run's log lines do not interleave with its own
 progress output.
 
+### Every image it depends on is pinned by digest
+
+The base image, the `uv` image the build copies from, and the Trivy image that
+scans the result are all pinned `name:tag@sha256:…`. A tag can be moved to
+different bytes; a digest cannot. This is the same standard the repository
+already applies to GitHub Actions (SHA-pinned) and to gitleaks (installed by
+checksum), and the reason is the same: a build that is reproducible only until
+someone else re-tags is not reproducible.
+
 ### It does not run as root, and does not write to itself
 
 A `policypal` user owns the virtualenv and the source. `LOG_DIR` points at

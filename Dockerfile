@@ -1,8 +1,11 @@
 # The API only. Ingestion stays on the machine that holds data/ (ADR 0016,
 # 0019); nothing in this image fetches or keeps a PDF.
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.12-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e AS builder
 
-COPY --from=ghcr.io/astral-sh/uv:0.11.23 /uv /bin/uv
+# Every base and tool image is pinned by digest, not by tag: a tag can be
+# moved to different bytes, and the rest of this repo pins actions by SHA
+# and gitleaks by checksum for the same reason.
+COPY --from=ghcr.io/astral-sh/uv:0.11.23@sha256:d0a0a753ab981624b49c97abc98821c1c09f4ca69d1ef5cee69c501be3d88479 /uv /bin/uv
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -38,7 +41,7 @@ SentenceTransformer(settings.embedding_model, revision=settings.embedding_model_
 CrossEncoder(settings.reranker_model, revision=settings.reranker_model_revision)"
 
 
-FROM python:3.12-slim-bookworm AS runtime
+FROM python:3.12-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e AS runtime
 
 # Nothing here runs as root, and nothing writes to the image.
 RUN useradd --create-home --uid 10001 policypal
