@@ -364,3 +364,20 @@ def test_a_document_missing_some_of_its_questions_says_how_many(sbc, session):
 
     detail = session.scalar(select(SbcDocument.detail).where(SbcDocument.url == GOLD))
     assert detail == "missing 3 of the 7 questions"
+
+
+def test_a_partly_read_document_is_neither_a_failure_nor_a_skipped_one(sbc, fetches, catalog, session, capsys):
+    """It was read. Listing it as a failure would send the operator to refresh what did not fail."""
+    pages = _pages()
+    kept = [row for row in pages[0].rows if row.label not in QUESTION_HEADINGS[:3]]
+    sbc[GOLD] = [PdfPage(text=pages[0].text, rows=tuple(kept))]
+
+    ingest.execute(["NH"], YEAR)
+
+    assert _status(session, GOLD) == "partial"
+    assert "Plans without a usable SBC" not in capsys.readouterr().out
+
+    fetches.clear()
+    assert ingest.execute(["NH"], YEAR) == Counter()
+    assert "recorded failures skipped" not in capsys.readouterr().out
+    assert fetches == []

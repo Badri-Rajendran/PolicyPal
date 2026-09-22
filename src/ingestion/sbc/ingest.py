@@ -59,6 +59,12 @@ from .top_issuers import TOP_ISSUER_IDS
 
 logger = get_logger(__name__)
 
+# Outcomes that leave the plan with searchable text: the document was read, a
+# refresh found it changed and read it again, or the host was unreachable and
+# the text already stored was kept. Anything else is a failure worth naming.
+KEPT_OUTCOMES = (*READ_STATUSES, *(f"changed:{status}" for status in READ_STATUSES),
+                 "unchanged", "unreachable")
+
 _HIOS_ISSUER_ID = re.compile(r"^\d{5}$")
 
 
@@ -280,7 +286,7 @@ def execute(states: list[str], year: int, limit: int | None = None,
     pending = [url for url in documents if _needs_reading(url, stored.get(url), year, refresh)]
     urls = pending[:limit]
     skipped = sum(1 for url in documents
-                  if url not in pending and stored.get(url) and stored[url].status != "ok")
+                  if url not in pending and stored.get(url) and stored[url].status not in READ_STATUSES)
     print(f"{len(documents)} SBC documents behind the {', '.join(states)} plans for {year}; "
           f"{len(documents) - len(pending)} already current, "
           f"{'re-checking' if refresh else 'reading'} {len(urls)}")
@@ -294,7 +300,7 @@ def execute(states: list[str], year: int, limit: int | None = None,
         status = refresh_document(url, year, row) if refresh and row and row.status in READ_STATUSES \
             else ingest_document(url, year, row)
         statuses[status] += 1
-        if status not in ("ok", "partial", "unchanged", "changed:ok", "changed:partial", "unreachable"):
+        if status not in KEPT_OUTCOMES:
             for plan in documents[url]:
                 failures[(plan.issuer, status)].append(plan)
 
