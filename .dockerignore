@@ -1,0 +1,28 @@
+# Downloaded issuer PDFs and the corpus stay on the machine that built them
+# (ADR 0016). Nothing in the image needs them, and the image must never carry
+# them.
+data/
+
+.venv/
+logs/
+frontend/
+tests/
+scripts/
+docs/
+.playwright-mcp/
+.git/
+.github/
+.claude/
+.ruff_cache/
+.pytest_cache/
+.coverage
+**/__pycache__/
+**/*.py[cod]
+.env
+.env.*
+*.md
+# pyproject.toml declares it as the package readme, so hatchling needs it to
+# build the project itself.
+!README.md
+Makefile
+docker-compose.yml

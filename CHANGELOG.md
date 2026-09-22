@@ -4,6 +4,19 @@
 
 ### Added
 
+- A `Dockerfile` for the API, and a CI job that builds and scans the image
+  (ADR 0022) — the first of ADR 0002's two deferred items. Multi-stage, runs
+  as a non-root user, `torch` from PyTorch's CPU index on Linux so no CUDA
+  libraries ship, and both models baked in at their pinned revisions so a cold
+  start needs no HuggingFace call. CI runs the built image and fails if
+  `/app/data` is not empty: the issuer PDFs are local-only (ADR 0016) and a
+  `.dockerignore` regression would otherwise ship gigabytes of them unnoticed.
+  Trivy fails the build on fixable HIGH or CRITICAL findings.
+- `.env.example`, which did not exist: the three settings with no default
+  (`DATABASE_URL`, `OPENAI_API_KEY`, `JWT_SECRET_KEY`) and the handful worth
+  setting, with no values in it.
+- `make test`, `make lint` and `make check` run what CI runs, so passing
+  locally means the same thing.
 - Phase 4 live ingest: the catalog and SBCs for eighteen HealthCare.gov states
   — 3,276 plans from 137 issuers, every issuer's documents rather than the top
   parents'. 1,246 documents are stored and 1,940 plans (59.2%) have text behind
@@ -201,6 +214,13 @@
 
 ### Changed
 
+- In production the logs also go to stdout as JSON, where a container platform
+  collects them; a container's own filesystem is ephemeral and unread.
+  Development is unchanged, so an ingestion run's log lines do not interleave
+  with its progress output.
+- `tiktoken` and `anyio` are no longer dependencies. Neither was imported
+  anywhere; `tiktoken` in particular sat next to `core/text.py`'s deliberate
+  1.35×-word-count approximation looking like an unfinished intention.
 - The BM25 index is stored in the database, in `search_indexes`, instead of
   `data/corpus/indices/bm25.pkl` (ADR 0021, new migration). A missing index
   was a `FileNotFoundError` nothing caught, so an app running anywhere but the

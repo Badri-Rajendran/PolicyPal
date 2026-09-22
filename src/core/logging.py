@@ -31,6 +31,11 @@ def setup_logging() -> None:
 
     is_prod = settings.environment == "production"
 
+    # In a container the filesystem is ephemeral and nobody reads it; the
+    # platform collects stdout. Added only in production so a local ingestion
+    # run's log lines don't interleave with its own progress output.
+    handlers = ["file", "console"] if is_prod else ["file"]
+
     dictConfig({
         "version": 1,
         "disable_existing_loggers": False,
@@ -51,16 +56,21 @@ def setup_logging() -> None:
                 "backupCount": 5,               # keep app.log + 5 rotated copies
                 "encoding": "utf-8",
                 "formatter": "json" if is_prod else "console"
+            },
+            "console": {
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+                "formatter": "json" if is_prod else "console"
             }
         },
         "root": {
             "level": settings.log_level,
-            "handlers": ["file"]
+            "handlers": handlers
         },
         "loggers": {
             "sqlalchemy.engine": {
                 "level": "WARNING",
-                "handlers": ["file"],
+                "handlers": handlers,
                 "propagate": False
             },
             # At DEBUG these log request lines and bodies: urllib3 the CMS

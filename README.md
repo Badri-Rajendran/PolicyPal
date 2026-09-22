@@ -124,7 +124,34 @@ driven from the repo root:
 | `make ui-test` | Vitest |
 | `make ui-preview` | serves `frontend/dist` — run `make ui-build` first |
 
-Copy the required variables below into a `.env` file at the repo root before running the API.
+And what CI runs, in one command each:
+
+| Target | Runs |
+| --- | --- |
+| `make test` | pytest with the 85% coverage floor |
+| `make lint` | ruff |
+| `make check` | lint, tests, `alembic check`, bandit, pip-audit |
+
+Copy `.env.example` to `.env` at the repo root and fill in the three required values
+before running the API.
+
+### Running the API in a container
+
+```bash
+docker build -t policypal-api .
+docker run --rm -p 8000:8000 --env-file .env -e ENVIRONMENT=production policypal-api
+```
+
+The image carries the API only — ingestion, refresh and the reports stay on the machine
+that holds `data/` (ADR 0016, 0019), and `.dockerignore` keeps the issuer PDFs out of it.
+It needs no `data/` directory at all: the BM25 index comes from the database (ADR 0021)
+and both models are baked in at their pinned revisions, so a cold start makes no
+HuggingFace call. `torch` comes from PyTorch's CPU index on Linux, so no CUDA libraries
+ship (ADR 0022).
+
+It runs one gunicorn worker with eight threads. That is a deliberate ceiling, not a
+default: Flask-Limiter has no shared storage yet, so a second worker would keep its own
+counters and double the configured rate limits.
 
 > **macOS note:** AirPlay Receiver (Control Center) listens on `*:5000`. Flask still binds
 > `127.0.0.1:5000` alongside it, but `localhost` can resolve to `::1` and reach AirPlay instead —
