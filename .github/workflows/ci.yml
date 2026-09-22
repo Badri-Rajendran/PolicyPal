@@ -114,14 +114,21 @@ jobs:
           found=$(docker run --rm --entrypoint sh "$IMAGE" -c 'ls -A /app/data 2>/dev/null | wc -l')
           test "$found" -eq 0 || { echo "data/ reached the image"; exit 1; }
 
+      # Trivy's own action installs its binary through a script that fails
+      # silently on the runner; its published image is pinned instead, the
+      # same way gitleaks is. `--input` on a saved tar means no docker socket
+      # has to be handed to the scanner.
       - name: Scan the image
-        uses: aquasecurity/trivy-action@dc5a429b52fcf669ce959baa2c2dd26090d2a6c4 # v0.32.0
-        with:
-          image-ref: policypal-api:${{ github.sha }}
-          format: table
-          exit-code: "1"
-          ignore-unfixed: true
-          severity: HIGH,CRITICAL
+        env:
+          IMAGE: policypal-api:${{ github.sha }}
+          TRIVY_VERSION: "0.64.1"
+        run: |
+          set -euo pipefail
+          docker save "$IMAGE" -o "$RUNNER_TEMP/image.tar"
+          docker run --rm -v "$RUNNER_TEMP:/scan" "aquasec/trivy:${TRIVY_VERSION}" image \
+            --input /scan/image.tar \
+            --format table --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL
+          rm -f "$RUNNER_TEMP/image.tar"
 
   secret-scan:
     runs-on: ubuntu-latest
