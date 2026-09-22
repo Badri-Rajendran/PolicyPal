@@ -1,8 +1,10 @@
 name: CI
 
 on:
+  # Every pull request, not only those targeting main: a stacked PR based on
+  # another branch needs the same gate as any other, and the branch filter
+  # silently gave it none.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
