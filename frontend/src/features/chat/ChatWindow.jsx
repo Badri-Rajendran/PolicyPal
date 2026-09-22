@@ -5,7 +5,7 @@ import MessageTranscript from "./MessageTranscript";
 import { useMessages } from "./useMessages";
 
 export default function ChatWindow({ threadId, threadTitle, notice, onCreateThread, onThreadTitled }) {
-  const { messages, status, isSending, sendError, send } = useMessages(threadId, onThreadTitled);
+  const { messages, status, error, isSending, sendError, send, retry } = useMessages(threadId, onThreadTitled);
   const [draft, setDraft] = useState("");
   const [draftThreadId, setDraftThreadId] = useState(threadId);
   const pendingFirstMessage = useRef(null);
@@ -42,7 +42,14 @@ export default function ChatWindow({ threadId, threadTitle, notice, onCreateThre
       </header>
       {notice}
 
-      <MessageTranscript messages={messages} status={status} isSending={isSending} onPrompt={setDraft} />
+      <MessageTranscript
+        messages={messages}
+        status={status}
+        error={error}
+        isSending={isSending}
+        onPrompt={setDraft}
+        onRetry={retry}
+      />
 
       <div className="composer-area">
         <ErrorBanner>{sendError}</ErrorBanner>

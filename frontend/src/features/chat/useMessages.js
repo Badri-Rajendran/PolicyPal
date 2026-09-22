@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { SessionExpiredError } from "../../services/apiClient";
 import * as chatService from "../../services/chatService";
@@ -9,13 +9,17 @@ export function useMessages(threadId, onThreadTitled) {
   const { token, expireSession } = useAuth();
   const [messages, setMessages] = useState([]);
   const [status, setStatus] = useState(threadId ? "loading" : "idle");
+  const [error, setError] = useState("");
   const [loadedThreadId, setLoadedThreadId] = useState(threadId);
   const [sendError, setSendError] = useState("");
   const [isSending, setIsSending] = useState(false);
+  // Bumped by retry to re-run the load effect for the same thread.
+  const [reload, setReload] = useState(0);
 
   if (threadId !== loadedThreadId) {
     setLoadedThreadId(threadId);
     setMessages([]);
+    setError("");
     setStatus(threadId ? "loading" : "idle");
   }
 
@@ -37,6 +41,7 @@ export function useMessages(threadId, onThreadTitled) {
       (err) => {
         if (ignore) return;
         if (err instanceof SessionExpiredError) return expireSession();
+        setError(err.message);
         setStatus("error");
       },
     );
@@ -44,7 +49,13 @@ export function useMessages(threadId, onThreadTitled) {
     return () => {
       ignore = true;
     };
-  }, [threadId, token, expireSession]);
+  }, [threadId, token, expireSession, reload]);
+
+  const retry = useCallback(() => {
+    setError("");
+    setStatus("loading");
+    setReload((n) => n + 1);
+  }, []);
 
   async function send(content) {
     const isFirstMessage = messages.length === 0;
@@ -72,5 +83,5 @@ export function useMessages(threadId, onThreadTitled) {
     }
   }
 
-  return { messages, status, isSending, sendError, send };
+  return { messages, status, error, isSending, sendError, send, retry };
 }

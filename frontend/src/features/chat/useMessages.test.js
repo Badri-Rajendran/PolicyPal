@@ -85,6 +85,44 @@ describe("useMessages", () => {
     expect(onThreadTitled).toHaveBeenCalledWith("t1", "What is a deductible?");
   });
 
+  it("reports a failed history load rather than looking empty", async () => {
+    chatService.listMessages.mockRejectedValue(new Error("Something went wrong."));
+    const { result } = renderHook(() => useMessages("t1", vi.fn()));
+
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.error).toBe("Something went wrong.");
+    expect(result.current.messages).toEqual([]);
+  });
+
+  it("loads the thread again when retried", async () => {
+    chatService.listMessages.mockRejectedValueOnce(new Error("Something went wrong."));
+    const { result } = renderHook(() => useMessages("t1", vi.fn()));
+    await waitFor(() => expect(result.current.status).toBe("error"));
+
+    chatService.listMessages.mockResolvedValueOnce([{ id: "m1", role: "user", content: "Hi" }]);
+    act(() => {
+      result.current.retry();
+    });
+
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.error).toBe("");
+    expect(result.current.messages).toHaveLength(1);
+  });
+
+  it("clears a previous failure when switching threads", async () => {
+    chatService.listMessages.mockRejectedValueOnce(new Error("Something went wrong."));
+    const { result, rerender } = renderHook(({ threadId }) => useMessages(threadId, vi.fn()), {
+      initialProps: { threadId: "t1" },
+    });
+    await waitFor(() => expect(result.current.status).toBe("error"));
+
+    chatService.listMessages.mockResolvedValueOnce([]);
+    rerender({ threadId: "t2" });
+
+    expect(result.current.error).toBe("");
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+  });
+
   it("rolls back the optimistic message and surfaces an error on failure", async () => {
     chatService.listMessages.mockResolvedValue([]);
     chatService.sendMessage.mockRejectedValue(new Error("You're sending requests too quickly."));

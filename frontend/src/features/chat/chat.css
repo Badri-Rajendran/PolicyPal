@@ -159,6 +159,12 @@
   justify-content: center;
 }
 
+.transcript-error {
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
 .message {
   max-width: 68ch;
   /* A flex child sizes to its content by default; a wide table would widen the page. */
