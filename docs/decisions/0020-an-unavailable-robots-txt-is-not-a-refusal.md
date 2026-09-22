@@ -84,9 +84,34 @@ rather than left implied.
 
 ## Consequences
 
-- **247 documents behind 333 plans in 8 states** become readable, taking
-  coverage from 1,940 plans (59.2%) to about 2,273 (69.4%) — the largest
-  single gain available, and the only one that needed no parser work.
+**Measured.** The eight affected states were refreshed — 1,496 documents
+re-checked — and the estimate held:
+
+| | Before | After |
+| --- | --- | --- |
+| Plans with text | 1,940 (59.2%) | **2,274 (69.4%)** |
+| Documents `ok` | 1,224 | 1,360 |
+| Documents `partial` | 22 | **138** |
+| Documents `blocked` | 995 | 748 |
+
+The run's outcomes were `698 unchanged, 434 blocked, 136 ok, 116 partial,
+77 changed:ok, 31 http_error, 4 unreachable`.
+
+- **The documents this reaches parse less completely than the ones already
+  read.** Partial went from 22 to 138: 116 of this run's documents gave up
+  their text but not all of the template. They are honestly marked and their
+  text is searched (ADR 0017), but "69.4% covered" means 2,136 whole documents
+  and 138 partial ones, not 2,274 whole ones. Worth saying plainly rather than
+  reporting the headline alone.
+- **UnitedHealthcare and Mercy now fail on their own status.** `www.uhc.com`
+  returns 403 for the document, so those 125 records moved from "robots.txt
+  refused (HTTP 403)" to "HTTP 403" — the same `blocked` status and the same
+  user-facing sentence, now for the accurate reason. 110 records in the ten
+  states not refreshed still carry the old wording; the next monthly refresh
+  clears them, and the status they resolve to is unchanged either way.
+- **Nothing was deleted (ADR 0016), verified.** 1,264 PDFs before, 1,593
+  after; `comm` confirms every file present before is still present, and the
+  archive grew by exactly 77 — the count of documents the issuer had replaced.
 - **The reason a plan has no document gets more honest.** "The insurer blocks
   automated access" now means the insurer's server refused the document, not
   that it refused an unrelated file.
