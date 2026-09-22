@@ -180,6 +180,11 @@ Runs in order: **fetch** (download each source) → **normalize** (convert to ma
 **chunk** (per-source splitting + a shared BM25 index) → **embed** (vectorize and upsert
 to pgvector). Every phase is idempotent, so a re-run only picks up what's missing.
 
+The BM25 index is stored in the database beside the chunks it indexes, not on local disk
+(ADR 0021), so the app can run somewhere with no `data/` directory. It is derived data:
+`make build-index` rebuilds it from the chunks already stored, with no fetching, chunking
+or embedding — which is what makes seeding a fresh database a restore plus one command.
+
 Adding a corpus means writing one `Source` subclass in `src/ingestion/sources/` — `fetch`,
 `normalize`, `chunk_documents` — and registering it in that package's `__init__.py`. No
 pipeline, chunking, or embedding code changes. Chunking strategy lives with the source

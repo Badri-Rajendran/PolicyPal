@@ -9,6 +9,7 @@ from src.models import (  # noqa: F401 — register models on Base.metadata
     chunk,
     plan,
     sbc,
+    search_index,
     usage,
     user,
 )

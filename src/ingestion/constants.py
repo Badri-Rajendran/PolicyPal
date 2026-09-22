@@ -65,5 +65,3 @@ SBC_ARCHIVE = Path("data/sbc/archive")
 MARKDOWN = Path("data/corpus/markdown")
 
 CHUNKS_DIR = Path("data/corpus/chunks")
-
-INDEX_DIR = Path("data/corpus/indices")

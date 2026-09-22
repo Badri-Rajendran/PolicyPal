@@ -3,15 +3,16 @@ import pickle as pkl
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 
 from sqlalchemy import select
 
 from src.core.db import get_session
 from src.core.embedding import embed_query
+from src.core.exceptions import MissingSearchIndexError
 from src.core.logging import get_logger
 from src.core.reranker import rerank
 from src.models.chunk import Chunk
+from src.models.search_index import BM25_INDEX, SearchIndex
 from src.policypal.config import settings
 
 logger = get_logger(__name__)
@@ -27,16 +28,23 @@ class RetrievedChunk:
 
 @lru_cache
 def _bm25_index() -> dict:
-    index_path = Path(settings.bm25_index_path)
+    """The stored BM25 index, read once per process (ADR 0021).
 
-    if not index_path.exists():
-        raise FileNotFoundError(f"BM25 index not found at {index_path}. Run the chunk stage first.")
-    
-    with index_path.open("rb") as file:
-        # This file is only ever produced by our own ingestion pipeline
-        # (src/ingestion/chunk.py), never from user input or an external
-        # source, so there's no untrusted data to deserialize here.
-        return pkl.load(file)  # nosec B301
+    It comes from the database rather than a file so the app can run
+    somewhere that has no `data/` directory, and so it travels with the
+    chunks it indexes instead of beside them.
+    """
+    with get_session() as session:
+        payload = session.scalar(select(SearchIndex.payload).where(SearchIndex.name == BM25_INDEX))
+
+    if payload is None:
+        raise MissingSearchIndexError(
+            "No BM25 index stored. Run `make build-index` (or `make ingest`) first."
+        )
+    # Written only by our own ingestion (src/ingestion/chunking.py) into a
+    # table only this application writes to, never from user input or an
+    # external source, so there is no untrusted data to deserialize here.
+    return pkl.loads(payload)  # nosec B301
 
 
 def _sparse_search(query: str, top_k: int) -> list[str]:

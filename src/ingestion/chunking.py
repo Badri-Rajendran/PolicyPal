@@ -10,11 +10,13 @@ import re
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from rank_bm25 import BM25Okapi
+from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert
 
+from src.core.db import get_session
 from src.core.logging import get_logger
 from src.core.text import count_tokens
-
-from .constants import INDEX_DIR
+from src.models.search_index import BM25_INDEX, SearchIndex
 
 logger = get_logger(__name__)
 
@@ -126,20 +128,23 @@ def make_chunk(
 
 
 def build_and_store_index(texts: list[str], chunk_ids: list[str]) -> None:
-    INDEX_DIR.mkdir(parents=True, exist_ok=True)
+    """Build the BM25 index and store it in the database (ADR 0021).
 
-    index_file_path = INDEX_DIR / "bm25.pkl"
+    `texts` is not kept in the payload: retrieval reads only `bm25` and
+    `chunk_ids`, and the chunk text is a column away in the table this
+    indexes.
+    """
+    bm25 = BM25Okapi([text.lower().split() for text in texts])
+    payload = pickle.dumps({"bm25": bm25, "chunk_ids": chunk_ids})
 
-    tokenized_texts = [text.lower().split() for text in texts]
+    with get_session() as session:
+        session.execute(
+            insert(SearchIndex)
+            .values(name=BM25_INDEX, payload=payload, chunks=len(chunk_ids), built_at=func.now())
+            .on_conflict_do_update(
+                index_elements=[SearchIndex.name],
+                set_={"payload": payload, "chunks": len(chunk_ids), "built_at": func.now()},
+            )
+        )
 
-    bm25 = BM25Okapi(tokenized_texts)
-
-    with index_file_path.open("wb") as file:
-        pickle.dump({
-            "bm25": bm25,
-            "chunk_ids": chunk_ids,
-            "texts": texts,
-        },
-        file)
-
-    logger.info(f"BM25 index -> {len(tokenized_texts)} docs saved.")
+    logger.info("BM25 index -> %d docs stored (%d KB).", len(chunk_ids), len(payload) // 1024)
