@@ -8,6 +8,8 @@ not on every run. ADR 0015 also deleted each PDF once its text was stored;
 ADR 0016 reverses that, and every downloaded SBC is kept.
 Amended by ADR 0018: chart rows are rebuilt from the table's ruled grid, one
 line per service, and a PDF with no text layer is refused as scanned.
+Its "a refused `robots.txt` counts as disallowing everything" is **superseded
+by ADR 0020**, which follows RFC 9309's reading of an unavailable robots.txt.
 
 ## Context
 
@@ -61,8 +63,11 @@ among the catalog plans of those states.
   every redirect, which is followed by hand rather than by `requests`.
 - **Refusals are respected.**
   - `robots.txt` is read and obeyed, using the standard library's parser.
-  - A 401 or 403, on the file or on `robots.txt`, records the document as
-    `blocked`. A refused `robots.txt` counts as disallowing everything.
+  - A 401 or 403 on the file records the document as `blocked`.
+  - ~~A refused `robots.txt` counts as disallowing everything.~~ **Superseded
+    by ADR 0020:** RFC 9309 puts 4xx in one "unavailable" class where a
+    crawler may fetch, and measuring all seven affected hosts found five
+    serving the document at 200. A 5xx now disallows, which this did not.
   - Nothing tries to get around a refusal: no browser user agent, no other
     route to the file. Those plans get no SBC answers; answers link their PDF
     instead.

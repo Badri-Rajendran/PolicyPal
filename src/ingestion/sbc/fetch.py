@@ -3,8 +3,9 @@
 The URLs come from CMS, not users, but they point at dozens of issuers'
 servers, so each is checked before it is fetched and again at every redirect:
 HTTPS only, and never an IP address or a local host name. A site that
-refuses us — robots.txt, or a 401/403 — is recorded as `blocked` and left
-alone. Nothing here tries to get past it.
+refuses us — a robots.txt rule, or a 401/403 on the document itself — is
+recorded as `blocked` and left alone. Nothing here tries to get past it. A
+robots.txt that cannot be served is not a refusal (ADR 0020).
 
 `revalidate` asks whether a stored document has changed, with the validators
 the issuer gave us, and writes nothing.
@@ -163,24 +164,36 @@ def _unsafe(url: str) -> str | None:
 
 
 @lru_cache(maxsize=256)
-def _robots(origin: str) -> RobotFileParser | int:
-    """The site's robots.txt rules, read once per run, or the 401/403 it answered with.
+def _robots(origin: str) -> RobotFileParser:
+    """The site's robots.txt rules, read once per run (RFC 9309 §2.3.1, ADR 0020).
 
     Read with our own client, not RobotFileParser.read(), for the timeout and
-    User-Agent. As robots.txt conventions go: 401/403 means stay out, any
-    other failure means no rules were published.
+    User-Agent. The status decides what the site told us:
+
+    - 2xx: these are the rules, and they are obeyed.
+    - 4xx "unavailable": the file is not there to read, so no rules were
+      published and the standard says a crawler may fetch. A 401 or 403 on
+      `/robots.txt` says nothing about the documents themselves.
+    - 5xx "unreachable": the server is failing, and the standard says assume a
+      complete disallow rather than guess.
+
+    A network error is the one place this still fails open, which RFC 9309
+    would group with unreachable. It is left as it was and logged rather than
+    changed unmeasured (ADR 0020).
     """
     parser = RobotFileParser()
     _pace(urlsplit(origin).hostname)
     try:
         response = requests.get(f"{origin}/robots.txt", headers={"User-Agent": USER_AGENT},
                                 timeout=_TIMEOUT, allow_redirects=True)
-    except requests.RequestException:
+    except requests.RequestException as exc:
+        logger.info("robots.txt unreachable for %s (%s): proceeding", origin, type(exc).__name__)
         parser.allow_all = True
         return parser
-    if response.status_code in (401, 403):
-        return response.status_code
-    if response.status_code != 200:
+
+    if response.status_code >= 500:
+        parser.disallow_all = True
+    elif response.status_code != 200:
         parser.allow_all = True
     else:
         parser.parse(response.text.splitlines())
@@ -191,8 +204,8 @@ def _robots_refusal(url: str) -> str | None:
     """Why the site's robots.txt keeps us from `url`, or None."""
     parts = urlsplit(url)
     rules = _robots(f"{parts.scheme}://{parts.netloc}")
-    if isinstance(rules, int):
-        return f"robots.txt refused (HTTP {rules})"
+    if rules.disallow_all:
+        return "robots.txt could not be served"
     return None if rules.can_fetch(USER_AGENT, url) else "robots.txt disallows it"
 
 

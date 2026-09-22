@@ -201,6 +201,13 @@
 
 ### Changed
 
+- A `robots.txt` the server cannot serve is no longer read as a refusal
+  (ADR 0020, superseding ADR 0013). RFC 9309 puts every 4xx in one
+  "unavailable" class where a crawler may fetch, and probing all seven
+  affected hosts found five serving their PDF at 200 `application/pdf`. A 5xx
+  now disallows, which it did not before. A real `Disallow` rule, and a 401 or
+  403 on the document itself, are still refusals and still never worked
+  around.
 - The COVERAGE eval floor is full marks, 10 of 10, raised from 9. Parser
   version 3 reads CHRISTUS's wrapped imaging row as one line, so the answer
   states its price in 6 tries of 6, and the set ran 10/10 in three runs.
