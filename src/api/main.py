@@ -5,18 +5,29 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from werkzeug.exceptions import HTTPException
 
-from src.api.deps import TokenBudgetExhaustedError, ValidationFailedError, close_db
+from src.api.deps import (
+    InvalidSessionError,
+    TokenBudgetExhaustedError,
+    ValidationFailedError,
+    close_db,
+)
 from src.api.limiter import limiter
 from src.api.routes.auth import bp as auth_bp
 from src.api.routes.chat import bp as chat_bp
 from src.api.routes.profile import bp as profile_bp
-from src.core.logging import get_logger
+from src.core.logging import get_logger, setup_logging
 from src.policypal.config import settings
 
 logger = get_logger(__name__)
 
 
 def create_app() -> Flask:
+    # Every command-line entry point configures logging; the API never did, so
+    # in this process the root logger kept Python's default (WARNING, no
+    # handler): nothing the request path logged was written anywhere, and the
+    # WARNING pins that keep the CMS api key and a user's ZIP out of urllib3,
+    # httpx and openai output were never installed.
+    setup_logging()
     app = Flask(__name__)
 
     app.config["JWT_SECRET_KEY"] = settings.jwt_secret_key.get_secret_value()
@@ -37,6 +48,13 @@ def create_app() -> Flask:
     @app.errorhandler(ValidationFailedError)
     def _handle_validation_error(exc: ValidationFailedError):
         return jsonify(error="validation failed", details=exc.errors), 422
+
+    @app.errorhandler(InvalidSessionError)
+    def _handle_invalid_session(_exc: InvalidSessionError):
+        # The token is signed and unexpired but names no account we can use.
+        # 401 lets the client sign out cleanly; the body says nothing about
+        # which of the two reasons it was.
+        return jsonify(error="invalid session"), 401
 
     @app.errorhandler(TokenBudgetExhaustedError)
     def _handle_token_budget(exc: TokenBudgetExhaustedError):

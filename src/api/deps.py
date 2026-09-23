@@ -23,6 +23,10 @@ class TokenBudgetExhaustedError(Exception):
         self.retry_after = retry_after
 
 
+class InvalidSessionError(Exception):
+    """Raised when a signed token names no usable account (401). Carries no detail."""
+
+
 def get_db() -> Session:
     """One SQLAlchemy session per request, reused across the request via flask.g."""
     if "db" not in g:
@@ -43,10 +47,23 @@ def close_db(_exception: BaseException | None = None) -> None:
 
 
 def get_current_user() -> User:
-    """The authenticated user for this request. Call only inside a @jwt_required() view."""
+    """The authenticated user for this request. Call only inside a @jwt_required() view.
+
+    A token can be signed and unexpired and still name nobody: its subject may
+    not be one of our IDs, or the account may have been deleted since. Callers
+    dereference the result, so returning None here became a 500 where the
+    honest answer is 401 — the session is no good, sign in again.
+    """
     db = get_db()
-    user_id = uuid.UUID(get_jwt_identity())
-    return db.get(User, user_id)
+    try:
+        user_id = uuid.UUID(get_jwt_identity())
+    except (TypeError, ValueError) as exc:
+        raise InvalidSessionError from exc
+
+    user = db.get(User, user_id)
+    if user is None:
+        raise InvalidSessionError
+    return user
 
 
 def parse_body[T: BaseModel](schema: type[T]) -> T:

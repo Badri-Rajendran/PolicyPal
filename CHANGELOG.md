@@ -295,6 +295,16 @@
 
 ### Fixed
 
+- The API never configured logging. Every command-line entry point calls
+  `setup_logging()`; `create_app()` did not, so in the Flask process the root
+  logger kept Python's default of WARNING with no handler: nothing the request
+  path logged reached `logs/backend/app.log`, and the WARNING pins that keep
+  the CMS api key out of `urllib3` and a user's ZIP and age out of `httpx` and
+  `openai` were never installed.
+- A signed, unexpired token naming no usable account returned 500. A subject
+  that is not one of our IDs raised `ValueError`, and an account deleted since
+  the token was issued left `get_current_user()` returning `None` for callers
+  that dereference it. Both are now 401, so the client signs out cleanly.
 - `make sbc-report` counted only `ok` as read, so it disagreed with the plan
   card, `search_plans` and `plan_coverage`, which all count `partial` too: it
   reported 1,918 of 3,276 plans covered where the rest of the app counts 1,940
