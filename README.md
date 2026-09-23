@@ -352,8 +352,23 @@ npm run build
 
 CI (`.github/workflows/ci.yml`) also runs `ruff`, `alembic check` (schema
 drift), `bandit` (SAST), `pip-audit`/`npm audit` (dependency CVEs), a
-gitleaks secret scan, and a backend coverage floor (`--cov-fail-under=85`)
-on every PR and push to `main`.
+gitleaks secret scan, a backend coverage floor (`--cov-fail-under=85`), and a
+Docker build scanned by Trivy — which also runs the image and fails if any
+issuer PDF reached it. Every pull request, and every push to `main`.
+
+### Deploying
+
+`.github/workflows/cd.yml` deploys to Azure after a green CI run on `main`:
+the API to Container Apps, the browser app to Static Web Apps, against a
+PostgreSQL Flexible Server. Migrations run as a Container Apps job on the
+exact image digest being deployed, so the database needs no public opening.
+It waits on a required reviewer, and rollback is reactivating the previous
+revision. Sign-in is OIDC, so no Azure credential is stored in GitHub.
+
+Setup, the deploy path, and what to do when one goes wrong are in
+[`docs/runbooks/deploy.md`](docs/runbooks/deploy.md); the reasoning is in
+[ADR 0023](docs/decisions/0023-deploying-to-azure.md). Ingestion stays on the
+machine that holds `data/` — the issuer PDFs are never uploaded (ADR 0016).
 
 ### Retrieval quality eval
 

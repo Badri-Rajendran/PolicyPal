@@ -12,6 +12,15 @@
   `/app/data` is not empty: the issuer PDFs are local-only (ADR 0016) and a
   `.dockerignore` regression would otherwise ship gigabytes of them unnoticed.
   Trivy fails the build on fixable HIGH or CRITICAL findings.
+- CD to Azure (ADR 0023), closing the second of ADR 0002's deferred items:
+  `.github/workflows/cd.yml` builds and pushes the API image to ACR, runs
+  `alembic upgrade head` as a Container Apps job on that exact digest, updates
+  the Container App, checks it answers, and deploys the browser app to Static
+  Web Apps. It runs only after a green CI run on `main`, waits on a required
+  reviewer, deploys by digest rather than tag, and signs in with OIDC so no
+  Azure credential is stored in GitHub. Rollback is reactivating the previous
+  revision. `docs/runbooks/deploy.md` has the one-time setup and what to do
+  when a deploy goes wrong.
 - `.env.example`, which did not exist: the three settings with no default
   (`DATABASE_URL`, `OPENAI_API_KEY`, `JWT_SECRET_KEY`) and the handful worth
   setting, with no values in it.
