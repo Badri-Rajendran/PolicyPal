@@ -295,6 +295,10 @@
 
 ### Fixed
 
+- A thread whose history failed to load was shown as an empty conversation,
+  suggested prompts and all, because the transcript had no error branch and
+  fell through to the empty state. It now names the failure and offers to load
+  the thread again.
 - A follow-up question no longer fails when the rewrite model runs out of
   output tokens: the API's 400 ("max_tokens or model output limit was
   reached") now falls back to the raw query, as the rewrite already did for an
