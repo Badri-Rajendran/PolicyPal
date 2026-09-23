@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from src.core.db import get_session
 from src.models.plan import Issuer, Plan
 from src.models.sbc import SbcDocument
-from src.services.sbc_status import plan_sbc_status, sbc_document_join
+from src.services.sbc_status import READ_STATUSES, plan_sbc_status, sbc_document_join
 
 from ..constants import SBC_ARCHIVE, SBC_RAW, SBC_REJECTED
 from ..plans import resolve_states
@@ -44,7 +44,13 @@ class Coverage:
 
     @property
     def read(self) -> int:
-        return self.statuses["ok"]
+        """Plans with searchable text, counted as the rest of the app counts it.
+
+        `partial` is read: its text is stored, searched and quoted. Counting
+        only `ok` here made the report disagree with the plan card and the
+        answer the user sees.
+        """
+        return sum(self.statuses[status] for status in READ_STATUSES)
 
     def add(self, status: str, plans: int) -> None:
         self.plans += plans
@@ -93,7 +99,7 @@ def collect(session, year: int, states: list[str] | None = None, verify: bool = 
         orphans=_orphans(session, year),
         outdated=session.scalar(
             select(func.count()).select_from(SbcDocument)
-            .where(SbcDocument.plan_year == year, SbcDocument.status == "ok",
+            .where(SbcDocument.plan_year == year, SbcDocument.status.in_(READ_STATUSES),
                    SbcDocument.parser_version != PARSER_VERSION)
         ),
         stale_plans=_stale_plans(session, year, states),
@@ -105,7 +111,7 @@ def collect(session, year: int, states: list[str] | None = None, verify: bool = 
 def _reasons(session, year: int) -> Counter:
     rows = session.execute(
         select(SbcDocument.status, SbcDocument.detail, func.count())
-        .where(SbcDocument.plan_year == year, SbcDocument.status != "ok")
+        .where(SbcDocument.plan_year == year, SbcDocument.status.notin_(READ_STATUSES))
         .group_by(SbcDocument.status, SbcDocument.detail)
     ).all()
     return Counter({(status, detail): count for status, detail, count in rows})
@@ -152,7 +158,7 @@ def _verify(session, year: int) -> dict:
     missing, changed = [], []
     documents = session.execute(
         select(SbcDocument.url, SbcDocument.sha256)
-        .where(SbcDocument.plan_year == year, SbcDocument.status == "ok")
+        .where(SbcDocument.plan_year == year, SbcDocument.status.in_(READ_STATUSES))
     ).all()
     for url, sha256 in documents:
         path = cache_path(url, year)
@@ -165,7 +171,8 @@ def _verify(session, year: int) -> dict:
 
 def _line(name: str, coverage: Coverage) -> str:
     share = f"{100 * coverage.read / coverage.plans:5.1f}%" if coverage.plans else "    -"
-    missing = ", ".join(f"{count} {status}" for status, count in coverage.statuses.most_common() if status != "ok")
+    missing = ", ".join(f"{count} {status}" for status, count in coverage.statuses.most_common()
+                        if status not in READ_STATUSES)
     return f"  {name[:52]:<52} {coverage.plans:>6} {coverage.read:>6} {share}  {missing}"
 
 

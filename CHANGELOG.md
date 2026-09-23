@@ -295,6 +295,14 @@
 
 ### Fixed
 
+- `make sbc-report` counted only `ok` as read, so it disagreed with the plan
+  card, `search_plans` and `plan_coverage`, which all count `partial` too: it
+  reported 1,918 of 3,276 plans covered where the rest of the app counts 1,940
+  (59.2%). It also listed partly-read documents among the reasons a document
+  could not be read, never hash-checked their kept PDFs under `VERIFY=1`, and
+  left them out of the outdated-parser count. Ingestion likewise counted a
+  current `partial` document as a recorded failure and told the operator to
+  refresh it. All six sites now derive from `READ_STATUSES`.
 - A thread whose history failed to load was shown as an empty conversation,
   suggested prompts and all, because the transcript had no error branch and
   fell through to the empty state. It now names the failure and offers to load
