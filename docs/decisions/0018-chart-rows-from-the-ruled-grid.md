@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Phase 4 (parser versions 3 to 6). Amends ADR 0013's "table cells are not rebuilt one by
+Accepted. Phase 4 (parser versions 3 to 9). Amends ADR 0013's "table cells are not rebuilt one by
 one", and ADR 0015's "`parser_version` is NULL unless `ok`".
 
 ## Context
@@ -48,7 +48,9 @@ Inside one "If you…" group:
 The result is one line per service: `Imaging (CT/PET scans, MRIs) | No charge
 | Not covered | Preauthorization is required…`.
 
-`PARSER_VERSION` is 3.
+This is version 3. Each section below raises `PARSER_VERSION` by one, and each
+bump re-reads every stored document from disk with no request to any issuer.
+The parser is at **9**; `src/ingestion/sbc/extract.py` holds the number.
 
 ### A PDF with no text layer is unparseable, with the reason
 
@@ -124,6 +126,46 @@ thousands of documents.
 - **A document the database still refuses is recorded as `unparseable`,** with
   that reason, and the run carries on. One file must not end a run.
 
+### A chart ruled across but not down still yields rows (version 7)
+
+`find_tables()` needs both rules to make a cell. University of Utah Health
+Plans draws its chart with twenty horizontal lines and no vertical ones, so
+pdfplumber found no table at all and the whole costs chart was lost — the
+document still parsed, so it was stored as `ok` with no prices in it. That is
+the silent failure ADR 0017 exists to stop, arriving by a different route.
+
+- **When a page yields no table, a row is the band between two rules.** Its
+  label is whichever of the band's lines is one of the template's headings,
+  and the rest is its body: ADR 0013's reading, kept for exactly the layouts
+  that defeat the grid.
+- **A band shorter than six points is skipped**, being a rule's own thickness
+  or a hairline, not a row.
+- It is a fallback, not a new default. A page whose table is found is read
+  from the grid as before.
+
+### A table header printed in pieces is still that header (version 8)
+
+BCBS of Oklahoma prints "Common" and "Medical Event" as rows of their own, so
+the chart's header never matched and the group headings after it were read as
+chart rows. A label now counts as a header when it begins that header **or**,
+at six characters or more, when the header begins with it. The length floor
+keeps a short label like "If you" from matching half the template.
+
+### The template's closing sentence is not a chart row (version 9)
+
+"If your plan doesn't meet the Minimum Value Standards…" is the federal
+template's own closing wording, but it begins "If you" like a chart group, so
+it was stored as a row and could be cited as though it were a price. `If your
+plan` joins the list of headings that end the chart.
+
+An earlier attempt narrowed `_event_heading` instead. It broke two tests that
+documented intentional behaviour, and was reverted: the chart's end is a
+better place to say this than the chart's rows.
+
+**Together, versions 7 to 9 took partly-read documents from 62 of 1,189 to
+22** — measured by re-reading every stored document from disk, with no request
+to any issuer.
+
 ### Every file the parser judged records which file and which parser
 
 - `unparseable` and `wrong_year` rows now store the file's `sha256` and the
@@ -137,10 +179,15 @@ thousands of documents.
 
 ## Consequences
 
-- **Measured on the 436 stored documents:** all still yield their 25 sections.
-  The ranking and eval results are in the Phase 4 findings.
+- **Measured at version 3 on the 436 documents then stored:** all still yield
+  their 25 sections. Re-measured after every bump since, now over 1,246
+  documents; the ranking and eval results are in the Phase 4 findings, and
+  ranking did not move.
 - **Each parser bump costs a re-parse from disk,** about 1.5 s per document,
   and no download.
+- **22 documents of 1,246 are still partial,** and say so. The last two fixes
+  had sharply diminishing returns, so they are marked honestly rather than
+  chased further.
 - **A merged cell's text lands in the row it is centred in.** A limitation
   shared by two services appears on one of them.
 - **Layouts can still defeat the grid.** A group without rules falls back to

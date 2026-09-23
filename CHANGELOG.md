@@ -4,6 +4,20 @@
 
 ### Added
 
+- Phase 4 live ingest: the catalog and SBCs for eighteen HealthCare.gov states
+  — 3,276 plans from 137 issuers, every issuer's documents rather than the top
+  parents'. 1,246 documents are stored and 1,940 plans (59.2%) have text behind
+  them; the rest are named and counted, 995 of them blocked by their issuer.
+  Six parser defects found in real PDFs were fixed along the way (ADR 0018),
+  and the results are in `docs/findings/sbc-documents.md`.
+- First refresh at full scale: 2,344 documents re-checked across all eighteen
+  states (ADR 0019). 1,116 unchanged, 995 still blocked, 55 unreachable, and
+  **18 that the issuer had replaced at the same URL** — the case nothing else
+  would have noticed. Each superseded file moved to `data/sbc/archive/`, none
+  deleted. Retrying past failures recovered 57 documents.
+- Settled ADR 0018's deferred OCR question by measurement: **zero** of the
+  documents read in eighteen states lack a text layer, so no issuer publishes
+  a scanned SBC and OCR would buy nothing.
 - A coverage answer names the plan it could not read even when that plan is
   the only one shown, and cites no glossary entry when asked what a plan does
   or charges. Measured over three runs, the MISSING DOCUMENTS set went from
@@ -11,8 +25,9 @@
 - A document read in part is recorded as `partial`, not `ok` (ADR 0017): its
   text is kept and searched, but the plan card says its costs chart is not all
   there, and an answer that finds nothing says the part that would answer
-  wasn't read here rather than implying the plan doesn't cover it. 62 of 1,189
-  documents are partial (new migration).
+  wasn't read here rather than implying the plan doesn't cover it. 22 of the
+  1,246 documents stored are partial (new migration); the run first found 62,
+  and the parser work that followed (versions 7 to 9) cleared 40 of them.
 - `make refresh-sbc`: asks every stored SBC whether the issuer has changed it,
   with a conditional request, and retries recorded failures (ADR 0019). A
   changed file is downloaded and the one it replaces is moved to
@@ -186,6 +201,9 @@
 
 ### Changed
 
+- The COVERAGE eval floor is full marks, 10 of 10, raised from 9. Parser
+  version 3 reads CHRISTUS's wrapped imaging row as one line, so the answer
+  states its price in 6 tries of 6, and the set ran 10/10 in three runs.
 - `make ingest-sbc` no longer retries recorded failures; it reads what is new,
   what an older parser stored, and any stored document whose PDF has gone
   missing, and says how many failures it skipped (ADR 0019). Re-requesting a
