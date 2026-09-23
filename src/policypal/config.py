@@ -48,9 +48,8 @@ class Settings(BaseSettings):
     # exclusion that follows in the next sentence) at a hard chunk boundary.
     chunk_overlap: int = 50
 
-    # Hybrid retrieval
-    bm25_index_path: str = "data/corpus/indices/bm25.pkl"
-
+    # Hybrid retrieval. The BM25 index lives in the database, not on disk
+    # (ADR 0021), so there is no path to configure.
     sparse_top_k: int = 20
     dense_top_k: int = 30
 

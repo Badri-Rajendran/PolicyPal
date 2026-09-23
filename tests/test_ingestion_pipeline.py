@@ -1,15 +1,14 @@
 """Tests for the source-agnostic ingestion orchestration and the Wikipedia source.
 
 The orchestrator's failure mode is silence: if it writes a malformed JSONL or
-an index whose ids don't line up with its texts, nothing raises — retrieval
-just quietly returns the wrong chunks.
+hands the indexer ids that don't line up with its texts, nothing raises —
+retrieval just quietly returns the wrong chunks.
 
-The only pickle loaded below is the BM25 index these tests just built in a
-tmp_path fixture — a build artifact of the code under test, never external
-input. Same rationale as the justified load in src/services/retrieval.py.
+What reaches the indexer is checked at the call, not by reading back a stored
+index: the orchestrator's job is to hand over the right texts and ids, and
+storing them is `build_and_store_index`'s (tested separately).
 """
 import json
-import pickle
 from unittest.mock import patch
 
 import pytest
@@ -49,14 +48,15 @@ def _chunk(chunk_id, text="Some text about coverage.", doc_type="wikipedia"):
 
 
 def _run_execute(tmp_path, sources):
-    chunks_dir, index_dir = tmp_path / "chunks", tmp_path / "indices"
+    """Runs the orchestrator, returning where chunks were written and what the indexer got."""
+    chunks_dir = tmp_path / "chunks"
 
     with patch.object(chunk_module, "SOURCES", sources), \
          patch.object(chunk_module, "CHUNKS_DIR", chunks_dir), \
-         patch("src.ingestion.chunking.INDEX_DIR", index_dir):
+         patch.object(chunk_module, "build_and_store_index") as indexer:
         chunk_module.execute()
 
-    return chunks_dir, index_dir
+    return chunks_dir, indexer
 
 
 # Orchestration
@@ -85,27 +85,23 @@ def test_execute_writes_one_valid_json_object_per_line(tmp_path):
 
 def test_execute_indexes_the_contextualized_text_not_the_raw_text(tmp_path):
     """Retrieval depends on this: BM25 searches context, the DB stores raw."""
-    _, index_dir = _run_execute(tmp_path, [_FakeSource("a", [_chunk("a_1", text="A deductible.")])])
+    _, indexer = _run_execute(tmp_path, [_FakeSource("a", [_chunk("a_1", text="A deductible.")])])
 
-    with (index_dir / "bm25.pkl").open("rb") as f:
-        index = pickle.load(f)
-
-    assert index["texts"] == ["Context\nA deductible."]
-    assert index["chunk_ids"] == ["a_1"]
+    texts, chunk_ids = indexer.call_args.args
+    assert texts == ["Context\nA deductible."]
+    assert chunk_ids == ["a_1"]
 
 
 def test_execute_keeps_index_ids_aligned_with_index_texts(tmp_path):
     """A misalignment here returns the wrong chunk for every BM25 hit."""
     chunks = [_chunk(f"a_{i}", text=f"Text {i}") for i in range(5)]
 
-    _, index_dir = _run_execute(tmp_path, [_FakeSource("a", chunks)])
+    _, indexer = _run_execute(tmp_path, [_FakeSource("a", chunks)])
 
-    with (index_dir / "bm25.pkl").open("rb") as f:
-        index = pickle.load(f)
-
-    assert len(index["texts"]) == len(index["chunk_ids"]) == 5
-    for i, chunk_id in enumerate(index["chunk_ids"]):
-        assert index["texts"][i].endswith(f"Text {i}")
+    texts, chunk_ids = indexer.call_args.args
+    assert len(texts) == len(chunk_ids) == 5
+    for i, chunk_id in enumerate(chunk_ids):
+        assert texts[i].endswith(f"Text {i}")
         assert chunk_id == f"a_{i}"
 
 

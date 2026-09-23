@@ -201,6 +201,13 @@
 
 ### Changed
 
+- The BM25 index is stored in the database, in `search_indexes`, instead of
+  `data/corpus/indices/bm25.pkl` (ADR 0021, new migration). A missing index
+  was a `FileNotFoundError` nothing caught, so an app running anywhere but the
+  machine that built the corpus answered no questions at all; it now raises an
+  error naming the command to run. `make build-index` rebuilds it from the
+  chunks already stored. Dropping the payload's unread `texts` key, a second
+  copy of the corpus, took it from 3.4 MB to 1.8 MB.
 - A `robots.txt` the server cannot serve is no longer read as a refusal
   (ADR 0020, superseding ADR 0013). RFC 9309 puts every 4xx in one
   "unavailable" class where a crawler may fetch, and probing all seven
