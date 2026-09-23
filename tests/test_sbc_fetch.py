@@ -99,13 +99,35 @@ def test_robots_txt_is_honoured(_offline):
     assert [call.args[0] for call in _offline.call_args_list] == ["https://sbc.example.com/robots.txt"]
 
 
-def test_a_site_refusing_robots_txt_is_left_alone(_offline):
-    _serve(_offline, _response(), robots=_response(403))
+@pytest.mark.parametrize("status", [401, 403, 404, 410])
+def test_a_robots_txt_that_is_not_there_publishes_no_rules(_offline, status):
+    """RFC 9309 §2.3.1.3: 4xx is "unavailable", and a crawler may fetch (ADR 0020).
+
+    Measured over the seven hosts this affected, five served their PDF at 200
+    with `application/pdf`. A 401 or 403 on /robots.txt is the web server
+    declining to serve one file, and says nothing about the documents.
+    """
+    _serve(_offline, _response(), robots=_response(status))
+
+    assert fetch_pdf(URL, 2026).status == "ok"
+
+
+@pytest.mark.parametrize("status", [500, 503])
+def test_a_robots_txt_the_server_cannot_serve_stops_the_fetch(_offline, status):
+    """RFC 9309 §2.3.1.4: 5xx is "unreachable", and a crawler assumes a full disallow."""
+    _serve(_offline, _response(), robots=_response(status))
 
     result = fetch_pdf(URL, 2026)
 
-    assert (result.status, result.detail) == ("blocked", "robots.txt refused (HTTP 403)")
+    assert (result.status, result.detail) == ("blocked", "robots.txt could not be served")
     assert [call.args[0] for call in _offline.call_args_list] == ["https://sbc.example.com/robots.txt"]
+
+
+def test_a_site_that_refuses_the_document_itself_is_left_alone(_offline):
+    """The refusal that still counts: a 403 on the PDF, not on /robots.txt."""
+    _serve(_offline, _response(403))
+
+    assert fetch_pdf(URL, 2026).status == "blocked"
 
 
 def test_a_body_past_the_size_cap_is_dropped_unsaved(_offline):
