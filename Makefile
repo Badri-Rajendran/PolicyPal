@@ -1,5 +1,5 @@
-.PHONY: ingest ingest-plans ingest-sbc refresh-sbc sbc-report migrate api \
-        ui-dev ui-build ui-lint ui-preview ui-test
+.PHONY: ingest build-index ingest-plans ingest-sbc refresh-sbc sbc-report migrate api \
+        ui-dev ui-build ui-lint ui-preview ui-test test lint check
 
 # The plan year to work on; the commands default to the calendar year, which
 # is the wrong one once the next year's plans are on sale. e.g. YEAR=2027
@@ -7,6 +7,12 @@ YEAR_ARG = $(if $(YEAR),--year $(YEAR))
 
 ingest:
 	uv run python -m src.ingestion.pipeline
+
+# Rebuild the BM25 index from the chunks already stored, with no fetching,
+# chunking or embedding (ADR 0021). `make ingest` does this as its last step;
+# this is for a database seeded from a dump.
+build-index:
+	uv run python -m src.ingestion.build_index
 
 # STATES is required: comma-separated codes, or ALL for every HealthCare.gov
 # state. No default, so a bare `make ingest-plans` cannot start thousands of
@@ -55,3 +61,15 @@ ui-preview:
 
 ui-test:
 	cd frontend && npm test
+
+# What CI runs, in one command, so "it passed locally" means the same thing.
+test:
+	uv run pytest -q --cov=src --cov-report=term-missing --cov-fail-under=85
+
+lint:
+	uv run ruff check .
+
+check: lint test
+	uv run alembic check
+	uv run bandit -r src -ll
+	uv run pip-audit

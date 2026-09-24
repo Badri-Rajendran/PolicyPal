@@ -115,6 +115,13 @@ implied. Follow-ups cost roughly 2× a first message in latency — acceptable
 for a local small model, and the thing to revisit first if generation moves
 behind an API where a rewrite call is cheap and parallelisable.
 
+**That move happened (ADR 0008) and this was not revisited.** Generation and
+the rewrite both run against `gpt-5-mini`/`gpt-5-nano` now, and the rewrite is
+still a serial call before retrieval rather than one issued alongside it. It
+stays open, and recorded here rather than implied: the latency is acceptable
+in use, so nothing has forced the question, but the reason given for deferring
+it no longer holds.
+
 Retrieval quality for follow-ups now depends on a generated artefact, so it
 is no longer fully deterministic. `scripts/eval_generation.py` grows a
 multi-turn case for exactly that reason; the deterministic parts — history

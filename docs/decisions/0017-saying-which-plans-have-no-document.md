@@ -64,6 +64,11 @@ questions column interleaves its answers. Recorded as `ok`, they are the same
 silent failure this ADR exists to stop — an answer would search a document
 that has no prices in it and conclude the plan says nothing.
 
+The parser work those 62 prompted brought the number down within the same
+phase: reading a chart ruled across but not down, and completing a wrapped
+header (ADR 0018, versions 7 and 8), left **22 of 1,189**. After the refresh
+of all eighteen states the corpus stands at **22 partial of 1,246**.
+
 - **Its text is kept and searched.** What was read is the plan's own words,
   and half a document beats none.
 - **`sbc_readable` stays true,** and `plan_coverage` still returns its
@@ -72,8 +77,13 @@ that has no prices in it and conclude the plan says nothing.
   partial, the answer says the part that would answer isn't among what was
   read, and links the PDF — never that the plan doesn't cover it.
 - **The completeness rule is the template's own:** all seven Important
-  Questions, and at least the chart's ten "If you…" groups. 1,127 of 1,189
-  documents meet it.
+  Questions, and at least the chart's ten "If you…" groups. 1,224 of the 1,246
+  documents stored meet it.
+- **`partial` is a read status.** `READ_STATUSES` in `src/services/sbc_status.py`
+  is the single definition, and everything that asks "is there text for this
+  plan?" derives from it — the plan card, `search_plans`, `plan_coverage` and
+  `make sbc-report` alike. Spelling the question as `== "ok"` anywhere else
+  reintroduces exactly the silent disagreement this section exists to stop.
 
 ### The plan card keeps the status it was shown with
 

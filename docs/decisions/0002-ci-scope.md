@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted. All three deferrals below have since been closed: coverage
+thresholds in Phase 3, the Docker build and image scan by ADR 0022, and CD to
+Azure by ADR 0023.
 
 ## Context
 
@@ -26,19 +28,18 @@ and shouldn't fabricate.
   `npm audit --audit-level=high`.
 - **secret-scan**: `gitleaks detect` over full git history.
 
-**Deliberately not built yet:**
+**Deferred when this was written; all three have since been built:**
 
-- **Docker build + image vulnerability scan.** There is no Dockerfile for
-  the app. Writing a production one for a Flask service that pulls in
-  PyTorch + transformers (a multi-GB dependency tree) is its own real task —
-  base image choice, layer caching, non-root user, multi-stage build to
-  keep the final image lean — not something to bolt on to get a CI checkbox
-  green.
-- **CD to Azure (ACR push, migrations, deploy).** Requires an Azure
-  subscription, service principal, and GitHub Environment secrets that
-  don't exist in this project yet. Configuring cloud deployment
-  infrastructure isn't something to set up unprompted or with placeholder
-  credentials.
+- ~~**Docker build + image vulnerability scan.**~~ **Resolved by ADR 0022.**
+  It was its own real task, as expected: CPU-only torch, both models baked in
+  at their pinned revisions, a non-root multi-stage build, and a CI step that
+  runs the image to prove no issuer PDF reached it. 2.48 GB, scanned by Trivy
+  on every pull request.
+- ~~**CD to Azure (ACR push, migrations, deploy).**~~ **Resolved by ADR 0023**,
+  once a subscription existed. Container Apps, Static Web Apps and a Flexible
+  Server, deployed by digest behind a required reviewer, with migrations run
+  as a job inside the environment so the database needs no public opening.
+  Sign-in is OIDC, so no Azure credential is stored here after all.
 - ~~**Coverage thresholds.**~~ Resolved: `pytest --cov=src --cov-fail-under=85`
   is now the backend test step. It is a regression floor set just under the
   measured baseline, not an arbitrary target — infrastructure glue wrapping

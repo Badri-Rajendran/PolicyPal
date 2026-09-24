@@ -1,3 +1,8 @@
+from flask_jwt_extended import create_access_token
+from sqlalchemy import delete
+
+from src.api import deps
+from src.models.user import User
 from tests.helpers import PROFILE
 
 
@@ -69,3 +74,27 @@ def test_login_validation_error(client):
     resp = client.post("/api/auth/login", json={"email": "not-an-email"})
 
     assert resp.status_code == 422
+
+
+def test_a_token_naming_a_deleted_account_is_rejected_not_a_server_error(client, app):
+    """Every view dereferences get_current_user(), so returning None was a 500."""
+    token = _register(client).get_json()["access_token"]
+    db = deps.SessionLocal()
+    db.execute(delete(User).where(User.email == "alice@example.com"))
+    db.commit()
+    db.close()
+
+    resp = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 401
+    assert resp.get_json() == {"error": "invalid session"}
+
+
+def test_a_token_whose_subject_is_not_a_user_id_is_rejected(client, app):
+    with app.app_context():
+        token = create_access_token(identity="not-a-uuid")
+
+    resp = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 401
+    assert resp.get_json() == {"error": "invalid session"}

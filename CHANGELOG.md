@@ -4,6 +4,42 @@
 
 ### Added
 
+- A `Dockerfile` for the API, and a CI job that builds and scans the image
+  (ADR 0022) — the first of ADR 0002's two deferred items. Multi-stage, runs
+  as a non-root user, `torch` from PyTorch's CPU index on Linux so no CUDA
+  libraries ship, and both models baked in at their pinned revisions so a cold
+  start needs no HuggingFace call. CI runs the built image and fails if
+  `/app/data` is not empty: the issuer PDFs are local-only (ADR 0016) and a
+  `.dockerignore` regression would otherwise ship gigabytes of them unnoticed.
+  Trivy fails the build on fixable HIGH or CRITICAL findings.
+- CD to Azure (ADR 0023), closing the second of ADR 0002's deferred items:
+  `.github/workflows/cd.yml` builds and pushes the API image to ACR, runs
+  `alembic upgrade head` as a Container Apps job on that exact digest, updates
+  the Container App, checks it answers, and deploys the browser app to Static
+  Web Apps. It runs only after a green CI run on `main`, waits on a required
+  reviewer, deploys by digest rather than tag, and signs in with OIDC so no
+  Azure credential is stored in GitHub. Rollback is reactivating the previous
+  revision. `docs/runbooks/deploy.md` has the one-time setup and what to do
+  when a deploy goes wrong.
+- `.env.example`, which did not exist: the three settings with no default
+  (`DATABASE_URL`, `OPENAI_API_KEY`, `JWT_SECRET_KEY`) and the handful worth
+  setting, with no values in it.
+- `make test`, `make lint` and `make check` run what CI runs, so passing
+  locally means the same thing.
+- Phase 4 live ingest: the catalog and SBCs for eighteen HealthCare.gov states
+  — 3,276 plans from 137 issuers, every issuer's documents rather than the top
+  parents'. 1,246 documents are stored and 1,940 plans (59.2%) have text behind
+  them; the rest are named and counted, 995 of them blocked by their issuer.
+  Six parser defects found in real PDFs were fixed along the way (ADR 0018),
+  and the results are in `docs/findings/sbc-documents.md`.
+- First refresh at full scale: 2,344 documents re-checked across all eighteen
+  states (ADR 0019). 1,116 unchanged, 995 still blocked, 55 unreachable, and
+  **18 that the issuer had replaced at the same URL** — the case nothing else
+  would have noticed. Each superseded file moved to `data/sbc/archive/`, none
+  deleted. Retrying past failures recovered 57 documents.
+- Settled ADR 0018's deferred OCR question by measurement: **zero** of the
+  documents read in eighteen states lack a text layer, so no issuer publishes
+  a scanned SBC and OCR would buy nothing.
 - A coverage answer names the plan it could not read even when that plan is
   the only one shown, and cites no glossary entry when asked what a plan does
   or charges. Measured over three runs, the MISSING DOCUMENTS set went from
@@ -11,8 +47,9 @@
 - A document read in part is recorded as `partial`, not `ok` (ADR 0017): its
   text is kept and searched, but the plan card says its costs chart is not all
   there, and an answer that finds nothing says the part that would answer
-  wasn't read here rather than implying the plan doesn't cover it. 62 of 1,189
-  documents are partial (new migration).
+  wasn't read here rather than implying the plan doesn't cover it. 22 of the
+  1,246 documents stored are partial (new migration); the run first found 62,
+  and the parser work that followed (versions 7 to 9) cleared 40 of them.
 - `make refresh-sbc`: asks every stored SBC whether the issuer has changed it,
   with a conditional request, and retries recorded failures (ADR 0019). A
   changed file is downloaded and the one it replaces is moved to
@@ -186,6 +223,34 @@
 
 ### Changed
 
+- In production the logs also go to stdout as JSON, where a container platform
+  collects them; a container's own filesystem is ephemeral and unread.
+  Development is unchanged, so an ingestion run's log lines do not interleave
+  with its progress output.
+- `tiktoken` and `anyio` are no longer dependencies. Neither was imported
+  anywhere; `tiktoken` in particular sat next to `core/text.py`'s deliberate
+  1.35×-word-count approximation looking like an unfinished intention.
+- The BM25 index is stored in the database, in `search_indexes`, instead of
+  `data/corpus/indices/bm25.pkl` (ADR 0021, new migration). A missing index
+  was a `FileNotFoundError` nothing caught, so an app running anywhere but the
+  machine that built the corpus answered no questions at all; it now raises an
+  error naming the command to run. `make build-index` rebuilds it from the
+  chunks already stored. Dropping the payload's unread `texts` key, a second
+  copy of the corpus, took it from 3.4 MB to 1.8 MB.
+- A `robots.txt` the server cannot serve is no longer read as a refusal
+  (ADR 0020, superseding ADR 0013). RFC 9309 puts every 4xx in one
+  "unavailable" class where a crawler may fetch, and probing all seven
+  affected hosts found five serving their PDF at 200 `application/pdf`. A 5xx
+  now disallows, which it did not before. A real `Disallow` rule, and a 401 or
+  403 on the document itself, are still refusals and still never worked
+  around. Refreshing the eight affected states took coverage from 1,940 plans
+  (59.2%) to **2,274 (69.4%)**. Those documents parse less completely than the
+  ones already read, so `partial` went from 22 to 138: the figure is 2,136
+  whole documents and 138 partial, not 2,274 whole. No PDF was deleted; the
+  archive grew by the 77 files issuers had replaced.
+- The COVERAGE eval floor is full marks, 10 of 10, raised from 9. Parser
+  version 3 reads CHRISTUS's wrapped imaging row as one line, so the answer
+  states its price in 6 tries of 6, and the set ran 10/10 in three runs.
 - `make ingest-sbc` no longer retries recorded failures; it reads what is new,
   what an older parser stored, and any stored document whose PDF has gone
   missing, and says how many failures it skipped (ADR 0019). Re-requesting a
@@ -295,6 +360,24 @@
 
 ### Fixed
 
+- The API never configured logging. Every command-line entry point calls
+  `setup_logging()`; `create_app()` did not, so in the Flask process the root
+  logger kept Python's default of WARNING with no handler: nothing the request
+  path logged reached `logs/backend/app.log`, and the WARNING pins that keep
+  the CMS api key out of `urllib3` and a user's ZIP and age out of `httpx` and
+  `openai` were never installed.
+- A signed, unexpired token naming no usable account returned 500. A subject
+  that is not one of our IDs raised `ValueError`, and an account deleted since
+  the token was issued left `get_current_user()` returning `None` for callers
+  that dereference it. Both are now 401, so the client signs out cleanly.
+- `make sbc-report` counted only `ok` as read, so it disagreed with the plan
+  card, `search_plans` and `plan_coverage`, which all count `partial` too: it
+  reported 1,918 of 3,276 plans covered where the rest of the app counts 1,940
+  (59.2%). It also listed partly-read documents among the reasons a document
+  could not be read, never hash-checked their kept PDFs under `VERIFY=1`, and
+  left them out of the outdated-parser count. Ingestion likewise counted a
+  current `partial` document as a recorded failure and told the operator to
+  refresh it. All six sites now derive from `READ_STATUSES`.
 - A thread whose history failed to load was shown as an empty conversation,
   suggested prompts and all, because the transcript had no error branch and
   fell through to the empty state. It now names the failure and offers to load

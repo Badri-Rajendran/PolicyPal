@@ -13,6 +13,7 @@ from src.ingestion.sbc import report as sbc_report
 from src.ingestion.sbc.report import collect, render
 from src.models.plan import Issuer, Plan
 from src.models.sbc import SbcChunk, SbcDocument
+from src.services.sbc_status import READ_STATUSES
 
 YEAR = 1999
 HCSC = "33602"      # in TOP_ISSUERS, under Health Care Service Corporation
@@ -36,17 +37,21 @@ def catalog(session):
     plan(HCSC, "33602TX0010001", "https://sbc.example.com/read.pdf")
     plan(HCSC, "33602TX0010002", "https://sbc.example.com/read.pdf")
     plan(HCSC, "33602TX0010003", "https://sbc.example.com/blocked.pdf")
+    plan(HCSC, "33602TX0010004", "https://sbc.example.com/partial.pdf")
     plan("99999", "99999TX0010001", None)
     plan("99999", "99999TX0010002", "https://sbc.example.com/never-tried.pdf")
     plan("99999", "99999NH0010003", "https://sbc.example.com/read.pdf", state="NH")
 
-    for url, status in (("read.pdf", "ok"), ("blocked.pdf", "blocked")):
+    documents = (("read.pdf", "ok", None),
+                 ("partial.pdf", "partial", "missing 2 of the 10 chart's groups"),
+                 ("blocked.pdf", "blocked", "robots.txt disallows it"))
+    for url, status, detail in documents:
         document = SbcDocument(url=f"https://sbc.example.com/{url}", plan_year=YEAR, status=status,
-                               detail=None if status == "ok" else "robots.txt disallows it",
-                               sha256=hashlib.sha256(url.encode()).hexdigest(), parser_version=3)
+                               detail=detail, sha256=hashlib.sha256(url.encode()).hexdigest(),
+                               parser_version=3)
         session.add(document)
         session.flush()
-        if status == "ok":
+        if status in READ_STATUSES:
             session.add(SbcChunk(document_id=document.id, chunk_id=f"{url}#0", section="If you have a test",
                                  position=0, content="If you have a test\nImaging $100"))
     session.flush()
@@ -56,13 +61,31 @@ def _issuer_line(report, name):
     return next(coverage for (_, issuer), coverage in report.by_issuer.items() if issuer.startswith(name))
 
 
+def _line_for(report, name):
+    return next(line for line in render(report).splitlines() if line.strip().startswith(name))
+
+
 def test_every_plan_is_counted_by_whether_its_document_was_read(session, catalog):
     report = collect(session, YEAR)
 
-    assert (report.total.plans, report.total.read) == (6, 3)
-    assert report.total.statuses == {"ok": 3, "blocked": 1, "no_link": 1, "not_read": 1}
-    assert report.by_state["TX"].plans == 5
+    assert (report.total.plans, report.total.read) == (7, 4)
+    assert report.total.statuses == {"ok": 3, "partial": 1, "blocked": 1, "no_link": 1, "not_read": 1}
+    assert report.by_state["TX"].plans == 6
     assert report.by_state["NH"].statuses == {"ok": 1}
+
+
+def test_a_partly_read_document_counts_as_read(session, catalog):
+    """`partial` text is stored, searched and quoted, so the report must not call it missing.
+
+    Counting only `ok` made `make sbc-report` disagree with the plan card and
+    the answer: it reported 1,918 of 3,276 plans covered where the rest of the
+    app counted 1,940.
+    """
+    report = collect(session, YEAR)
+    hcsc = _issuer_line(report, "BCBS of Texas")
+
+    assert hcsc.read == 3                      # two `ok` plans and the `partial` one
+    assert "partial" not in _line_for(report, "ALL")
 
 
 def test_a_plan_with_no_link_and_one_never_read_are_both_counted(session, catalog):
@@ -85,6 +108,7 @@ def test_a_state_filter_counts_only_that_state(session, catalog):
 
 
 def test_why_each_document_could_not_be_read_is_counted(session, catalog):
+    """A `partial` document was read, so it does not belong among the reasons it wasn't."""
     assert collect(session, YEAR).reasons == {("blocked", "robots.txt disallows it"): 1}
 
 
@@ -96,9 +120,10 @@ def test_a_document_no_plan_points_at_is_reported_as_an_orphan(session, catalog)
 
 
 def test_documents_stored_by_an_older_parser_are_counted(session, catalog):
+    """Both read statuses: `_needs_reading` re-reads a `partial` document too."""
     session.execute(SbcDocument.__table__.update().values(parser_version=1))
 
-    assert collect(session, YEAR).outdated == 1
+    assert collect(session, YEAR).outdated == 2
 
 
 def test_plans_the_latest_catalog_run_did_not_return_are_reported(session, catalog):
@@ -138,8 +163,20 @@ def test_kept_pdfs_are_counted_by_folder(session, catalog, monkeypatch, tmp_path
 def test_verifying_files_names_a_missing_one_and_one_whose_hash_changed(session, catalog, monkeypatch, tmp_path):
     monkeypatch.setattr(sbc_report, "cache_path", lambda url, year: tmp_path / f"{url.rsplit('/', 1)[1]}")
     (tmp_path / "read.pdf").write_bytes(b"a different file")
+    (tmp_path / "partial.pdf").write_bytes(b"partial.pdf")   # the bytes its stored hash was taken from
 
     report = collect(session, YEAR, verify=True)
 
     assert (report.changed_files, report.missing_files) == (["https://sbc.example.com/read.pdf"], [])
     assert "files whose hash changed: 1" in render(report)
+
+
+def test_verifying_files_checks_a_partly_read_documents_pdf_too(session, catalog, monkeypatch, tmp_path):
+    """Its text is quoted in answers, so its kept PDF is worth the same check as any other."""
+    monkeypatch.setattr(sbc_report, "cache_path", lambda url, year: tmp_path / f"{url.rsplit('/', 1)[1]}")
+    (tmp_path / "read.pdf").write_bytes(b"read.pdf")
+
+    report = collect(session, YEAR, verify=True)
+
+    assert report.missing_files == ["https://sbc.example.com/partial.pdf"]
+    assert report.changed_files == []
