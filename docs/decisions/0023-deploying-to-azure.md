@@ -2,9 +2,11 @@
 
 ## Status
 
-Accepted. Closes the second of ADR 0002's two deferred items ("CD to Azure
-(ACR push, migrations, deploy)"). Depends on ADR 0022 for the image, and on
-ADR 0021 without which a deployed container cannot answer.
+Accepted, and **amended by the first real deployment** — see "What deploying
+it actually changed" at the end. Four of the choices below did not survive
+contact with the subscription. Closes the second of ADR 0002's two deferred
+items ("CD to Azure (ACR push, migrations, deploy)"). Depends on ADR 0022 for
+the image, and on ADR 0021 without which a deployed container cannot answer.
 
 ## Context
 
@@ -23,7 +25,8 @@ text already extracted, not the documents it came from.
 ### Container Apps for the API
 
 - **Scale-to-zero** suits a project with no steady traffic, and the revision
-  model gives rollback for free.
+  model gives rollback for free. (The deployment runs one replica instead —
+  see the amendment.)
 - **Revisions are the rollback.** Reactivating the previous revision is one
   command, which is what ADR 0002's "keep rollback a single re-run" asks for.
 - **One replica, for now.** ADR 0022 explains why: Flask-Limiter has no shared
@@ -48,8 +51,10 @@ changing it is a rebuild.
 
 Azure Database for PostgreSQL Flexible Server with `pgvector`.
 
-- **`pg_dump` → `pg_restore`, once.** 75 MB: the corpus, its 1,568 chunks, the
-  31,359 SBC chunks, the plan catalog, and the BM25 index row (ADR 0021).
+- **`pg_dump` → `pg_restore`, once.** A 78 MB database, 10 MB as a
+  custom-format dump: the corpus, its 1,568 chunks, the 35,756 SBC chunks, the
+  3,276-plan catalog, and the BM25 index row (ADR 0021). (An earlier draft said
+  31,359 SBC chunks — that count predated the ADR 0020 robots.txt refresh.)
 - **Not a migration and not a workflow step.** Seeding is an operator action
   with the local database in front of them, because that is where the data
   lives and where ingestion will keep running.
@@ -93,9 +98,9 @@ checked against `^[0-9a-f]{40}$` before it reaches `ref:` or an image tag.
 
 ## Consequences
 
-- **Cold starts are slow**, because scale-to-zero means loading two models
-  from the image on the first request after idling. The trade is cost; the
-  fix, if it stops being acceptable, is a minimum of one replica.
+- **Cold starts are slow** whenever scale-to-zero is used, because the first
+  request after idling loads two models from the image. The trade is cost; the
+  deployment took the other side of it and runs one replica always.
 - **A deploy needs a human.** Deliberate. This application answers questions
   about people's health coverage, and there is no staging environment to catch
   a bad revision first.
@@ -104,8 +109,74 @@ checked against `^[0-9a-f]{40}$` before it reaches `ref:` or an image tag.
 - **The deployed data is a snapshot.** Ingestion runs locally, so the cloud
   database is as current as its last restore. The runbook says how to refresh
   it, and `checked_at` in `sbc_documents` says how old it is.
-- **Costs are real but small**: Container Apps scaled to zero, a free Static
-  Web App, and a Flexible Server that cannot scale to zero and is therefore
-  the monthly floor.
+- **Costs are real.** Scaled to zero the floor would be the Flexible Server,
+  which cannot scale to zero. As deployed, with one replica always running,
+  the API dominates instead — see the amendment for measured figures.
 - **Still not done:** a shared rate-limit store, a staging environment, and
   alerting. Named here rather than discovered later.
+
+## What deploying it actually changed
+
+The estate above was built on 2026-09-24. Four decisions changed, each forced
+by a subscription limit rather than chosen. They are recorded here because the
+reasoning above is still right in principle and wrong in fact.
+
+### The region was chosen for us
+
+Postgres Flexible Server is **restricted in `eastus`, `eastus2`, `westus2` and
+`southcentralus`** on this subscription — `list-skus` returns "Provisioning is
+restricted in this region." Only `centralus`, `westus3` and `northcentralus`
+were open. Everything now runs in **Central US**, except the registry in West
+US 3, where it was created before the constraint was understood. Cross-region
+pull costs one transfer per revision and is not worth moving.
+
+### The Container Apps environment is shared, not dedicated
+
+A Free Trial subscription permits **one Container Apps environment globally**,
+and another project already held it. `policypal-api` therefore runs inside
+that environment and shares its Log Analytics workspace. This is real coupling
+and the first thing to undo on a paid subscription.
+
+Worth recording how this was missed: the per-region usage API reports
+`ManagedEnvironmentCount limit=1` for every region independently, which reads
+as "one per region" and is not. Only the failed create says
+`MaxNumberOfGlobalEnvironmentsInSubExceeded`.
+
+### The database is public behind a firewall, not private
+
+The original text said `--public-access None` and claimed migrations running
+inside the environment made that sufficient. It does not: a consumption
+environment has no VNet path to a private server, and the one-off seed
+restores from a laptop. The server now has a public endpoint with two firewall
+rules — the operator's IP and Azure services. TLS is enforced by Azure either
+way. Making this genuinely private needs a VNet-integrated workload profile
+environment, which the limit above also forbids.
+
+### It does not scale to zero
+
+"Scale-to-zero suits a project with no steady traffic" was the original
+reasoning and is still sound; the deployment nonetheless runs
+`--min-replicas 1` by explicit choice, trading roughly **$70/month** for the
+absence of a cold start. At 1 vCPU / 2 GiB that is the dominant line item —
+Postgres B1ms is ~$16, the registry ~$5, Static Web Apps free. Setting
+`--min-replicas 0` is a one-word change and the right one if idle cost ever
+matters more than first-request latency.
+
+### Two smaller things worth knowing
+
+- **ACR Tasks are not permitted** on this subscription, so `az acr build`
+  fails. The image is built with `docker buildx --platform linux/amd64` —
+  necessary anyway, since an Apple Silicon Mac otherwise produces an arm64
+  image that Container Apps refuses. 270s under emulation, 639 MB compressed.
+- **Azure ships pgvector 0.8.2 against 0.8.6 locally.** Harmless today because
+  the corpus uses only the plain `vector` type, but it bounds which pgvector
+  features are safe to adopt.
+
+### What the deployment proved
+
+Measured, not assumed: `/api/counties?zip=33101` returns 200 in **0.43s**; an
+unauthenticated `/api/auth/me` returns **401**; a full RAG answer with
+citations takes **13s**, which demonstrates both models loading from the image
+under `HF_HUB_OFFLINE=1` and the BM25 index loading from Postgres. The
+migration job was run once by hand and succeeded. `data/` was checksummed
+before and after and is byte-identical — 2,247 files, 1,593 PDFs (ADR 0016).

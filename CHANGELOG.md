@@ -4,6 +4,20 @@
 
 ### Added
 
+- **PolicyPal is deployed to Azure.** The API runs on Container Apps in
+  Central US on the image digest built from `main`, backed by a PostgreSQL 16
+  Flexible Server with `pgvector`, and the browser app is on Static Web Apps.
+  Verified with real requests rather than assumed: `/api/counties?zip=33101`
+  returns 200 in 0.43s, an unauthenticated `/api/auth/me` returns 401, and a
+  question answered through the browser returns citations in 13s — which
+  proves both models loaded from the image with `HF_HUB_OFFLINE=1` and the
+  BM25 index loaded from Postgres. The migration job was run once by hand and
+  succeeded, so CD's migration step is proven before CD runs. `data/` was
+  checksummed before and after and is byte-identical: 2,247 files, 1,593 PDFs,
+  none uploaded (ADR 0016).
+- The database was seeded once from the local dump — 1,568 chunks, 35,756 SBC
+  chunks, 3,276 plans, 56,280 ZIP-county rows and the `bm25` index row — with
+  zero restore errors and every count matching the source.
 - A `Dockerfile` for the API, and a CI job that builds and scans the image
   (ADR 0022) — the first of ADR 0002's two deferred items. Multi-stage, runs
   as a non-root user, `torch` from PyTorch's CPU index on Linux so no CUDA
@@ -223,6 +237,22 @@
 
 ### Changed
 
+- `docs/runbooks/deploy.md` rewritten from what actually worked. The previous
+  version would have failed mid-deploy four times over: it set
+  `--public-access None` while step 6 restored from a laptop, created the app
+  and job from a `:bootstrap` image that nothing built, never granted the
+  managed identity `AcrPull`, and never created the Static Web App whose token
+  it then required. It now also records the Free Trial limits that shape the
+  topology — Postgres restricted in four regions, one Container Apps
+  environment per *subscription*, and ACR Tasks disabled — plus the two client
+  version traps (`pg_dump` 15 cannot dump a 16 server; an Apple Silicon build
+  is arm64 and Container Apps refuses it).
+- ADR 0023 amended with the four decisions the subscription forced: the region,
+  a shared rather than dedicated Container Apps environment, a public endpoint
+  behind a firewall instead of a private server, and one always-on replica
+  instead of scale-to-zero (~$70/month, stated plainly). Its SBC chunk count
+  is corrected from 31,359 to 35,756 — the old figure predated the ADR 0020
+  robots.txt refresh.
 - In production the logs also go to stdout as JSON, where a container platform
   collects them; a container's own filesystem is ephemeral and unread.
   Development is unchanged, so an ingestion run's log lines do not interleave
