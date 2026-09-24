@@ -24,6 +24,11 @@
   state-based exchange PUF, since the Marketplace API has none. Their SBC links
   are blank there, and Covered California's terms forbid automated access, so
   it is linked, never read.
+- Implementation plan for California plan comparison
+  (`docs/superpowers/plans/2026-09-24-ca-plan-catalog.md`). The design is
+  corrected from checks against the real 2026 file: a plan is sold only where it
+  has a filed rate, four Los Angeles ZIPs with no CMS rating area show
+  unpriced, and only in-network individual cost shares are loaded.
 - A `Dockerfile` for the API, and a CI job that builds and scans the image
   (ADR 0022) — the first of ADR 0002's two deferred items. Multi-stage, runs
   as a non-root user, `torch` from PyTorch's CPU index on Linux so no CUDA

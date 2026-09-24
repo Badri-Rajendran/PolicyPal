@@ -85,7 +85,13 @@ from the raw page.
 - Los Angeles County splits by 3-digit ZIP:
   - area 15: 906, 907, 908, 910, 911, 912, 915, 917, 918, 935
   - area 16: 900, 902, 903, 904, 905, 913, 914, 916, 923, 928, 932
-- 909 appears in neither list. A Los Angeles ZIP whose prefix is unlisted is an error, never a guess.
+- Some real Los Angeles ZIPs have a prefix in neither list. In CMS's 2026 crosswalk that is 4 of
+  508: 90134, 90140 and 90189 (prefix 901), and 93063 (930, a ZIP shared with Ventura County).
+  901 also appears in the PUF's own partial-county ZIP lists. Such a ZIP has no rating area: its
+  plans show as unpriced, never at a guessed price, and the load reports them.
+- Checked against the 2026 data: the 57 non-Los Angeles counties plus Los Angeles are exactly the
+  crosswalk's California counties. Every plan's rated areas are areas where it is sold, and no
+  plan ends up sold nowhere.
 
 **Publication lag.** CMS publishes each year's SBE PUF months into that year: 2026 on 2026-06-03,
 2025 on 2025-05-06, 2024 on 2024-05-14. During 2027 open enrollment (2026-11-01 to 2027-01-31) only
@@ -233,12 +239,14 @@ The models go in `src/models/plan.py`. `alembic check` must stay clean.
 
   - Suffix `-01` maps to `csr_variant = "Exchange variant (no CSR)"`, `network_tier = "In-Network"`,
     `family_cost = "Individual"`.
-  - The other CSR variants, tiers and family splits are stored too, labelled with the PUF's own
-    words (`CSR VARIATION TYPE`, `In-Network (Tier 2)`, `Out-of-Network`, `Family Per Person`,
-    `Family Per Group`). The search doesn't read them. The findings doc will say they are PUF
-    vocabulary, not API vocabulary.
+  - The other CSR variants (`-02` to `-06`) are stored with `CSR VARIATION TYPE` as the variant,
+    e.g. `Limited Cost Sharing Plan Variation`, the same wording the API uses. They are stored for
+    in-network tier 1, individual only.
+  - Tier 2, out-of-network and family values are **not** loaded. Nothing reads them, and the API's
+    words for them are unverified, so storing them would mean inventing labels.
 - **Money parsing** is its own `_puf_money()`: it trims, drops `$` and `,`, and returns None for
-  `""` and `Not Applicable`. For `per person | per group` it takes each part in turn.
+  `""` and `Not Applicable`. In the 2026 file, the six columns loaded hold only `$…` values or
+  `""`.
   `plans._money` expects numbers, so it can't be reused.
 - **Service areas** are joined on (`ISSUER ID`, `SERVICE AREA ID`).
   - The county FIPS is the part of `COUNTY` after ` - `.
@@ -246,17 +254,24 @@ The models go in `src/models/plan.py`. `alembic check` must stay clean.
   - Duplicate plan-county pairs are merged, and a whole-county row wins over a partial one.
   - `COVER ENTIRE STATE=true` expands to every California county in `zip_counties`.
 - **Rates** are keyed by (base plan ID, area number, age key), from `INDIVIDUAL RATE`.
+- **Where a plan is sold.** A plan is sold in a service-area county only where it has a rate for
+  that county's rating area.
+  - Western Health Advantage files one service area across areas 2 and 3, with separate plan IDs
+    per area, each rated in one area. So 40 of 1,239 pairs in the 2026 file are dropped.
+  - In Los Angeles, a plan's ZIP list keeps the ZIPs whose area it is rated in, plus ZIPs with no
+    area. It becomes NULL (the whole county) when that is every Los Angeles ZIP.
 
 **Loading (`load.py`)**
 1. Require `zip_counties` rows for the year. If there are none, write them by reusing
    `county_zips(year)` and `_write_zip_counties` (`src/ingestion/plans.py:198`). That needs the CMS
    key; without it, stop and say to run `make ingest-plans` first.
 2. **Validate before writing.** Abort with nothing written if any of these hold:
-   - a Los Angeles ZIP3 in `zip_counties` is unmapped;
-   - a California county is missing from the crosswalk;
+   - a California county other than Los Angeles is missing from the rating-area map;
+   - a service-area county is missing from `zip_counties`;
    - an issuer is unknown;
-   - any plan-county has no rate in its mapped rating area. 156 of the 190 plans are rated in
-     exactly one area, so a mistranscribed county fails here.
+   - a plan has no rates, or ends up sold in no county;
+   - a plan is rated in an area where it is not sold. A mistyped county in the map fails here.
+     156 of the 190 plans are rated in exactly one area.
 3. Upsert issuers and plans with `plans.upsert` (`src/ingestion/plans.py:141`).
 4. Replace the California plans' counties, cost shares and rates for the year, and delete
    California plans for the year that are no longer in the file. The file is authoritative.
@@ -285,7 +300,8 @@ keeps `make ingest-plans` limited to the 30 API states. Its error for `CA` names
   `Expanded Bronze` filter stays exact.
 - **Filed-rate pricing**, when the county's state is in `FILED_RATE_STATES`:
   - `_rating_area(session, year, countyfips, zip_code)` takes the ZIP3 row, otherwise the
-    whole-county row.
+    whole-county row. It returns None for a Los Angeles ZIP with an unlisted prefix, and those plans
+    are unpriced.
   - `rate_age(age) = min(max(age, 14), 64)`.
   - `find_plans` outer-joins `plan_rates` on (plan, area, age), orders by that rate when sorting by
     premium, and fills in `monthly_premium` and `premium_age`.
@@ -316,8 +332,9 @@ keeps `make ingest-plans` limited to the 30 API states. Its error for `CA` names
 
 **Profile.** `src/services/profile.py`:
 - `is_marketplace_state` becomes `plan_search_available(state)`, meaning in `CATALOG_STATES`.
-- `ProfileResponse` and `CountiesResponse` (`src/schemas/profile.py`) gain `exchange_name` and
-  `exchange_url`.
+- The API gains no fields. The frontend already has each county's and each saved plan's state, and
+  looks up the exchange in its own small map. Two maps, one per side, are pinned by a test on each
+  side, which is cheaper than threading an exchange through every payload and the stored plan cards.
 - `marketplace_state` keeps its name, for compatibility, but now means "plan comparison available".
 - No new endpoints.
 
@@ -336,9 +353,9 @@ keeps `make ingest-plans` limited to the 30 API states. Its error for `CA` names
 | --- | --- |
 | PUF not yet published (404) | Exit code 3 with a message; nothing written |
 | PUF columns renamed or missing | `read.py` raises naming the column, before any write |
-| Validation failure (unmapped ZIP3, unknown issuer, missing rate) | The transaction is not started; the previous load stays |
+| Validation failure (unmapped county, unknown issuer, plan sold nowhere or rated where not sold) | The transaction is not started; the previous load stays |
 | California ZIP, nothing loaded | `not_marketplace_state` with Covered California |
-| Rate missing for a plan, area or age at query time | Unpriced, never free, and never a guessed price |
+| Rate missing for a plan, area or age at query time, or a ZIP with no rating area | Unpriced, never free, and never a guessed price |
 | Live CMS call attempted for California | Raises before HTTP; caught as today, so the plan shows unpriced |
 
 ## Security
@@ -347,8 +364,8 @@ keeps `make ingest-plans` limited to the 30 API states. Its error for `CA` names
 - The ZIP and age are used in SQL filters, never logged. The existing log lines stay as they are.
 - The download goes over HTTPS to a fixed CMS host.
 - No PUF file is committed; `data/` stays gitignored.
-- No new endpoints. The payload of `/api/profile` and `/api/counties` grows by two public fields; its
-  authentication and rate limits are unchanged, and re-tested.
+- No new endpoints and no new fields. `marketplace_state` is now true for California. The
+  authentication and rate limits of `/api/profile` and `/api/counties` are unchanged, and re-tested.
 
 ## Testing
 
