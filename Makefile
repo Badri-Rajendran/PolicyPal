@@ -1,4 +1,4 @@
-.PHONY: ingest build-index ingest-plans ingest-sbc refresh-sbc sbc-report migrate api \
+.PHONY: ingest build-index ingest-plans ingest-ca-plans ingest-sbc refresh-sbc sbc-report migrate api \
         ui-dev ui-build ui-lint ui-preview ui-test test lint check
 
 # The plan year to work on; the commands default to the calendar year, which
@@ -20,6 +20,14 @@ build-index:
 ingest-plans:
 	@test -n "$(STATES)" || { echo "STATES is required, e.g. make ingest-plans STATES=TX,FL (or STATES=ALL)"; exit 2; }
 	uv run python -m src.ingestion.plans --states $(STATES) $(YEAR_ARG)
+
+# California's plans, from CMS's state-based exchange PUF (ADR 0024); the
+# Marketplace API has none. YEAR is required: a plan year's file appears May
+# to August of that year, and until then this exits 3. ZIP=path loads a file
+# downloaded by hand; REFRESH=1 downloads it again. e.g. make ingest-ca-plans YEAR=2026
+ingest-ca-plans:
+	@test -n "$(YEAR)" || { echo "YEAR is required, e.g. make ingest-ca-plans YEAR=2026"; exit 2; }
+	uv run python -m src.ingestion.ca_puf --year $(YEAR) $(if $(ZIP),--zip $(ZIP)) $(if $(REFRESH),--refresh)
 
 # Summary of Benefits PDFs for the catalog plans in STATES; run ingest-plans
 # first. Required for the same reason. e.g. make ingest-sbc STATES=NH,DE

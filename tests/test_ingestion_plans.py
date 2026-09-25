@@ -201,3 +201,11 @@ def test_resolve_states_rejects_what_the_api_would(raw):
     Failing here costs nothing; failing there costs a request per county."""
     with pytest.raises(ValueError):
         resolve_states(raw)
+
+
+def test_asking_the_api_loader_for_california_names_its_own_loader():
+    with pytest.raises(ValueError, match="make ingest-ca-plans"):
+        resolve_states("TX,CA")
+    with pytest.raises(ValueError) as other:
+        resolve_states("NY")
+    assert "ingest-ca-plans" not in str(other.value)

@@ -45,6 +45,18 @@
   - new `rating_areas`, `plan_rates` (ages 14 to 64, checked) and
     `catalog_loads`, with the file's label and sha256.
   API-sourced rows are unchanged.
+- `make ingest-ca-plans YEAR=` (ADR 0024): loads Covered California's plans
+  from CMS's state-based exchange PUF, because the Marketplace API has none.
+  - **2026:** 190 plans from 11 issuers and 28,101 filed rates.
+  - **Validated first:** the whole file is checked before one transaction
+    writes it, so a bad file changes nothing.
+  - **Sold only where rated:** a plan is sold only in counties where it has a
+    filed rate. Western Health Advantage files one service area over two
+    rating areas.
+  - **Hand-transcribed:** rating areas and issuer names, cross-checked against
+    the data. Four Los Angeles ZIPs that CMS gives no rating area are reported
+    and shown unpriced.
+  - **Docs:** `docs/findings/ca-sbe-puf.md` and `docs/runbooks/california.md`.
 - A `Dockerfile` for the API, and a CI job that builds and scans the image
   (ADR 0022) — the first of ADR 0002's two deferred items. Multi-stage, runs
   as a non-root user, `torch` from PyTorch's CPU index on Linux so no CUDA
