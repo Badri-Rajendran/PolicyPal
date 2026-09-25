@@ -1,0 +1,115 @@
+# Every source PolicyPal reads or links, and whether it may be used (ADR 0025).
+# `enabled = true` needs permission_status public_domain, open_license or
+# written_permission; registry.py refuses anything else when it loads.
+# Record a refused source too, disabled, so the decision is not re-litigated.
+
+[[source]]
+id = "wikipedia"
+name = "Wikipedia articles on insurance"
+publisher = "Wikimedia Foundation and Wikipedia contributors"
+scope_urls = ["https://en.wikipedia.org/wiki/"]
+kind = "corpus"
+jurisdiction = "US"
+license = "CC BY-SA 4.0"
+license_url = "https://creativecommons.org/licenses/by-sa/4.0/"
+permission_status = "open_license"
+commercial_use = "yes"
+robots = "not_applicable"
+access = "api"
+verified_on = 2026-09-24
+enabled = true
+removal = "Set enabled = false, then `make ingest` to rebuild the corpus and its BM25 index without it."
+notes = "Read through the MediaWiki API (wikipedia-api), not crawled. Commercial use is allowed with attribution and share-alike on redistributed text."
+
+[[source]]
+id = "healthcare_gov"
+name = "HealthCare.gov glossary and articles"
+publisher = "Centers for Medicare & Medicaid Services"
+scope_urls = ["https://www.healthcare.gov/api/"]
+kind = "corpus"
+jurisdiction = "US"
+license = "US government work, 17 U.S.C. § 105"
+license_url = "https://www.law.cornell.edu/uscode/text/17/105"
+permission_status = "public_domain"
+commercial_use = "yes"
+robots = "not_applicable"
+access = "api"
+verified_on = 2026-09-24
+enabled = true
+removal = "Set enabled = false, then `make ingest`."
+notes = "HealthCare.gov's content API. ADR 0003."
+
+[[source]]
+id = "cms_marketplace_api"
+name = "CMS Marketplace API"
+publisher = "Centers for Medicare & Medicaid Services"
+scope_urls = ["https://marketplace.api.healthcare.gov/api/v1/"]
+kind = "catalog"
+jurisdiction = "US"
+license = "US government work, 17 U.S.C. § 105; used under an API key"
+license_url = "https://developer.cms.gov/marketplace-api/"
+permission_status = "public_domain"
+commercial_use = "yes"
+robots = "not_applicable"
+access = "api"
+verified_on = 2026-09-24
+enabled = true
+removal = "Delete plans where catalog_source = 'cms_api', and unset CMS_MARKETPLACE_API_KEY."
+notes = "The 30 HealthCare.gov states only (MARKETPLACE_STATES). ADR 0009, 0010."
+
+[[source]]
+id = "cms_ca_sbe_puf"
+name = "CMS state-based exchange PUF, California"
+publisher = "Centers for Medicare & Medicaid Services"
+scope_urls = ["https://www.cms.gov/files/zip/californiasbpuf2026.zip"]
+kind = "catalog"
+jurisdiction = "CA"
+license = "US government work, 17 U.S.C. § 105"
+license_url = "https://www.cms.gov/marketplace/resources/data/state-based-public-use-files"
+permission_status = "public_domain"
+commercial_use = "yes"
+robots = "allowed"
+robots_checked_on = 2026-09-24
+access = "download"
+verified_on = 2026-09-24
+enabled = true
+removal = "Delete plans where catalog_source = 'ca_sbe_puf' (cascades to their counties, cost shares and rates), and the CA rows of rating_areas."
+notes = "One published zip per plan year, fetched by URL. Its SBC, brochure, formulary and network URL columns are empty. ADR 0024."
+
+[[source]]
+id = "cms_ca_rating_areas"
+name = "California geographic rating areas"
+publisher = "Centers for Medicare & Medicaid Services"
+scope_urls = ["https://www.cms.gov/cciio/programs-and-initiatives/health-insurance-market-reforms/ca-gra"]
+kind = "catalog"
+jurisdiction = "CA"
+license = "US government work, 17 U.S.C. § 105"
+license_url = "https://www.law.cornell.edu/uscode/text/17/105"
+permission_status = "public_domain"
+commercial_use = "yes"
+robots = "allowed"
+robots_checked_on = 2026-09-24
+access = "manual"
+verified_on = 2026-09-24
+enabled = true
+removal = "Remove src/ingestion/ca_puf/rating_areas.py and its uses."
+notes = "Transcribed by hand into src/ingestion/ca_puf/rating_areas.py; re-checked yearly (docs/runbooks/california.md)."
+
+[[source]]
+id = "coveredca"
+name = "Covered California website"
+publisher = "Covered California (California Health Benefit Exchange)"
+scope_urls = ["https://www.coveredca.com/", "https://apply.coveredca.com/", "https://hbex.coveredca.com/"]
+kind = "corpus"
+jurisdiction = "CA"
+license = "All rights reserved"
+license_url = "https://www.coveredca.com/pdfs/privacy/Terms_of_Use.pdf"
+permission_status = "denied"
+commercial_use = "no"
+robots = "allowed"
+robots_checked_on = 2026-09-24
+access = "link"
+verified_on = 2026-09-24
+enabled = false
+removal = "Nothing is stored; remove the links in src/core/exchanges.py and frontend/src/features/plans/exchanges.js."
+notes = "Linked, never read. Its Terms of Use forbid access 'through any automated means (including, but not limited to, use of scripts, web crawlers, or screen scrapers)' and downloading or republishing without a separate written agreement. robots.txt allows everything; the Terms govern."

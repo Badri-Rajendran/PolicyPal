@@ -61,6 +61,7 @@ def _is_stale(title: str, today: dt.date | None = None) -> bool:
 
 class HealthCareGovSource(Source):
     name = "healthcare_gov"
+    registry_id = "healthcare_gov"
 
     def fetch(self) -> None:
         print("\n=== HealthCare.gov: downloading content collections ===")

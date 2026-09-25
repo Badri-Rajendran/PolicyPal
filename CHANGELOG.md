@@ -33,6 +33,11 @@
   each state's plans (Covered California for California, HealthCare.gov for
   the 30 API states), and the plan year on sale, which is next year from
   1 November.
+- A committed source registry (`src/ingestion/sources/registry.toml`, ADR
+  0025): every source with its licence, permission status, `robots.txt` status
+  and removal steps. It is validated when loaded, only approved sources run,
+  and Covered California is recorded as link-only because its Terms of Use
+  forbid automated access.
 - A `Dockerfile` for the API, and a CI job that builds and scans the image
   (ADR 0022) — the first of ADR 0002's two deferred items. Multi-stage, runs
   as a non-root user, `torch` from PyTorch's CPU index on Linux so no CUDA
