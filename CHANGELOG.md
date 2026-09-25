@@ -38,6 +38,13 @@
   and removal steps. It is validated when loaded, only approved sources run,
   and Covered California is recorded as link-only because its Terms of Use
   forbid automated access.
+- Migration `15bb18a57fac` for a filed-rate plan catalog:
+  - `plans.catalog_source`, `cms_api` or `ca_sbe_puf`, checked, so a source can
+    be audited or removed;
+  - `plan_counties.zipcodes`, for a plan sold in only some of a county's ZIPs;
+  - new `rating_areas`, `plan_rates` (ages 14 to 64, checked) and
+    `catalog_loads`, with the file's label and sha256.
+  API-sourced rows are unchanged.
 - A `Dockerfile` for the API, and a CI job that builds and scans the image
   (ADR 0022) — the first of ADR 0002's two deferred items. Multi-stage, runs
   as a non-root user, `torch` from PyTorch's CPU index on Linux so no CUDA

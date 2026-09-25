@@ -10,11 +10,12 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -66,6 +67,7 @@ class Plan(Base):
         UniqueConstraint("hios_plan_id", "plan_year", name="uq_plans_hios_plan_id_plan_year"),
         Index("ix_plans_plan_year_state_metal_level", "plan_year", "state", "metal_level"),
         Index("ix_plans_issuer_id", "issuer_id"),
+        CheckConstraint("catalog_source IN ('cms_api', 'ca_sbe_puf')", name="ck_plans_catalog_source"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -94,6 +96,8 @@ class Plan(Base):
     brochure_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     formulary_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     network_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Which pipeline wrote the row (ADR 0024), so one source can be audited or removed.
+    catalog_source: Mapped[str] = mapped_column(String(16), nullable=False, server_default="cms_api")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -118,6 +122,9 @@ class PlanCounty(Base):
         UUID(as_uuid=True), ForeignKey("plans.id", ondelete="CASCADE"), nullable=False
     )
     countyfips: Mapped[str] = mapped_column(String(5), nullable=False)
+    # Null: sold in the whole county, as every API-sourced row is. Otherwise
+    # the only ZIPs it is sold in: a California "partial county" (ADR 0024).
+    zipcodes: Mapped[list[str] | None] = mapped_column(ARRAY(String(5)), nullable=True)
 
 
 class PlanCostShare(Base):
@@ -181,3 +188,64 @@ class ZipCounty(Base):
     countyfips: Mapped[str] = mapped_column(String(5), nullable=False)
     county_name: Mapped[str] = mapped_column(String(100), nullable=False)
     state: Mapped[str] = mapped_column(String(2), nullable=False)
+
+
+class RatingArea(Base):
+    """Which rating area a county, or one 3-digit ZIP prefix within it, prices in.
+
+    Filed-rate states only (ADR 0024). `zip3` is '' for the whole county,
+    never NULL: NULLs are distinct in a unique key, as `PlanCostShare` notes.
+    A ZIP whose prefix has no row has no rating area, and is not priced.
+    """
+
+    __tablename__ = "rating_areas"
+    __table_args__ = (
+        UniqueConstraint("plan_year", "countyfips", "zip3", name="uq_rating_areas_plan_year_countyfips_zip3"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    state: Mapped[str] = mapped_column(String(2), nullable=False)
+    plan_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    countyfips: Mapped[str] = mapped_column(String(5), nullable=False)
+    zip3: Mapped[str] = mapped_column(String(3), nullable=False, server_default="", default="")
+    rating_area: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+
+
+class PlanRate(Base):
+    """A filed monthly premium for one person: plan, rating area and age (ADR 0024).
+
+    `age` 14 stands for CMS's 0-14 band and 64 for "64 and over"; a person's
+    age is clamped into 14..64 to look one up. Deleted with its plan, like
+    `PlanCostShare`: current state from the same load as the plan.
+    """
+
+    __tablename__ = "plan_rates"
+    __table_args__ = (
+        UniqueConstraint("plan_id", "rating_area", "age", name="uq_plan_rates_plan_id_rating_area_age"),
+        CheckConstraint("age BETWEEN 14 AND 64", name="ck_plan_rates_age"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plan_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("plans.id", ondelete="CASCADE"), nullable=False
+    )
+    rating_area: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    age: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    individual_rate: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+
+
+class CatalogLoad(Base):
+    """One load of a published catalog file: what, when, and exactly which bytes."""
+
+    __tablename__ = "catalog_loads"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    state: Mapped[str] = mapped_column(String(2), nullable=False)
+    plan_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    file_url: Mapped[str] = mapped_column(Text, nullable=False)
+    # The date CMS stamps in its file names, e.g. 05052026.
+    file_label: Mapped[str] = mapped_column(String(32), nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    plans: Mapped[int] = mapped_column(Integer, nullable=False)
+    loaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
