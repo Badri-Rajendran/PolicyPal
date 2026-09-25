@@ -444,6 +444,16 @@
 
 ### Fixed
 
+- "Compare the gold plans." and "Compare silver plans for me." skipped the plan
+  search in about half of runs, in every state. The prompt left it open whether
+  comparing plans of a metal level meant real plans or the level in general,
+  and the model spent its turn deciding. The prompt now says a request to
+  compare, list or show plans means searching; only what a level means stays
+  a corpus question.
+  - **Before, on `main`'s prompt:** 2 of 4 runs searched.
+  - **After:** 35 of 35 search requests searched, and 0 of 10 concept
+    questions did.
+  - **Eval:** a new floor for concept questions that must not search.
 - A Bronze plan search now includes Expanded Bronze plans, which it silently
   missed; every California bronze plan is one.
 - Plan answers, the "no Summary of Benefits link" reason and the plan table name

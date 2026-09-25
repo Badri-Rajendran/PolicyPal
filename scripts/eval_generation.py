@@ -79,7 +79,8 @@ from src.services.sbc_status import plan_sbc_status, sbc_document_join
 MIN_CORRECT = 8
 MIN_REFUSED = 4
 MIN_FOLLOW_UPS = 3
-MIN_PLAN_SEARCHES = 6
+MIN_PLAN_SEARCHES = 9
+MIN_CONCEPTS_UNSEARCHED = 2
 # ADR 0014's sets, measured over three runs: boundary 2/2 every time.
 # Coverage was one short of full marks through Phases 2 and 3, for CHRISTUS's
 # imaging price: its row wrapped the service name around the price, and the
@@ -154,6 +155,18 @@ PLAN_SEARCH_SET = [
     # California (ADR 0024): filed rates, and Covered California named, never HealthCare.gov.
     ("What silver plans can I buy?", _CA_PROFILE),
     ("What bronze plans can I get?", _CA_PROFILE),
+    # Phrasings that skipped the search 2 times in 4 before PLAN_TOOL_PROMPT said
+    # that comparing plans of a metal level means real plans (measured 2026-09-25).
+    ("Compare silver plans for me.", _PROFILE),
+    ("Compare the gold plans.", _PROFILE),
+    ("Compare silver plans for me.", _CA_PROFILE),
+]
+
+# What a metal level means is a corpus question: searching would answer it with
+# a table of plans the user never asked about.
+CONCEPT_SET = [
+    ("What is a silver plan?", _PROFILE),
+    ("How do bronze and gold plans differ in general?", _PROFILE),
 ]
 
 
@@ -386,6 +399,25 @@ def run_plan_searches() -> int:
     return reached
 
 
+def run_concept_questions() -> int:
+    print("\n" + "=" * 78)
+    print("CONCEPTS — does a question about what a plan level means stay out of search_plans?")
+    print("=" * 78)
+
+    unsearched = 0
+    for query, profile in CONCEPT_SET:
+        result = answer_query(query, profile=profile)
+        if result.plans or result.needs_plan_inputs:
+            print(f"  [SEARCHED]   {query}")
+        else:
+            unsearched += 1
+            print(f"  [ok]         {query}")
+        print(f"               -> {result.text.strip()[:220]}")
+
+    print(f"\n  {unsearched}/{len(CONCEPT_SET)} concept questions answered without a plan search")
+    return unsearched
+
+
 def _sbc_plans(result) -> set[str]:
     """The plan names whose SBC an answer drew on."""
     return {c.source.split(_SBC)[0] for c in result.chunks if _SBC in c.source}
@@ -530,6 +562,7 @@ def main() -> int:
     refused = run_refusals()
     followed = run_follow_ups()
     searched = run_plan_searches()
+    concepts = run_concept_questions()
     covered = run_coverage()
     bounded = run_boundary()
     honest = run_missing()
@@ -554,6 +587,12 @@ def main() -> int:
         failures.append(
             f"plan searches {searched} < floor {MIN_PLAN_SEARCHES} — a plan question "
             "stopped reaching search_plans"
+        )
+
+    if concepts < MIN_CONCEPTS_UNSEARCHED:
+        failures.append(
+            f"concept questions {concepts} < floor {MIN_CONCEPTS_UNSEARCHED} — a question about what "
+            "a plan level means was answered with a plan search"
         )
 
     if covered < MIN_COVERAGE:

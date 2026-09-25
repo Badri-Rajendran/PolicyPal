@@ -672,3 +672,14 @@ def test_a_notice_never_rescues_an_empty_answer(_no_plan_catalog):
         result = answer("Silver plans?", [])
 
     assert result.text == NO_ANSWER_RESPONSE
+
+
+def test_the_prompt_says_comparing_plans_of_a_level_means_searching():
+    """Without this, "Compare the gold plans." skipped the search in about half of runs:
+    the model read it as a question about metal levels in general (measured 2026-09-25)."""
+    from src.services.generation import PLAN_TOOL_PROMPT
+
+    assert "compare the gold plans" in PLAN_TOOL_PROMPT
+    assert "call search_plans" in PLAN_TOOL_PROMPT
+    # The exception is kept, so a question about what a level means stays a corpus question.
+    assert "what is a silver plan?" in PLAN_TOOL_PROMPT
