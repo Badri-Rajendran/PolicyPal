@@ -18,6 +18,12 @@
 - The database was seeded once from the local dump — 1,568 chunks, 35,756 SBC
   chunks, 3,276 plans, 56,280 ZIP-county rows and the `bm25` index row — with
   zero restore errors and every count matching the source.
+- Design for California plan comparison and a source registry
+  (`docs/superpowers/specs/2026-09-24-ca-plan-catalog-design.md`), the first of
+  five California sub-projects. Covered California plans come from CMS's
+  state-based exchange PUF, since the Marketplace API has none. Their SBC links
+  are blank there, and Covered California's terms forbid automated access, so
+  it is linked, never read.
 - A `Dockerfile` for the API, and a CI job that builds and scans the image
   (ADR 0022) — the first of ADR 0002's two deferred items. Multi-stage, runs
   as a non-root user, `torch` from PyTorch's CPU index on Linux so no CUDA
