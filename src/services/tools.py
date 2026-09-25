@@ -13,6 +13,7 @@ from typing import Annotated, Literal, get_args
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from src.core.db import get_session
+from src.core.exchanges import exchange_for
 from src.core.logging import get_logger
 from src.core.marketplace_api import REFERENCE_AGE
 
@@ -68,8 +69,8 @@ TOOLS = [{
     "function": {
         "name": SEARCH_PLANS,
         "description": (
-            "Search real ACA Marketplace health plans sold through HealthCare.gov in the user's "
-            "county, with monthly premiums for the user's age. Call it for any question about "
+            "Search real ACA Marketplace health plans sold through HealthCare.gov, or Covered "
+            "California in California, in the user's county, with monthly premiums for the user's age. Call it for any question about "
             "specific plans, their premiums, deductibles or out-of-pocket maximums, or comparing "
             "plans. The user's saved ZIP code, age and county are filled in for you: leave zip_code "
             "and age null unless the question itself names a different one. Never guess either."
@@ -148,6 +149,9 @@ class ToolOutcome:
     chunks: tuple[RetrievedChunk, ...] = ()
     # What the user still has to supply: "zip_code", "age" or "county".
     needs_input: tuple[str, ...] = ()
+    # A sentence the answer must open with, written here rather than by the
+    # model: asked to write it, the model also said it when it was untrue.
+    notice: str | None = None
 
 
 def _outcome(status: str, **fields) -> ToolOutcome:
@@ -168,7 +172,8 @@ def _plan_row(plan: PlanResult) -> dict:
         "hsa_eligible": plan.hsa_eligible,
         "quality_rating": plan.quality_rating,
     }
-    if not plan.premium_is_live:
+    # A filed-rate state's plans have no reference premium to fall back on.
+    if not plan.premium_is_live and plan.premium_reference is not None:
         row[f"reference_premium_age_{REFERENCE_AGE}"] = plan.premium_reference
     # Named by what they cover, never a null to interpret: a plan with a
     # separate drug deductible read as "deductible: $0" looks free to use.
@@ -186,28 +191,61 @@ def _plan_row(plan: PlanResult) -> dict:
     return row
 
 
+def _exchange(state: str | None) -> dict:
+    """The exchange that sells the state's plans, or nothing when there is none to name."""
+    exchange = exchange_for(state)
+    return {"exchange": {"name": exchange.name, "url": exchange.url}} if exchange else {}
+
+
+def _freshness(result: PlanSearchResult) -> dict:
+    """How the premiums were priced and, only when it is so, that the year is no longer on sale.
+
+    `prior_year: false` is left out rather than sent: there is nothing to say.
+    When true, the answer opens with a notice written here (_prior_year_notice).
+    """
+    if result.premium_source is None:
+        return {}
+    fields = {"premium_source": result.premium_source}
+    if result.prior_year:
+        fields |= {"prior_year": True, "plan_year_on_sale": result.plan_year_on_sale}
+    return fields
+
+
+def _prior_year_notice(result: PlanSearchResult) -> str | None:
+    """That these plans are from a year no longer on sale, and where next year's are (ADR 0024)."""
+    exchange = exchange_for(result.county.state if result.county else None)
+    if not result.prior_year or exchange is None:
+        return None
+    return (f"These are {result.plan_year} plans and prices; {result.plan_year_on_sale} plans aren't "
+            f"available here yet, so check {exchange.name} ({exchange.url}) for them.")
+
+
 def _render(result: PlanSearchResult) -> ToolOutcome:
     if result.status == "not_marketplace_state":
-        return _outcome(result.status, state=result.state)
+        return _outcome(result.status, state=result.state, **_exchange(result.state))
     if result.status == "ambiguous_county":
         counties = [{"county_fips": c.fips, "county": c.name, "state": c.state} for c in result.counties]
         outcome = _outcome(result.status, counties=counties)
         return ToolOutcome(outcome.content, needs_input=("county",))
     if result.status != "ok":
         county = f"{result.county.name}, {result.county.state}" if result.county else None
-        return _outcome(result.status, county=county, plan_year=result.plan_year,
-                        catastrophic_plans_excluded=result.catastrophic_excluded)
+        outcome = _outcome(result.status, county=county, plan_year=result.plan_year,
+                           catastrophic_plans_excluded=result.catastrophic_excluded,
+                           **_exchange(result.county.state if result.county else None), **_freshness(result))
+        return ToolOutcome(outcome.content, notice=_prior_year_notice(result))
 
     payload = {
         "status": "ok",
         "plan_year": result.plan_year,
         "county": f"{result.county.name}, {result.county.state}",
+        **_exchange(result.county.state),
+        **_freshness(result),
         "total_matching": result.total_matching,
         "showing": len(result.plans),
         "catastrophic_plans_excluded": result.catastrophic_excluded,
         "plans": [_plan_row(p) for p in result.plans],
     }
-    return ToolOutcome(json.dumps(payload, default=str), plans=result.plans)
+    return ToolOutcome(json.dumps(payload, default=str), plans=result.plans, notice=_prior_year_notice(result))
 
 
 def _coverage_row(coverage: PlanCoverage) -> dict:

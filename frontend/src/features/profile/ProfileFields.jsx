@@ -1,5 +1,6 @@
 import TextField from "../../components/TextField";
 import { todayIso } from "../../utils/age";
+import { exchangeFor } from "../plans/exchanges";
 
 export default function ProfileFields({ fields, errors }) {
   const { values, lookup, setZipCode, setField } = fields;
@@ -50,6 +51,12 @@ export default function ProfileFields({ fields, errors }) {
             </p>
           )}
         </div>
+      )}
+      {lookup.status === "ready" && lookup.marketplaceState && exchangeFor(onlyCounty?.state).filedRates && (
+        <p className="field-note">
+          Plans in {onlyCounty.state} are sold on {exchangeFor(onlyCounty.state).name}. PolicyPal compares them from
+          CMS's published plan data.
+        </p>
       )}
       {lookup.status === "ready" && !lookup.marketplaceState && (
         <p className="field-note">

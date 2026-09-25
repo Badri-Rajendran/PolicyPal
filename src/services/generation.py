@@ -44,7 +44,7 @@ SYSTEM_PROMPT = (
 # instructions.
 PLAN_TOOL_PROMPT = (
     " You can also call search_plans, which returns real ACA Marketplace health "
-    "plans from HealthCare.gov, and plan_coverage, which returns passages from "
+    "plans from CMS data for each state's exchange, and plan_coverage, which returns passages from "
     "a plan's Summary of Benefits and Coverage. Besides <retrieved_context>, "
     "search_plans and plan_coverage results from this turn are the only "
     "permitted sources of facts, and the only sources for facts about specific "
@@ -57,10 +57,18 @@ PLAN_TOOL_PROMPT = (
     "before searching. Say \"for your age\" for a saved age, which you never "
     "see; name an age only when the question itself named it. "
     "monthly_premium is the monthly premium for the searched age before any tax "
-    "credit; say that a tax credit may lower it and that HealthCare.gov gives "
-    "the price they would pay. Where monthly_premium is null, say the live "
-    "price was unavailable and present reference_premium_age_27 only as the "
-    "premium for a 27-year-old. A plan with medical_deductible and "
+    "credit; say that a tax credit may lower it and that the exchange named in "
+    "the result gives the price they would pay. Only in a result whose "
+    "premium_source is cms_filed_rates, say instead that the premiums are CMS's "
+    "published rates for that plan year and age, before any federal tax credit "
+    "or state premium help, and that the exchange named in the result has "
+    "today's prices; with premium_source cms_live, never call premiums published "
+    "or filed rates. A result with prior_year true is from a plan year no "
+    "longer on sale; the user is already told so above your answer, so never "
+    "say yourself whether any plan year is or isn't available. Where "
+    "monthly_premium is null, "
+    "say the price was unavailable, and present reference_premium_age_27, when "
+    "given, only as the premium for a 27-year-old. A plan with medical_deductible and "
     "drug_deductible instead of deductible has two separate deductibles: state "
     "both, never the medical one alone as the plan's deductible. If "
     "catastrophic_plans_excluded is true, say catastrophic plans were left out "
@@ -74,7 +82,8 @@ PLAN_TOOL_PROMPT = (
     "ambiguous_county — list the counties and ask which one the user lives in, "
     "then search again with its county_fips; zip_not_found — ask the user to "
     "check the ZIP code; not_marketplace_state — that state runs its own "
-    "exchange, so its plans are not in this data, point to HealthCare.gov; "
+    "exchange, so its plans are not in this data: point to the exchange named "
+    "in the result, or to the state's own exchange if none is named; "
     "county_not_loaded — plan data for that county is not loaded yet; no_match "
     "— nothing matched, a filter could be loosened; invalid_arguments — correct "
     "the arguments and call again; error — plan search is unavailable right now."
@@ -128,7 +137,7 @@ COVERAGE_PROMPT = (
     "read beside those that could, and name any plan asked about that you "
     "didn't read. By plan status: not_found — no such plan, ask which plan "
     "they mean; no_document — give the reason, and its sbc_url if there is "
-    "one, otherwise point to HealthCare.gov; unavailable — give the reason and "
+    "one, otherwise point to the exchange for the plan's state; unavailable — give the reason and "
     "its sbc_url so they can read it there."
 )
 
@@ -401,6 +410,7 @@ def answer(query: str, chunks: list[RetrievedChunk],
     plan_years = {p.plan_id: p.plan_year for p in shown_plans}
     passages: list[RetrievedChunk] = []
     needs: tuple[str, ...] = ()
+    notices: list[str] = []
     searched = coverage_read = False
 
     for round_ in range(_MAX_TOOL_ROUNDS + 1):
@@ -421,6 +431,8 @@ def answer(query: str, chunks: list[RetrievedChunk],
                 plans.setdefault(plan.hios_plan_id, plan)
                 plan_years[plan.hios_plan_id] = plan.plan_year
             passages += outcome.chunks
+            if outcome.notice and outcome.notice not in notices:
+                notices.append(outcome.notice)
             # Plan and issuer names come from CMS: data, and delimited as such.
             messages.append({"role": "tool", "tool_call_id": call.id,
                              "content": _neutralize_delimiters(outcome.content)})
@@ -451,6 +463,8 @@ def answer(query: str, chunks: list[RetrievedChunk],
     if coverage_read:
         cited = cited_labels(answer_text)
         chunks = [c for c in chunks if c.source in cited]
+    # Server-written, so it is said exactly when it is true (ADR 0024).
+    answer_text = "\n\n".join([*notices, answer_text])
     return Answer(answer_text, _distinct(chunks + passages), tuple(plans.values()), needs)
 
 

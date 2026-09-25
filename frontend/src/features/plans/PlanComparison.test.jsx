@@ -36,7 +36,7 @@ describe("PlanComparison", () => {
   it("is a captioned table in a scrollable region a keyboard can reach", () => {
     render(<PlanComparison plans={[plan()]} shownAt={SHOWN_AT} />);
 
-    const table = screen.getByRole("table", { name: "Silver plans · Anderson County, TX · shown Sep 18, 2026" });
+    const table = screen.getByRole("table", { name: "2026 Silver plans · Anderson County, TX · shown Sep 18, 2026" });
     expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
       "Plan", "Premium", "Deductible", "Out-of-pocket max", "Quality rating",
     ]);
@@ -171,6 +171,92 @@ describe("PlanComparison", () => {
   it("leaves the county out of the caption when plans come from several", () => {
     render(<PlanComparison plans={[plan(), plan({ hios_plan_id: "x2", county_name: "Tulsa", state: "OK", metal_level: "Gold" })]} shownAt={SHOWN_AT} />);
 
-    expect(screen.getByRole("table", { name: "Plans · shown Sep 18, 2026" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "2026 plans · shown Sep 18, 2026" })).toBeInTheDocument();
+  });
+
+  it("leaves the plan year out when the plans' years differ", () => {
+    render(
+      <PlanComparison plans={[plan(), plan({ hios_plan_id: "x2", plan_year: 2027 })]} shownAt={SHOWN_AT} />,
+    );
+
+    expect(screen.getByRole("table", { name: "Silver plans · Anderson County, TX · shown Sep 18, 2026" })).toBeInTheDocument();
+  });
+
+  it("names Covered California and CMS's filed rates for California plans", () => {
+    render(
+      <PlanComparison
+        plans={[plan({ state: "CA", county_name: "Los Angeles", quality_rating: null, premium_reference: null })]}
+        shownAt={SHOWN_AT}
+      />,
+    );
+
+    expect(screen.getByRole("table", { name: /^2026 Silver plans · Los Angeles County, CA/ })).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /Covered California/ });
+    expect(link).toHaveAttribute("href", "https://www.coveredca.com/");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(screen.getByText(/CMS's published 2026 rates for the age shown/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /HealthCare\.gov/ })).not.toBeInTheDocument();
+    expect(rowFor("CHRISTUS Value Silver 70")).toHaveTextContent("Not available");
+    expect(rowFor("CHRISTUS Value Silver 70")).not.toHaveTextContent("Not rated");
+  });
+
+  it("keeps 'Not rated' and the tax-credit wording for other states", () => {
+    render(<PlanComparison plans={[plan({ quality_rating: null })]} shownAt={SHOWN_AT} />);
+
+    expect(rowFor("CHRISTUS Value Silver 70")).toHaveTextContent("Not rated");
+    expect(screen.getByText(/before any tax credit, which may lower what you pay/)).toBeInTheDocument();
+  });
+
+  it("says a California plan with no filed rate for the ZIP is unpriced, not that a live price failed", () => {
+    render(
+      <PlanComparison
+        plans={[plan({ state: "CA", monthly_premium: null, premium_age: null, premium_reference: null })]}
+        shownAt={SHOWN_AT}
+      />,
+    );
+
+    expect(rowFor("CHRISTUS Value Silver 70")).toHaveTextContent("No filed rate for this ZIP code");
+    expect(screen.queryByText("Live price unavailable")).not.toBeInTheDocument();
+  });
+
+  it("describes each exchange's premiums when one answer mixes California and HealthCare.gov plans", () => {
+    render(
+      <PlanComparison
+        plans={[
+          plan({ hios_plan_id: "ca1", name: "Kaiser Silver 70", state: "CA", county_name: "Los Angeles" }),
+          plan({ hios_plan_id: "az1", name: "Arizona Silver", state: "AZ", county_name: "Maricopa" }),
+        ]}
+        shownAt={SHOWN_AT}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        /Premiums for plans sold on Covered California are CMS's published 2026 rates .*; the others are before any tax credit/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Covered California/ })).toHaveAttribute("href", "https://www.coveredca.com/");
+    expect(screen.getByRole("link", { name: /HealthCare\.gov/ })).toHaveAttribute(
+      "href",
+      "https://www.healthcare.gov/see-plans/",
+    );
+    expect(rowFor("Kaiser Silver 70")).toHaveTextContent("3 of 5");
+  });
+
+  it("does not depend on which state's plan comes first", () => {
+    render(
+      <PlanComparison
+        plans={[
+          plan({ hios_plan_id: "az1", name: "Arizona Silver", state: "AZ", county_name: "Maricopa" }),
+          plan({ hios_plan_id: "ca1", name: "Kaiser Silver 70", state: "CA", county_name: "Los Angeles" }),
+        ]}
+        shownAt={SHOWN_AT}
+      />,
+    );
+
+    expect(screen.getByText(/plans sold on Covered California are CMS's published 2026 rates/)).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /opens in a new tab/ }).map((a) => a.textContent)).toEqual(
+      expect.arrayContaining(["HealthCare.gov (opens in a new tab)", "Covered California (opens in a new tab)"]),
+    );
   });
 });

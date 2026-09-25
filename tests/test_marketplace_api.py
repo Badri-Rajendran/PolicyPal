@@ -140,3 +140,12 @@ def test_a_missing_key_fails_before_any_request(key):
         marketplace_api.county_plans("TX", "48113", "75001", 2026)
 
     request.assert_not_called()
+
+
+def test_a_state_the_api_does_not_serve_is_refused_before_any_request():
+    """California is priced from filed rates (ADR 0024); asking CMS would spend a request on nothing."""
+    with patch.object(core, "request") as request, pytest.raises(ValueError, match="CA is not served"):
+        core.age_rated_premiums(["40513CA0010001"], age=40, state="CA", countyfips="06037", zipcode="90012",
+                                year=2026)
+
+    request.assert_not_called()

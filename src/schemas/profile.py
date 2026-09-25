@@ -22,7 +22,8 @@ class ProfileResponse(BaseModel):
     county_fips: str | None
     county_name: str | None
     state: str | None
-    # False for a state running its own exchange: plan search has no plans there.
+    # Whether plan comparison is available: a HealthCare.gov state or a filed-rate one
+    # (California). The name predates California and is kept for the frontend.
     marketplace_state: bool
 
 

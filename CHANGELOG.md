@@ -57,6 +57,21 @@
     the data. Four Los Angeles ZIPs that CMS gives no rating area are reported
     and shown unpriced.
   - **Docs:** `docs/findings/ca-sbe-puf.md` and `docs/runbooks/california.md`.
+- California plan comparison:
+  - **Pricing:** plan search prices California plans from CMS's filed rates for
+    the ZIP's rating area and the person's age, in SQL, and never calls CMS for
+    them.
+  - **Partial counties:** a plan sold in part of a county is listed only for its
+    ZIPs.
+  - **Wording:** answers say premiums are CMS's published rates before any tax
+    credit or state help, and name Covered California.
+  - **Out-of-date year:** when the plan year is no longer on sale, the answer
+    opens with a server-written notice saying so. It is not model-written,
+    because asked to write it, the model also wrote it where it was untrue.
+  - **Profile:** says plan comparison is available in California only once its
+    plans are loaded.
+  - **Plan table:** shows the plan year and describes each exchange's premiums
+    when one answer mixes states.
 - A `Dockerfile` for the API, and a CI job that builds and scans the image
   (ADR 0022) — the first of ADR 0002's two deferred items. Multi-stage, runs
   as a non-root user, `torch` from PyTorch's CPU index on Linux so no CUDA
@@ -429,6 +444,11 @@
 
 ### Fixed
 
+- A Bronze plan search now includes Expanded Bronze plans, which it silently
+  missed; every California bronze plan is one.
+- Plan answers, the "no Summary of Benefits link" reason and the plan table name
+  the exchange that sells the state's plans. They used to send everyone to
+  HealthCare.gov, which is wrong for the 21 states and DC that run their own.
 - The API never configured logging. Every command-line entry point calls
   `setup_logging()`; `create_app()` did not, so in the Flask process the root
   logger kept Python's default of WARNING with no handler: nothing the request
