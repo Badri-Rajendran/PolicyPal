@@ -29,6 +29,10 @@
   corrected from checks against the real 2026 file: a plan is sold only where it
   has a filed rate, four Los Angeles ZIPs with no CMS rating area show
   unpriced, and only in-network individual cost shares are loaded.
+- `src/core/exchanges.py` and `src/core/plan_year.py`: which exchange sells
+  each state's plans (Covered California for California, HealthCare.gov for
+  the 30 API states), and the plan year on sale, which is next year from
+  1 November.
 - A `Dockerfile` for the API, and a CI job that builds and scans the image
   (ADR 0022) — the first of ADR 0002's two deferred items. Multi-stage, runs
   as a non-root user, `torch` from PyTorch's CPU index on Linux so no CUDA
