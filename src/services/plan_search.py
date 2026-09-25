@@ -5,25 +5,40 @@ ingested tables. The premium comes live from CMS for the user's age: age
 factors differ between issuers, so an age-27 order does not hold at other
 ages (docs/findings/cms-marketplace-api.md, third pass).
 
+In a filed-rate state (California) the premium is instead the filed rate for
+the plan, rating area and age, read here in SQL; CMS is never called for it
+(ADR 0024).
+
 ZIP and age are personal data. Nothing here logs either.
 """
 from dataclasses import dataclass, replace
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Literal
 
 import requests
-from sqlalchemy import and_, exists, func, select
+from sqlalchemy import and_, exists, func, null, or_, select, true
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.core.db import get_session
 from src.core.exceptions import MarketplaceApiKeyMissingError
+from src.core.exchanges import FILED_RATE_STATES
 from src.core.logging import get_logger
 from src.core.marketplace_api import (
     MARKETPLACE_STATES,
     MAX_PREMIUM_BATCH,
     age_rated_premiums,
 )
-from src.models.plan import Issuer, Plan, PlanCostShare, PlanCounty, ZipCounty
+from src.core.plan_year import plan_year_on_sale
+from src.models.plan import (
+    Issuer,
+    Plan,
+    PlanCostShare,
+    PlanCounty,
+    PlanRate,
+    RatingArea,
+    ZipCounty,
+)
 from src.models.sbc import SbcDocument
 
 from .sbc_status import plan_sbc_status, sbc_document_join
@@ -47,6 +62,22 @@ SHOWN_PLANS = 10
 # from anyone older unless asked; so does this.
 _CATASTROPHIC = "Catastrophic"
 _CATASTROPHIC_MAX_AGE = 29
+
+# CMS sells "Expanded Bronze" (a bronze plan above the usual value range) as
+# bronze; every California bronze plan is one. Asked for bronze, show both.
+_BRONZE_LEVELS = ("Bronze", "Expanded Bronze")
+
+# The filed rate tables' age bands: 0-14 are one rate, as are 64 and over.
+_YOUNGEST_RATE_AGE = 14
+_OLDEST_RATE_AGE = 64
+
+
+def rate_age(age: int) -> int:
+    return min(max(age, _YOUNGEST_RATE_AGE), _OLDEST_RATE_AGE)
+
+
+def _today() -> date:
+    return datetime.now(UTC).date()
 
 SortBy = Literal["premium", "deductible"]
 
@@ -111,6 +142,11 @@ class PlanSearchResult:
     counties: tuple[CountyOption, ...] = ()
     state: str | None = None
     catastrophic_excluded: bool = False
+    # cms_live: priced now by the API; cms_filed_rates: CMS's published rates (ADR 0024).
+    premium_source: Literal["cms_live", "cms_filed_rates"] | None = None
+    plan_year_on_sale: int | None = None
+    # A filed-rate state's plans are from a year no longer on sale (the PUF lags).
+    prior_year: bool = False
 
 
 def plan_catalog_available() -> bool:
@@ -185,20 +221,29 @@ def _cost_shares():
     )
 
 
-def find_plans(session, *, countyfips: str, year: int, filters: PlanFilters, limit: int) -> tuple[list[PlanResult], int]:
-    """Plans sold in the county that pass the filters, and how many there are in all.
+def find_plans(session, *, countyfips: str, year: int, filters: PlanFilters, limit: int,
+               zip_code: str | None = None,
+               filed_rate: tuple[int | None, int] | None = None) -> tuple[list[PlanResult], int]:
+    """Plans sold in the county, and ZIP, that pass the filters, and how many there are in all.
 
-    Ordered by the stored age-27 premium or by deductible. The caller re-sorts
-    on live premiums; this order only decides which plans are candidates.
+    `filed_rate` is `(rating area, age)` in a filed-rate state: the premium is
+    then that rate, and plans are ordered by it; a None area (a ZIP CMS gives
+    no rating area) leaves every plan unpriced. Otherwise plans are ordered by
+    the stored age-27 premium or by deductible, and the caller re-sorts on
+    live premiums; this order only decides which plans are candidates.
     """
     shares = _cost_shares()
     deductible = func.coalesce(shares.c.combined, shares.c.medical)
+    # A plan sold in only some of a county's ZIPs lists them (ADR 0024).
+    in_zip = or_(PlanCounty.zipcodes.is_(None), PlanCounty.zipcodes.any(zip_code)) if zip_code else true()
 
     conditions = [
         Plan.plan_year == year,
-        Plan.id.in_(select(PlanCounty.plan_id).where(PlanCounty.countyfips == countyfips)),
+        Plan.id.in_(select(PlanCounty.plan_id).where(PlanCounty.countyfips == countyfips, in_zip)),
     ]
-    if filters.metal_level:
+    if filters.metal_level == "Bronze":
+        conditions.append(Plan.metal_level.in_(_BRONZE_LEVELS))
+    elif filters.metal_level:
         conditions.append(Plan.metal_level == filters.metal_level)
     if filters.plan_type:
         conditions.append(Plan.plan_type == filters.plan_type)
@@ -207,21 +252,37 @@ def find_plans(session, *, countyfips: str, year: int, filters: PlanFilters, lim
     if filters.max_deductible is not None:
         conditions.append(deductible <= filters.max_deductible)
 
+    # A filed rate is the premium; with no rating area for the ZIP, there is none.
+    rates = None
+    premium = null()
+    if filed_rate and filed_rate[0] is not None:
+        area, age = filed_rate
+        rates = (select(PlanRate.plan_id, PlanRate.individual_rate)
+                 .where(PlanRate.rating_area == area, PlanRate.age == age).subquery())
+        premium = rates.c.individual_rate
+
     base = (
         select(Plan, Issuer.name.label("issuer_name"), deductible.label("deductible"),
-               shares.c.drug, shares.c.moop, plan_sbc_status().label("sbc_status"))
+               premium.label("filed_premium"), shares.c.drug, shares.c.moop,
+               plan_sbc_status().label("sbc_status"))
         .join(Issuer, Issuer.id == Plan.issuer_id)
         .outerjoin(shares, shares.c.plan_id == Plan.id)
         # One row at most: a document is unique by link and year.
         .outerjoin(SbcDocument, sbc_document_join())
         .where(*conditions)
     )
+    if rates is not None:
+        # One row at most: a rate is unique by plan, area and age.
+        base = base.outerjoin(rates, rates.c.plan_id == Plan.id)
     total = session.scalar(select(func.count()).select_from(base.subquery()))
 
+    # Postgres refuses ORDER BY on a bare NULL, so an unpriced search orders by
+    # the stored reference premium instead (NULL for every filed-rate plan).
+    by_premium = premium.asc().nulls_last() if rates is not None else Plan.premium_reference.asc().nulls_last()
     if filters.sort_by == "deductible":
-        order = (deductible.asc().nulls_last(), Plan.premium_reference.asc().nulls_last())
+        order = (deductible.asc().nulls_last(), by_premium)
     else:
-        order = (Plan.premium_reference.asc().nulls_last(),)
+        order = (by_premium,)
     rows = session.execute(base.order_by(*order, Plan.hios_plan_id).limit(limit)).all()
 
     return [
@@ -232,7 +293,7 @@ def find_plans(session, *, countyfips: str, year: int, filters: PlanFilters, lim
             issuer=issuer_name,
             metal_level=plan.metal_level,
             plan_type=plan.plan_type,
-            monthly_premium=None,
+            monthly_premium=filed,
             premium_reference=plan.premium_reference,
             deductible=ded,
             drug_deductible=drug,
@@ -243,7 +304,7 @@ def find_plans(session, *, countyfips: str, year: int, filters: PlanFilters, lim
             state=plan.state,
             sbc_status=sbc_status,
         )
-        for plan, issuer_name, ded, drug, moop, sbc_status in rows
+        for plan, issuer_name, ded, filed, drug, moop, sbc_status in rows
     ], total
 
 
@@ -265,15 +326,22 @@ def _price(plans: list[PlanResult], *, age: int, county: CountyOption, zip_code:
     ]
 
 
-def search_plans(session, *, zip_code: str, age: int, county_fips: str | None = None,
-                 filters: PlanFilters | None = None) -> PlanSearchResult:
-    filters = filters or PlanFilters()
+def filed_rate_loaded(session, state: str, year: int | None = None) -> bool:
+    """Whether a filed-rate state has plans loaded: for the year, or in any year."""
+    conditions = [Plan.state == state] + ([Plan.plan_year == year] if year is not None else [])
+    return bool(session.scalar(select(exists().where(*conditions))))
+
+
+def resolve_place(session, zip_code: str, county_fips: str | None) -> tuple[int, CountyOption] | PlanSearchResult:
+    """The plan year and county a search runs in, or the result that ends it there."""
     year, counties = _counties_for_zip(session, zip_code)
     if not counties:
         return PlanSearchResult("zip_not_found")
 
-    # 126 ZIPs cross a state line, so a ZIP can be partly in a marketplace state.
-    served = [c for c in counties if c.state in MARKETPLACE_STATES]
+    # 126 ZIPs cross a state line, so a ZIP can be partly in a served state.
+    # A filed-rate state is served only once its plans are loaded.
+    served = [c for c in counties if c.state in MARKETPLACE_STATES
+              or (c.state in FILED_RATE_STATES and filed_rate_loaded(session, c.state, year))]
     if not served:
         return PlanSearchResult("not_marketplace_state", state=counties[0].state)
 
@@ -291,24 +359,58 @@ def search_plans(session, *, zip_code: str, age: int, county_fips: str | None = 
     )
     if not loaded:
         return PlanSearchResult("county_not_loaded", county=chosen, plan_year=year)
+    return year, chosen
+
+
+def _rating_area(session, year: int, countyfips: str, zip_code: str) -> int | None:
+    """The ZIP prefix's area, else the whole county's; None where CMS lists neither."""
+    return session.scalar(
+        select(RatingArea.rating_area)
+        .where(RatingArea.plan_year == year, RatingArea.countyfips == countyfips,
+               RatingArea.zip3.in_((zip_code[:3], "")))
+        # A prefix row ("900") sorts after the whole-county row (""): it wins.
+        .order_by(RatingArea.zip3.desc())
+        .limit(1)
+    )
+
+
+def search_plans(session, *, zip_code: str, age: int, county_fips: str | None = None,
+                 filters: PlanFilters | None = None) -> PlanSearchResult:
+    filters = filters or PlanFilters()
+    place = resolve_place(session, zip_code, county_fips)
+    if isinstance(place, PlanSearchResult):
+        return place
+    year, chosen = place
 
     excluded = filters.metal_level is None and age > _CATASTROPHIC_MAX_AGE
     if excluded:
         filters = replace(filters, include_catastrophic=False)
 
-    candidates, total = find_plans(session, countyfips=chosen.fips, year=year, filters=filters,
-                                   limit=MAX_PREMIUM_BATCH)
-    if not candidates:
-        return PlanSearchResult("no_match", county=chosen, plan_year=year, catastrophic_excluded=excluded)
+    filed = chosen.state in FILED_RATE_STATES
+    on_sale = plan_year_on_sale(_today())
+    freshness = {"premium_source": "cms_filed_rates" if filed else "cms_live", "plan_year_on_sale": on_sale,
+                 "prior_year": filed and year < on_sale}
+    filed_rate = (_rating_area(session, year, chosen.fips, zip_code), rate_age(age)) if filed else None
 
-    priced = _price(candidates, age=age, county=chosen, zip_code=zip_code, year=year)
-    if filters.sort_by == "premium":
-        # Live-priced plans by their real premium; any CMS did not price keep
-        # their catalog order after them. sorted() is stable.
-        priced = sorted(priced, key=lambda p: (not p.premium_is_live, p.monthly_premium or 0))
+    candidates, total = find_plans(session, countyfips=chosen.fips, year=year, filters=filters,
+                                   limit=MAX_PREMIUM_BATCH, zip_code=zip_code, filed_rate=filed_rate)
+    if not candidates:
+        return PlanSearchResult("no_match", county=chosen, plan_year=year, catastrophic_excluded=excluded,
+                                **freshness)
+
+    if filed:
+        # Priced and ordered in SQL already; say whose premium and where, as _price does.
+        priced = [replace(p, county_name=chosen.name,
+                          premium_age=age if p.monthly_premium is not None else None) for p in candidates]
+    else:
+        priced = _price(candidates, age=age, county=chosen, zip_code=zip_code, year=year)
+        if filters.sort_by == "premium":
+            # Live-priced plans by their real premium; any CMS did not price keep
+            # their catalog order after them. sorted() is stable.
+            priced = sorted(priced, key=lambda p: (not p.premium_is_live, p.monthly_premium or 0))
 
     shown = tuple(priced[:SHOWN_PLANS])
-    logger.info("plan search: %d of %d plans shown, %d live-priced",
-                len(shown), total, sum(p.premium_is_live for p in shown))
+    logger.info("plan search: %d of %d plans shown, %d priced (%s)",
+                len(shown), total, sum(p.premium_is_live for p in shown), freshness["premium_source"])
     return PlanSearchResult("ok", plans=shown, total_matching=total, plan_year=year, county=chosen,
-                            catastrophic_excluded=excluded)
+                            catastrophic_excluded=excluded, **freshness)

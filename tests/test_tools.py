@@ -6,6 +6,7 @@ because the rejected value may be the user's ZIP code.
 """
 import json
 import logging
+from dataclasses import replace
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -133,7 +134,7 @@ def test_a_search_result_says_whether_each_plans_sbc_can_be_read_and_why_not():
     assert "sbc_missing_reason" not in readable
     assert (challenged["sbc_readable"], challenged["sbc_missing_reason"]) == (
         False, "the insurer's link returned a web page, not the document")
-    assert unlisted["sbc_missing_reason"] == "HealthCare.gov lists no Summary of Benefits and Coverage for this plan"
+    assert unlisted["sbc_missing_reason"] == "no Summary of Benefits and Coverage link is listed for this plan"
 
 
 # The saved profile (ADR 0012)
@@ -230,3 +231,109 @@ def test_coverage_returns_each_plans_passages_as_data_and_as_citations():
                        "reason": "the insurer's website doesn't allow automated downloads"}
     assert rows[2] == {"plan_id": "12345NH0010003", "status": "not_found"}
     assert outcome.chunks == (passage,)
+
+
+def _search_payload(result, zip_code="90012"):
+    with patch("src.services.tools.search_plans", return_value=result), patch("src.services.tools.get_session"):
+        return json.loads(run_tool("search_plans", _args(zip_code=zip_code, age=40)).content)
+
+
+@pytest.mark.parametrize("state, exchange", [
+    ("CA", {"name": "Covered California", "url": "https://www.coveredca.com/"}),
+    ("NY", None),
+])
+def test_a_state_running_its_own_exchange_is_named_with_that_exchange(state, exchange):
+    payload = _search_payload(PlanSearchResult("not_marketplace_state", state=state))
+
+    assert payload["state"] == state
+    assert payload.get("exchange") == exchange
+
+
+def test_a_plan_list_names_the_exchange_that_sells_those_plans():
+    result = PlanSearchResult(
+        "ok", total_matching=1, plan_year=2026, county=CountyOption("48001", "Anderson", "TX"),
+        plans=(_result_plan("11111TX0010001", live=True),), premium_source="cms_live", plan_year_on_sale=2026,
+    )
+
+    payload = _search_payload(result, zip_code="75801")
+
+    assert payload["exchange"] == {"name": "HealthCare.gov", "url": "https://www.healthcare.gov/"}
+    assert payload["premium_source"] == "cms_live"
+    # A live price has no plan year to go stale.
+    assert "prior_year" not in payload and "plan_year_on_sale" not in payload
+
+
+def test_a_filed_rate_result_says_so_and_flags_a_year_no_longer_on_sale():
+    result = PlanSearchResult(
+        "ok", total_matching=1, plan_year=2026, county=CountyOption("06037", "Los Angeles", "CA"),
+        plans=(replace(_result_plan("40513CA0010001", live=True), premium_reference=None),),
+        premium_source="cms_filed_rates", plan_year_on_sale=2027, prior_year=True,
+    )
+
+    payload = _search_payload(result)
+
+    assert (payload["premium_source"], payload["prior_year"], payload["plan_year_on_sale"]) == (
+        "cms_filed_rates", True, 2027)
+    assert payload["exchange"]["name"] == "Covered California"
+    assert payload["plans"][0]["monthly_premium"] == "620.26"
+    assert "90012" not in json.dumps(payload)
+
+
+def test_an_unpriced_california_plan_has_no_age_27_premium_to_fall_back_on():
+    result = PlanSearchResult(
+        "ok", total_matching=1, plan_year=2026, county=CountyOption("06037", "Los Angeles", "CA"),
+        plans=(replace(_result_plan("40513CA0010001", live=False), premium_reference=None),),
+        premium_source="cms_filed_rates", plan_year_on_sale=2026,
+    )
+
+    payload = _search_payload(result)
+    (row,) = payload["plans"]
+
+    assert row["monthly_premium"] is None
+    assert "reference_premium_age_27" not in row
+    # A year still on sale sends no prior_year at all: nothing to misread.
+    assert payload["premium_source"] == "cms_filed_rates"
+    assert "prior_year" not in payload and "plan_year_on_sale" not in payload
+
+
+def test_nothing_matching_in_california_still_names_the_exchange_and_the_year():
+    result = PlanSearchResult("no_match", plan_year=2026, county=CountyOption("06037", "Los Angeles", "CA"),
+                              premium_source="cms_filed_rates", plan_year_on_sale=2027, prior_year=True)
+
+    payload = _search_payload(result)
+
+    assert (payload["status"], payload["exchange"]["name"], payload["prior_year"]) == (
+        "no_match", "Covered California", True)
+
+
+def test_the_tool_description_offers_california_plans_too():
+    from src.services.tools import TOOLS
+
+    description = TOOLS[0]["function"]["description"]
+    assert "Covered California" in description and "HealthCare.gov" in description
+
+
+def test_a_prior_year_result_carries_the_notice_the_answer_opens_with():
+    county = CountyOption("06037", "Los Angeles", "CA")
+    prior = PlanSearchResult("ok", total_matching=1, plan_year=2026, county=county,
+                             plans=(_result_plan("40513CA0010001", live=True),),
+                             premium_source="cms_filed_rates", plan_year_on_sale=2027, prior_year=True)
+    current = replace(prior, prior_year=False, plan_year_on_sale=2026)
+
+    with patch("src.services.tools.search_plans", side_effect=[prior, current]), \
+         patch("src.services.tools.get_session"):
+        first = run_tool("search_plans", _args(zip_code="90012", age=40))
+        second = run_tool("search_plans", _args(zip_code="90012", age=40))
+
+    assert first.notice == ("These are 2026 plans and prices; 2027 plans aren't available here yet, "
+                            "so check Covered California (https://www.coveredca.com/) for them.")
+    assert second.notice is None
+
+
+def test_nothing_matching_in_a_prior_year_still_carries_the_notice():
+    result = PlanSearchResult("no_match", plan_year=2026, county=CountyOption("06037", "Los Angeles", "CA"),
+                              premium_source="cms_filed_rates", plan_year_on_sale=2027, prior_year=True)
+    with patch("src.services.tools.search_plans", return_value=result), patch("src.services.tools.get_session"):
+        outcome = run_tool("search_plans", _args(zip_code="90012", age=40))
+
+    assert outcome.notice.startswith("These are 2026 plans")

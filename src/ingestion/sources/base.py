@@ -15,6 +15,10 @@ class Source(ABC):
     #: Short identifier used in chunk ids and file prefixes (e.g. "wikipedia").
     name: str
 
+    #: Its entry in registry.toml (ADR 0025); a source the registry does not
+    #: enable is left out of SOURCES and never runs.
+    registry_id: str
+
     @abstractmethod
     def fetch(self) -> None:
         """Phase 1 — download raw documents into `constants.RAW`.

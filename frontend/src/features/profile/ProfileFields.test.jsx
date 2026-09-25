@@ -78,4 +78,20 @@ describe("ProfileFields", () => {
 
     expect(fields.setZipCode).toHaveBeenCalledWith("7");
   });
+
+  it("names Covered California for a California county", () => {
+    renderFields({
+      counties: [{ county_fips: "06037", county_name: "Los Angeles", state: "CA" }],
+      marketplaceState: true,
+    });
+
+    expect(screen.getByText(/Plans in CA are sold on Covered California/)).toBeInTheDocument();
+    expect(screen.queryByText(/runs its own health insurance exchange/)).not.toBeInTheDocument();
+  });
+
+  it("adds no exchange note for a HealthCare.gov state", () => {
+    renderFields({ counties: [{ county_fips: "48001", county_name: "Anderson", state: "TX" }] });
+
+    expect(screen.queryByText(/are sold on/)).not.toBeInTheDocument();
+  });
 });

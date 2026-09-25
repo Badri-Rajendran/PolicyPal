@@ -9,6 +9,7 @@ ZIP_COUNTIES = (
     ("00002", "99001", "Alpha", "TX"),
     ("00002", "99002", "Beta", "TX"),
     ("00009", "99003", "Gamma", "IL"),
+    ("00007", "99007", "Delta", "CA"),
 )
 
 PROFILE = {"zip_code": "00001", "date_of_birth": "1990-05-17"}

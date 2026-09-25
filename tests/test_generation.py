@@ -604,3 +604,82 @@ def test_the_boundary_sentence_is_in_the_prompt_word_for_word(_no_plan_catalog):
         answer("What is a deductible?", [_make_chunk()])
 
     assert BOUNDARY_SENTENCE in _sent_messages(client)[0]["content"]
+
+
+def test_no_prompt_sends_every_state_to_healthcare_gov():
+    """21 states and DC run their own exchange; the tool result names the right one (ADR 0024)."""
+    from src.services.generation import COVERAGE_PROMPT, PLAN_TOOL_PROMPT
+    from src.services.sbc_status import REASONS
+
+    for text in (PLAN_TOOL_PROMPT, COVERAGE_PROMPT, REASONS["no_link"]):
+        assert "HealthCare.gov" not in text
+    assert "exchange named in the result" in PLAN_TOOL_PROMPT
+
+
+def test_the_prompt_explains_filed_rates_and_a_prior_plan_year():
+    from src.services.generation import PLAN_TOOL_PROMPT
+
+    for field in ("premium_source", "cms_filed_rates", "cms_live", "prior_year"):
+        assert field in PLAN_TOOL_PROMPT
+    # The prior-year sentence is written by the server, never quoted for the
+    # model to copy: quoted, it was said in answers where it was untrue.
+    assert "aren't available here yet" not in PLAN_TOOL_PROMPT
+
+
+NOTICE = "These are 2026 plans and prices; 2027 plans aren't available here yet, so check Covered California."
+
+
+def test_a_prior_year_notice_opens_the_answer_exactly_once(_no_plan_catalog):
+    _no_plan_catalog.return_value = True
+    client = MagicMock()
+    client.chat.completions.create.side_effect = [
+        _completion(tool_calls=[_search_call("call_1"), _search_call("call_2")]),
+        _completion("Here are the silver plans."),
+    ]
+    outcome = ToolOutcome('{"status": "ok"}', plans=(SimpleNamespace(hios_plan_id="40513CA0010001", plan_year=2026),),
+                          notice=NOTICE)
+
+    with patch("src.services.generation._llm", return_value=client), \
+         patch("src.services.generation.run_tool", return_value=outcome):
+        result = answer("Silver plans?", [])
+
+    assert result.text == f"{NOTICE}\n\nHere are the silver plans."
+
+
+def test_an_answer_without_a_notice_is_left_as_written(_no_plan_catalog):
+    _no_plan_catalog.return_value = True
+    client = MagicMock()
+    client.chat.completions.create.side_effect = [
+        _completion(tool_calls=[_search_call()]), _completion("Here are the silver plans."),
+    ]
+
+    with patch("src.services.generation._llm", return_value=client), \
+         patch("src.services.generation.run_tool", return_value=_plan_found()):
+        result = answer("Silver plans?", [])
+
+    assert result.text == "Here are the silver plans."
+
+
+def test_a_notice_never_rescues_an_empty_answer(_no_plan_catalog):
+    """An empty reply still falls back: a notice alone is not an answer."""
+    _no_plan_catalog.return_value = True
+    client = MagicMock()
+    client.chat.completions.create.side_effect = [_completion(tool_calls=[_search_call()]), _completion("")]
+    outcome = ToolOutcome('{"status": "ok"}', notice=NOTICE)
+
+    with patch("src.services.generation._llm", return_value=client), \
+         patch("src.services.generation.run_tool", return_value=outcome):
+        result = answer("Silver plans?", [])
+
+    assert result.text == NO_ANSWER_RESPONSE
+
+
+def test_the_prompt_says_comparing_plans_of_a_level_means_searching():
+    """Without this, "Compare the gold plans." skipped the search in about half of runs:
+    the model read it as a question about metal levels in general (measured 2026-09-25)."""
+    from src.services.generation import PLAN_TOOL_PROMPT
+
+    assert "compare the gold plans" in PLAN_TOOL_PROMPT
+    assert "call search_plans" in PLAN_TOOL_PROMPT
+    # The exception is kept, so a question about what a level means stays a corpus question.
+    assert "what is a silver plan?" in PLAN_TOOL_PROMPT

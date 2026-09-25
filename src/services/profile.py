@@ -9,10 +9,11 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
 
+from src.core.exchanges import FILED_RATE_STATES
 from src.core.marketplace_api import MARKETPLACE_STATES
 from src.models.plan import ZipCounty
 
-from .plan_search import CountyOption
+from .plan_search import CountyOption, filed_rate_loaded
 
 # For annotations only. Importing the model at runtime pulls `User` into the
 # mapper registry without the `Thread` its relationship names, and the first
@@ -70,8 +71,16 @@ def counties_for_zip(session, zip_code: str) -> list[CountyOption]:
     return [CountyOption(*row) for row in rows]
 
 
-def is_marketplace_state(state: str | None) -> bool:
-    return state in MARKETPLACE_STATES
+def plan_search_available(session, state: str | None) -> bool:
+    """Whether plan comparison has plans for the state.
+
+    A HealthCare.gov state always does. A filed-rate state (California) does
+    only once its plans are loaded, which is exactly when plan search serves
+    it: saying "available" before that would promise a search that refuses.
+    """
+    if state in MARKETPLACE_STATES:
+        return True
+    return state in FILED_RATE_STATES and filed_rate_loaded(session, state)
 
 
 def validate_profile(session, *, zip_code: str, date_of_birth: date, county_fips: str | None) -> CountyOption:

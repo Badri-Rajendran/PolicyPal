@@ -50,9 +50,10 @@ def resolve_states(raw: str) -> list[str]:
 
     unknown = sorted(set(requested) - set(MARKETPLACE_STATES))
     if unknown:
+        hint = "; California is loaded by `make ingest-ca-plans`" if "CA" in unknown else ""
         raise ValueError(
             f"not HealthCare.gov marketplace states: {', '.join(unknown)} "
-            "(they run their own exchange, or are not state codes)"
+            f"(they run their own exchange, or are not state codes){hint}"
         )
     return list(dict.fromkeys(requested))
 

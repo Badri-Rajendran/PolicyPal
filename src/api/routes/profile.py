@@ -15,7 +15,7 @@ from src.services.profile import (
     ProfileInvalidError,
     apply_profile,
     counties_for_zip,
-    is_marketplace_state,
+    plan_search_available,
     validate_profile,
 )
 
@@ -24,14 +24,14 @@ bp = Blueprint("profile", __name__, url_prefix="/api")
 _ZIP = re.compile(r"[0-9]{5}")
 
 
-def _profile_response(user) -> dict:
+def _profile_response(db, user) -> dict:
     return ProfileResponse(
         zip_code=user.zip_code,
         date_of_birth=user.date_of_birth,
         county_fips=user.county_fips,
         county_name=user.county_name,
         state=user.state,
-        marketplace_state=is_marketplace_state(user.state),
+        marketplace_state=plan_search_available(db, user.state),
     ).model_dump(mode="json")
 
 
@@ -39,7 +39,7 @@ def _profile_response(user) -> dict:
 @jwt_required()
 @limiter.limit("60 per minute")
 def get_profile():
-    return jsonify(_profile_response(get_current_user()))
+    return jsonify(_profile_response(get_db(), get_current_user()))
 
 
 @bp.put("/profile")
@@ -57,7 +57,7 @@ def update_profile():
         raise ValidationFailedError(exc.errors) from None
 
     apply_profile(user, zip_code=body.zip_code, date_of_birth=body.date_of_birth, county=county)
-    return jsonify(_profile_response(user))
+    return jsonify(_profile_response(db, user))
 
 
 @bp.get("/counties")
@@ -72,11 +72,12 @@ def counties():
     if not _ZIP.fullmatch(zip_code):
         raise ValidationFailedError([{"field": "zip", "message": "Enter a 5-digit ZIP code."}])
 
-    found = counties_for_zip(get_db(), zip_code)
+    db = get_db()
+    found = counties_for_zip(db, zip_code)
     if not found:
         return jsonify(error="ZIP code not found"), 404
     return jsonify(CountiesResponse(
         counties=[CountyResponse(county_fips=c.fips, county_name=c.name, state=c.state) for c in found],
-        # A ZIP code crossing into a marketplace state still counts: plan search uses those counties.
-        marketplace_state=any(is_marketplace_state(c.state) for c in found),
+        # A ZIP code crossing into a state with plans still counts: plan search uses those counties.
+        marketplace_state=any(plan_search_available(db, c.state) for c in found),
     ).model_dump(mode="json"))

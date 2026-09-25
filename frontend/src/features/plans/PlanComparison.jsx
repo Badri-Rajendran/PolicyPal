@@ -1,16 +1,18 @@
 import { formatMoney } from "../../utils/formatMoney";
 import { safeUrl } from "../../utils/safeUrl";
+import { exchangeFor } from "./exchanges";
 import { isUnreadable, sbcNote } from "./sbcStatus";
 
 const REFERENCE_AGE = 27;
-const HEALTHCARE_GOV = "https://www.healthcare.gov/see-plans/";
 
 function caption(plans, shownAt) {
   const levels = new Set(plans.map((p) => p.metal_level));
+  const years = new Set(plans.map((p) => p.plan_year));
   const places = new Set(plans.map((p) => `${p.county_name} County, ${p.state}`));
   const shown = new Date(shownAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const noun = levels.size === 1 ? `${[...levels][0]} plans` : "plans";
   return [
-    levels.size === 1 ? `${[...levels][0]} plans` : "Plans",
+    years.size === 1 ? `${[...years][0]} ${noun}` : noun.charAt(0).toUpperCase() + noun.slice(1),
     places.size === 1 ? [...places][0] : null,
     `shown ${shown}`,
   ]
@@ -27,8 +29,34 @@ function unreadableNote(plans) {
   } coverage can't be answered from one.`;
 }
 
+// Each exchange whose plans are in the table, with a plan year for its filed rates.
+// One answer can hold several searches, e.g. a California and an Arizona ZIP.
+function exchangesIn(plans) {
+  const found = new Map();
+  for (const plan of plans) {
+    const exchange = exchangeFor(plan.state);
+    if (!found.has(exchange.name)) found.set(exchange.name, { ...exchange, year: plan.plan_year });
+  }
+  return [...found.values()];
+}
+
+function premiumNote(exchanges) {
+  const filed = exchanges.filter((e) => e.filedRates);
+  const live = exchanges.filter((e) => !e.filedRates);
+  const filedNote = (e) =>
+    `CMS's published ${e.year} rates for the age shown, before any federal tax credit or state premium help`;
+  if (live.length === 0 && filed.length === 1) return `Premiums are ${filedNote(filed[0])}.`;
+  if (filed.length === 0) return "Premiums are before any tax credit, which may lower what you pay.";
+  const parts = filed.map((e) => `premiums for plans sold on ${e.name} are ${filedNote(e)}`);
+  if (live.length) parts.push("the others are before any tax credit, which may lower what you pay");
+  const sentence = parts.join("; ");
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+}
+
 function Premium({ plan }) {
   if (plan.monthly_premium === null) {
+    // A filed-rate plan has no live price to be unavailable: CMS lists no rating area for the ZIP.
+    if (exchangeFor(plan.state).filedRates) return <span>No filed rate for this ZIP code</span>;
     return (
       <>
         <span>Live price unavailable</span>
@@ -65,6 +93,7 @@ function Deductible({ plan }) {
 export default function PlanComparison({ plans, shownAt }) {
   const title = caption(plans, shownAt);
   const unreadable = unreadableNote(plans);
+  const exchanges = exchangesIn(plans);
 
   return (
     <section className="plan-comparison">
@@ -106,7 +135,13 @@ export default function PlanComparison({ plans, shownAt }) {
                     <Deductible plan={plan} />
                   </td>
                   <td>{formatMoney(plan.out_of_pocket_max) ?? "Not listed"}</td>
-                  <td>{plan.quality_rating === null ? "Not rated" : `${plan.quality_rating} of 5`}</td>
+                  <td>
+                    {plan.quality_rating !== null
+                      ? `${plan.quality_rating} of 5`
+                      : exchangeFor(plan.state).filedRates
+                        ? "Not available"
+                        : "Not rated"}
+                  </td>
                 </tr>
               );
             })}
@@ -115,11 +150,16 @@ export default function PlanComparison({ plans, shownAt }) {
       </div>
       {unreadable && <p className="plan-footnote">{unreadable}</p>}
       <p className="plan-footnote">
-        Premiums are before any tax credit, which may lower what you pay. Plans and prices change, so check
-        today's at{" "}
-        <a href={HEALTHCARE_GOV} target="_blank" rel="noopener noreferrer">
-          HealthCare.gov<span className="visually-hidden"> (opens in a new tab)</span>
-        </a>
+        {premiumNote(exchanges)} Plans and prices change, so check today's at{" "}
+        {exchanges.map((exchange, i) => (
+          <span key={exchange.name}>
+            {i > 0 && " and "}
+            <a href={exchange.url} target="_blank" rel="noopener noreferrer">
+              {exchange.name}
+              <span className="visually-hidden"> (opens in a new tab)</span>
+            </a>
+          </span>
+        ))}
         .
       </p>
     </section>

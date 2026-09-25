@@ -5,10 +5,12 @@ signup stores nothing about them. ZIP codes come from `tests.helpers`:
 00001 is one county, 00002 two, 00009 is in Illinois.
 """
 from datetime import date, timedelta
+from unittest.mock import patch
 
 from sqlalchemy import func, select
 
 from src.api import deps
+from src.models.plan import Issuer, Plan
 from src.models.user import User
 from src.services.profile import today
 from tests.helpers import PROFILE
@@ -133,3 +135,38 @@ def test_the_county_lookup_serves_the_signup_form(client):
     assert client.get("/api/counties?zip=00404").status_code == 404
     assert client.get("/api/counties?zip=7580").status_code == 422
     assert client.get("/api/counties").status_code == 422
+
+
+def _a_california_plan() -> None:
+    db = deps.SessionLocal()
+    issuer = Issuer(hios_issuer_id="99997", plan_year=1999, name="Test", state="CA")
+    db.add(issuer)
+    db.flush()
+    db.add(Plan(issuer_id=issuer.id, hios_plan_id="99997CA0010001", plan_year=1999, marketing_name="P",
+                metal_level="Silver", plan_type="HMO", state="CA", hsa_eligible=False, has_national_network=False,
+                catalog_source="ca_sbe_puf"))
+    db.commit()
+
+
+def test_a_california_zip_can_compare_plans_once_they_are_loaded(client):
+    """ADR 0024: California has plans once the PUF is loaded; Illinois never does here."""
+    _a_california_plan()
+    headers = _headers(client, zip_code="00007")
+
+    assert client.get("/api/profile", headers=headers).get_json()["marketplace_state"] is True
+    assert client.get("/api/counties?zip=00007").get_json()["marketplace_state"] is True
+    assert client.get("/api/counties?zip=00009").get_json()["marketplace_state"] is False
+
+
+def test_before_any_california_load_the_profile_does_not_promise_plan_comparison(client):
+    """Search refuses California until its plans are loaded; the profile must say the same."""
+    headers = _headers(client, zip_code="00007")
+
+    with patch("src.services.profile.filed_rate_loaded", return_value=False):
+        profile = client.get("/api/profile", headers=headers).get_json()
+        counties = client.get("/api/counties?zip=00007").get_json()
+        texas = client.get("/api/counties?zip=00001").get_json()
+
+    assert (profile["state"], profile["marketplace_state"]) == ("CA", False)
+    assert counties["marketplace_state"] is False
+    assert texas["marketplace_state"] is True

@@ -18,6 +18,63 @@
 - The database was seeded once from the local dump — 1,568 chunks, 35,756 SBC
   chunks, 3,276 plans, 56,280 ZIP-county rows and the `bm25` index row — with
   zero restore errors and every count matching the source.
+- Design for California plan comparison and a source registry
+  (`docs/superpowers/specs/2026-09-24-ca-plan-catalog-design.md`), the first of
+  five California sub-projects. Covered California plans come from CMS's
+  state-based exchange PUF, since the Marketplace API has none. Their SBC links
+  are blank there, and Covered California's terms forbid automated access, so
+  it is linked, never read.
+- Implementation plan for California plan comparison
+  (`docs/superpowers/plans/2026-09-24-ca-plan-catalog.md`). The design is
+  corrected from checks against the real 2026 file: a plan is sold only where it
+  has a filed rate, four Los Angeles ZIPs with no CMS rating area show
+  unpriced, and only in-network individual cost shares are loaded.
+- `src/core/exchanges.py` and `src/core/plan_year.py`: which exchange sells
+  each state's plans (Covered California for California, HealthCare.gov for
+  the 30 API states), and the plan year on sale, which is next year from
+  1 November.
+- A committed source registry (`src/ingestion/sources/registry.toml`, ADR
+  0025): every source with its licence, permission status, `robots.txt` status
+  and removal steps. It is validated when loaded, only approved sources run,
+  and Covered California is recorded as link-only because its Terms of Use
+  forbid automated access.
+- Migration `15bb18a57fac` for a filed-rate plan catalog:
+  - `plans.catalog_source`, `cms_api` or `ca_sbe_puf`, checked, so a source can
+    be audited or removed;
+  - `plan_counties.zipcodes`, for a plan sold in only some of a county's ZIPs;
+  - new `rating_areas`, `plan_rates` (ages 14 to 64, checked) and
+    `catalog_loads`, with the file's label and sha256.
+  API-sourced rows are unchanged.
+- `make ingest-ca-plans YEAR=` (ADR 0024): loads Covered California's plans
+  from CMS's state-based exchange PUF, because the Marketplace API has none.
+  - **2026:** 190 plans from 11 issuers and 28,101 filed rates.
+  - **Validated first:** the whole file is checked before one transaction
+    writes it, so a bad file changes nothing.
+  - **Sold only where rated:** a plan is sold only in counties where it has a
+    filed rate. Western Health Advantage files one service area over two
+    rating areas.
+  - **Hand-transcribed:** rating areas and issuer names, cross-checked against
+    the data. Four Los Angeles ZIPs that CMS gives no rating area are reported
+    and shown unpriced.
+  - **Docs:** `docs/findings/ca-sbe-puf.md` and `docs/runbooks/california.md`.
+- California plan comparison:
+  - **Pricing:** plan search prices California plans from CMS's filed rates for
+    the ZIP's rating area and the person's age, in SQL, and never calls CMS for
+    them.
+  - **Partial counties:** a plan sold in part of a county is listed only for its
+    ZIPs.
+  - **Wording:** answers say premiums are CMS's published rates before any tax
+    credit or state help, and name Covered California.
+  - **Out-of-date year:** when the plan year is no longer on sale, the answer
+    opens with a server-written notice saying so. It is not model-written,
+    because asked to write it, the model also wrote it where it was untrue.
+  - **Profile:** says plan comparison is available in California only once its
+    plans are loaded.
+  - **Plan table:** shows the plan year and describes each exchange's premiums
+    when one answer mixes states.
+- README and CLAUDE.md now cover California. The scope includes Covered
+  California, and the README documents `make ingest-ca-plans`, the source
+  registry, and the PLAN SEARCH and CONCEPTS eval sections.
 - A `Dockerfile` for the API, and a CI job that builds and scans the image
   (ADR 0022) — the first of ADR 0002's two deferred items. Multi-stage, runs
   as a non-root user, `torch` from PyTorch's CPU index on Linux so no CUDA
@@ -390,6 +447,21 @@
 
 ### Fixed
 
+- "Compare the gold plans." and "Compare silver plans for me." skipped the plan
+  search in about half of runs, in every state. The prompt left it open whether
+  comparing plans of a metal level meant real plans or the level in general,
+  and the model spent its turn deciding. The prompt now says a request to
+  compare, list or show plans means searching; only what a level means stays
+  a corpus question.
+  - **Before, on `main`'s prompt:** 2 of 4 runs searched.
+  - **After:** 35 of 35 search requests searched, and 0 of 10 concept
+    questions did.
+  - **Eval:** a new floor for concept questions that must not search.
+- A Bronze plan search now includes Expanded Bronze plans, which it silently
+  missed; every California bronze plan is one.
+- Plan answers, the "no Summary of Benefits link" reason and the plan table name
+  the exchange that sells the state's plans. They used to send everyone to
+  HealthCare.gov, which is wrong for the 21 states and DC that run their own.
 - The API never configured logging. Every command-line entry point calls
   `setup_logging()`; `create_app()` did not, so in the Flask process the root
   logger kept Python's default of WARNING with no handler: nothing the request

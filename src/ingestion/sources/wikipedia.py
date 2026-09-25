@@ -29,6 +29,7 @@ _SECTION_TITLE_RE = re.compile(r"^[A-Z][^\n.!?]{2,80}$")
 
 class WikipediaSource(Source):
     name = "wikipedia"
+    registry_id = "wikipedia"
 
     def fetch(self) -> None:
         print("\n=== Wikipedia: downloading articles ===")

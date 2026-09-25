@@ -91,6 +91,10 @@ def age_rated_premiums(
     not an error, so only positive premiums are kept: a missing ID means
     "no live price", never "free". Raises on any transport or shape failure.
     """
+    if state not in MARKETPLACE_STATES:
+        # A filed-rate state is priced from plan_rates (ADR 0024); asking CMS
+        # would spend a request on a state the API does not serve.
+        raise ValueError(f"{state} is not served by the Marketplace API")
     payload = request(
         "POST",
         "/plans",

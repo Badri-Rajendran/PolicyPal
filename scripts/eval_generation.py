@@ -79,7 +79,8 @@ from src.services.sbc_status import plan_sbc_status, sbc_document_join
 MIN_CORRECT = 8
 MIN_REFUSED = 4
 MIN_FOLLOW_UPS = 3
-MIN_PLAN_SEARCHES = 4
+MIN_PLAN_SEARCHES = 9
+MIN_CONCEPTS_UNSEARCHED = 2
 # ADR 0014's sets, measured over three runs: boundary 2/2 every time.
 # Coverage was one short of full marks through Phases 2 and 3, for CHRISTUS's
 # imaging price: its row wrapped the service name around the price, and the
@@ -144,11 +145,28 @@ FOLLOW_UP_SET = [
 # tool means being told to add them. The last has only a saved profile: the
 # prompt holds no ZIP or age at all, and the server fills them in (ADR 0012).
 _PROFILE = PlanProfile(zip_code="75801", age=34, county_fips="48001")
+# Downtown Los Angeles, rating area 16: plans from the California PUF (ADR 0024).
+_CA_PROFILE = PlanProfile(zip_code="90012", age=40, county_fips="06037")
 PLAN_SEARCH_SET = [
     ("What silver plans can I buy in 75801? I'm 34.", None),
     ("Compare the bronze plans with the lowest deductibles in ZIP 75801 for a 45-year-old.", None),
     ("Show me some health plans I could buy.", None),
     ("What silver plans can I buy?", _PROFILE),
+    # California (ADR 0024): filed rates, and Covered California named, never HealthCare.gov.
+    ("What silver plans can I buy?", _CA_PROFILE),
+    ("What bronze plans can I get?", _CA_PROFILE),
+    # Phrasings that skipped the search 2 times in 4 before PLAN_TOOL_PROMPT said
+    # that comparing plans of a metal level means real plans (measured 2026-09-25).
+    ("Compare silver plans for me.", _PROFILE),
+    ("Compare the gold plans.", _PROFILE),
+    ("Compare silver plans for me.", _CA_PROFILE),
+]
+
+# What a metal level means is a corpus question: searching would answer it with
+# a table of plans the user never asked about.
+CONCEPT_SET = [
+    ("What is a silver plan?", _PROFILE),
+    ("How do bronze and gold plans differ in general?", _PROFILE),
 ]
 
 
@@ -373,9 +391,31 @@ def run_plan_searches() -> int:
         else:
             print(f"  [NO SEARCH]  {query}")
         print(f"               -> {result.text.strip()[:220]}")
+        if profile is _CA_PROFILE:
+            named = "Covered California" in result.text and "HealthCare.gov" not in result.text
+            print(f"               Covered California named, not HealthCare.gov: {named}")
 
     print(f"\n  {reached}/{len(PLAN_SEARCH_SET)} plan questions reached search_plans")
     return reached
+
+
+def run_concept_questions() -> int:
+    print("\n" + "=" * 78)
+    print("CONCEPTS — does a question about what a plan level means stay out of search_plans?")
+    print("=" * 78)
+
+    unsearched = 0
+    for query, profile in CONCEPT_SET:
+        result = answer_query(query, profile=profile)
+        if result.plans or result.needs_plan_inputs:
+            print(f"  [SEARCHED]   {query}")
+        else:
+            unsearched += 1
+            print(f"  [ok]         {query}")
+        print(f"               -> {result.text.strip()[:220]}")
+
+    print(f"\n  {unsearched}/{len(CONCEPT_SET)} concept questions answered without a plan search")
+    return unsearched
 
 
 def _sbc_plans(result) -> set[str]:
@@ -522,6 +562,7 @@ def main() -> int:
     refused = run_refusals()
     followed = run_follow_ups()
     searched = run_plan_searches()
+    concepts = run_concept_questions()
     covered = run_coverage()
     bounded = run_boundary()
     honest = run_missing()
@@ -546,6 +587,12 @@ def main() -> int:
         failures.append(
             f"plan searches {searched} < floor {MIN_PLAN_SEARCHES} — a plan question "
             "stopped reaching search_plans"
+        )
+
+    if concepts < MIN_CONCEPTS_UNSEARCHED:
+        failures.append(
+            f"concept questions {concepts} < floor {MIN_CONCEPTS_UNSEARCHED} — a question about what "
+            "a plan level means was answered with a plan search"
         )
 
     if covered < MIN_COVERAGE:
