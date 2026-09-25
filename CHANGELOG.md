@@ -72,6 +72,9 @@
     plans are loaded.
   - **Plan table:** shows the plan year and describes each exchange's premiums
     when one answer mixes states.
+- README and CLAUDE.md now cover California. The scope includes Covered
+  California, and the README documents `make ingest-ca-plans`, the source
+  registry, and the PLAN SEARCH and CONCEPTS eval sections.
 - A `Dockerfile` for the API, and a CI job that builds and scans the image
   (ADR 0022) — the first of ADR 0002's two deferred items. Multi-stage, runs
   as a non-root user, `torch` from PyTorch's CPU index on Linux so no CUDA
