@@ -401,6 +401,9 @@
 
 ### Changed
 
+- **HTTP errors are JSON:** 404, 405, 429 and the rest answer with
+  `{"error": "not found"}` and similar instead of Werkzeug's HTML page. The
+  status code and headers (`Allow`, `Retry-After`) are kept.
 - `unsafe_reason` moved to `src/core/urls.py`, so the API can vet links too;
   `src/ingestion/sbc/fetch.py` still re-exports it.
 - `docs/runbooks/deploy.md` rewritten from what actually worked. The previous

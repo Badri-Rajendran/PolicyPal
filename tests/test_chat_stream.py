@@ -119,7 +119,8 @@ def test_errors_before_the_stream_are_not_streamed(client):
         malformed = client.post(_url("nope"), json={"content": "x"}, headers=headers)
         invalid = client.post(_url(thread_id), json={"content": ""}, headers=headers)
         too_long = client.post(_url(thread_id), json={"content": "x" * 4001}, headers=headers)
-    assert (missing.status_code, malformed.status_code) == (404, 404)
+    assert (missing.status_code, missing.mimetype) == (404, "application/json")
+    assert (malformed.status_code, malformed.mimetype) == (404, "application/json")
     assert (invalid.status_code, invalid.mimetype) == (422, "application/json")
     assert too_long.status_code == 422
     source.assert_not_called()

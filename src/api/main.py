@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 
 from flask import Flask, jsonify
@@ -73,7 +74,15 @@ def create_app() -> Flask:
         # can embed details (e.g. an upstream response) that must not reach
         # the client.
         if isinstance(exc, HTTPException):
-            return exc
+            if exc.code is None or exc.code < 400:
+                return exc  # a routing redirect, not an error
+            # A JSON API answers errors in JSON: Werkzeug's own is an HTML
+            # page. Its response is kept for the status and headers it sets
+            # (Allow on a 405), with the body replaced.
+            response = exc.get_response()
+            response.set_data(json.dumps({"error": exc.name.lower()}))
+            response.content_type = "application/json"
+            return response
         logger.exception("unhandled error")
         return jsonify(error="internal server error"), 500
 
