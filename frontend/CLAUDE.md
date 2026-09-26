@@ -29,6 +29,12 @@ exist today.
 | `src/services/` | Network requests, API configuration, external integrations. |
 | `src/utils/` | Pure JavaScript helpers, no React imports. |
 
+- `features/chat/` is split by area: `sidebar/`, `transcript/`, `sources/`, `composer/`, with
+  `AppShell`, `ChatHeader` and the `useMessages` / `useThreads` / `useSidebarHidden` hooks at its root.
+- Visual markup, class names and copy come from `docs/design/chat-redesign/*.dc.html`; the design
+  tokens (`--paper`, `--sheet`, `--ink`, `--seal`, `--pine`, …) live in `src/index.css`, light on
+  `:root` and dark under `prefers-color-scheme` and `:root[data-theme="dark"]`. Each area imports
+  its own CSS file.
 - Organize by domain first: a feature owns its code and exposes a small public surface.
 - Promote code into a global folder only when a second feature actually needs it.
 - Give a component its own folder once it outgrows one file (component, styles, test, `index.js`).
@@ -45,6 +51,14 @@ exist today.
   more than they save.
 - Prefer composition and `children` over threading props through intermediate components.
 - Keep dependencies lean: add a library only when the platform and existing code cannot do the job.
+  Runtime dependencies are pinned to exact versions (`npm install --save-exact`).
+- Answers are Markdown from the model: render them only through `AnswerBody` (no `rehype-raw`, no
+  `dangerouslySetInnerHTML`); every link passes `safeUrl`, and one opening a new tab has
+  `rel="noopener noreferrer"`.
+- `localStorage` holds only the theme and the sidebar's hidden flag; wrap every storage access in
+  try/catch.
+- Motion runs inside `MotionConfig reducedMotion="user"`; the seal stamp is the only animation
+  that runs on its own.
 - Handle loading, empty, error, and success states explicitly.
 - Use semantic HTML, labelled inputs, keyboard access, and visible focus states.
 

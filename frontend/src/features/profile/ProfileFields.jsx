@@ -1,3 +1,4 @@
+import { Info, MapPin } from "lucide-react";
 import TextField from "../../components/TextField";
 import { todayIso } from "../../utils/age";
 import { exchangeFor } from "../plans/exchanges";
@@ -8,7 +9,7 @@ export default function ProfileFields({ fields, errors }) {
 
   return (
     <fieldset className="profile-fields">
-      <legend>For comparing health plans</legend>
+      <legend>For comparing plans</legend>
       <TextField
         id="zip-code"
         label="ZIP code"
@@ -24,8 +25,11 @@ export default function ProfileFields({ fields, errors }) {
         <p className="field-hint">Couldn't look up this ZIP code right now. You can still continue.</p>
       )}
       {lookup.counties.length === 1 && (
-        <p className="field-hint">
-          {onlyCounty.county_name} County, {onlyCounty.state}
+        <p className="field-hint county-found">
+          <MapPin className="i sm" aria-hidden="true" />
+          <span>
+            {onlyCounty.county_name} County, {onlyCounty.state}
+          </span>
         </p>
       )}
       {lookup.counties.length > 1 && (
@@ -54,14 +58,20 @@ export default function ProfileFields({ fields, errors }) {
       )}
       {lookup.status === "ready" && lookup.marketplaceState && exchangeFor(onlyCounty?.state).filedRates && (
         <p className="field-note">
-          Plans in {onlyCounty.state} are sold on {exchangeFor(onlyCounty.state).name}. PolicyPal compares them from
-          CMS's published plan data.
+          <Info className="i sm" aria-hidden="true" />
+          <span>
+            Plans in {onlyCounty.state} are sold on {exchangeFor(onlyCounty.state).name}. PolicyPal compares them from
+            CMS's published plan data.
+          </span>
         </p>
       )}
       {lookup.status === "ready" && !lookup.marketplaceState && (
         <p className="field-note">
-          Your state runs its own health insurance exchange, so plan comparison isn't available there. You can
-          still ask any insurance question.
+          <Info className="i sm" aria-hidden="true" />
+          <span>
+            Your state runs its own health insurance exchange, so plan comparison isn't available there. You can still
+            ask any insurance question.
+          </span>
         </p>
       )}
       <TextField
@@ -73,6 +83,7 @@ export default function ProfileFields({ fields, errors }) {
         value={values.dateOfBirth}
         onChange={(e) => setField("dateOfBirth", e.target.value)}
         error={errors.date_of_birth}
+        hint="Used to work out your age for prices. Never shown to the AI model."
       />
     </fieldset>
   );

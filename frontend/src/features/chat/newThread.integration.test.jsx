@@ -9,8 +9,8 @@ import * as chatService from "../../services/chatService";
 vi.mock("../../hooks/useAuth");
 vi.mock("../../services/chatService");
 
-// Real ChatWindow and useMessages: the point is the handoff between them and
-// the route change, which a mocked ChatWindow would hide.
+// Real ChatPage and useMessages: the point is the handoff between them and
+// the route change, which mocked hooks would hide.
 describe("sending the first message in a new thread", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -23,12 +23,15 @@ describe("sending the first message in a new thread", () => {
     chatService.listThreads.mockResolvedValue([]);
     chatService.listMessages.mockResolvedValue([]);
     chatService.createThread.mockResolvedValue({ id: "t2", title: null });
-    chatService.sendMessage.mockResolvedValue({
-      id: "m2",
-      role: "assistant",
-      content: "A deductible is what you pay first.",
-      created_at: "",
-      sources: [],
+    chatService.streamMessage.mockImplementation(async (_t, _id, _c, { onEvent }) => {
+      onEvent({ event: "user_message", data: { message: { id: "m1", role: "user", content: "What is a deductible?", created_at: "" } } });
+      onEvent({
+        event: "done",
+        data: {
+          message: { id: "m2", role: "assistant", content: "A deductible is what you pay first.", created_at: "", sources: [] },
+          thread: { id: "t2", title: "What is a deductible?", updated_at: "" },
+        },
+      });
     });
   });
 
@@ -47,10 +50,10 @@ describe("sending the first message in a new thread", () => {
     await userEvent.click(screen.getByRole("button", { name: /send/i }));
 
     await waitFor(() => expect(chatService.createThread).toHaveBeenCalled());
-    // The pending message lives in a ref inside ChatWindow. If the route change
+    // The pending message lives in a ref inside ChatPage. If the route change
     // remounts it, that ref resets and the message is silently dropped.
     await waitFor(() =>
-      expect(chatService.sendMessage).toHaveBeenCalledWith("tok123", "t2", "What is a deductible?"),
+      expect(chatService.streamMessage).toHaveBeenCalledWith("tok123", "t2", "What is a deductible?", expect.anything()),
     );
   });
 });

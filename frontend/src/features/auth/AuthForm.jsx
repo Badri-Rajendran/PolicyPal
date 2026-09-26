@@ -80,7 +80,7 @@ export default function AuthForm({ mode, onModeChange }) {
       <p className="auth-switch">
         {isRegister ? "Already have an account?" : "New to PolicyPal?"}{" "}
         <button type="button" className="link" onClick={() => onModeChange(isRegister ? "login" : "register")}>
-          {isRegister ? "Sign in" : "Create one"}
+          {isRegister ? "Sign in" : "Create an account"}
         </button>
       </p>
     </form>

@@ -1,3 +1,4 @@
+import { Check } from "lucide-react";
 import { useState } from "react";
 import Button from "../../components/Button";
 import ErrorBanner from "../../components/ErrorBanner";
@@ -34,14 +35,17 @@ export default function ProfileForm({ profile, counties, onSave }) {
     <form className="profile-form" onSubmit={handleSubmit} noValidate>
       <ProfileFields fields={fields} errors={errors} />
       <ErrorBanner>{formError}</ErrorBanner>
-      <Button type="submit" busy={status === "saving"}>
-        Save profile
-      </Button>
-      {status === "saved" && (
-        <p className="profile-saved" role="status">
-          Saved. Plan questions now use this profile.
-        </p>
-      )}
+      <div className="profile-actions">
+        <Button type="submit" busy={status === "saving"}>
+          Save profile
+        </Button>
+        {status === "saved" && (
+          <p className="profile-saved" role="status">
+            <Check className="i sm" aria-hidden="true" />
+            Saved. Plan questions now use this profile.
+          </p>
+        )}
+      </div>
     </form>
   );
 }

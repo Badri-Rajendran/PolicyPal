@@ -12,6 +12,11 @@ describe("formatSourceLabel", () => {
     );
   });
 
+  it("strips a HealthCare.gov glossary or article prefix", () => {
+    expect(formatSourceLabel("hcg_glossary_Copayment.md")).toBe("Copayment");
+    expect(formatSourceLabel("hcg_article_Special_enrollment_period.md")).toBe("Special enrollment period");
+  });
+
   it("leaves a plain filename's words alone", () => {
     expect(formatSourceLabel("Marine_insurance.md")).toBe("Marine insurance");
   });

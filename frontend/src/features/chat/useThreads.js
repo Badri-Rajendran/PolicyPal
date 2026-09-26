@@ -44,13 +44,30 @@ export function useThreads() {
     setThreads((prev) => prev.filter((t) => t.id !== threadId));
   }
 
-  function touchThread(threadId, title) {
+  // A thread with new activity moves to the top, as the server orders it.
+  function touchThread(threadId, title, updatedAt) {
     setThreads((prev) => {
-      const updated = prev.map((t) => (t.id === threadId ? { ...t, title: title ?? t.title } : t));
-      const thread = updated.find((t) => t.id === threadId);
-      return [thread, ...updated.filter((t) => t.id !== threadId)];
+      const thread = prev.find((t) => t.id === threadId);
+      if (!thread) return prev;
+      const touched = { ...thread, title: title ?? thread.title, ...(updatedAt ? { updated_at: updatedAt } : {}) };
+      return [touched, ...prev.filter((t) => t.id !== threadId)];
     });
   }
 
-  return { threads, status, error, createThread, removeThread, touchThread, retry };
+  // Optimistic: the new title shows at once, and the old one comes back if the
+  // server refuses it. A rename is not activity, so the thread doesn't move.
+  async function renameThread(threadId, title) {
+    const before = threads.find((t) => t.id === threadId);
+    setThreads((prev) => prev.map((t) => (t.id === threadId ? { ...t, title } : t)));
+    try {
+      const saved = await chatService.renameThread(token, threadId, title);
+      setThreads((prev) => prev.map((t) => (t.id === threadId ? saved : t)));
+    } catch (err) {
+      setThreads((prev) => prev.map((t) => (t.id === threadId ? before : t)));
+      if (err instanceof SessionExpiredError) expireSession();
+      throw err;
+    }
+  }
+
+  return { threads, status, error, createThread, removeThread, renameThread, touchThread, retry };
 }

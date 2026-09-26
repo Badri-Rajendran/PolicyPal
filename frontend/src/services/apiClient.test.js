@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { apiFetch, ApiError, SessionExpiredError } from "./apiClient";
+import { apiFetch, ApiError, apiStream, SessionExpiredError } from "./apiClient";
 
 function mockFetchOnce(status, body) {
   vi.stubGlobal(
@@ -96,5 +96,69 @@ describe("apiFetch", () => {
     expect(error).not.toBeInstanceOf(SessionExpiredError);
     expect(error.message).toBe("validation failed");
     expect(error.details).toEqual([{ field: "title" }]);
+  });
+});
+
+function streamOf(...chunks) {
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
+      controller.close();
+    },
+  });
+}
+
+describe("apiStream", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the body with the token and hands each event to onEvent", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        body: streamOf('event: delta\ndata: {"text":"a"}\n\n', 'event: done\ndata: {"ok":true}'),
+      }),
+    );
+    const onEvent = vi.fn();
+    await apiStream("/api/chat/threads/t1/messages/stream", { token: "tok", body: { content: "Q" }, onEvent });
+    expect(onEvent.mock.calls.map(([e]) => e)).toEqual([
+      { event: "delta", data: { text: "a" } },
+      { event: "done", data: { ok: true } },
+    ]);
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toMatch(/\/api\/chat\/threads\/t1\/messages\/stream$/);
+    expect(options.method).toBe("POST");
+    expect(options.headers.Authorization).toBe("Bearer tok");
+    expect(options.headers.Accept).toBe("text/event-stream");
+    expect(JSON.parse(options.body)).toEqual({ content: "Q" });
+  });
+
+  it("rejects with the budget message on a budget 429", async () => {
+    mockFetchOnce(429, { error: "daily token budget exhausted" });
+    const error = await apiStream("/x", { token: "tok", body: {}, onEvent: vi.fn() }).catch((e) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.message).toMatch(/today's limit/i);
+  });
+
+  it("rejects with SessionExpiredError on a 401 with a token", async () => {
+    mockFetchOnce(401, { msg: "Token has expired" });
+    const error = await apiStream("/x", { token: "tok", body: {}, onEvent: vi.fn() }).catch((e) => e);
+    expect(error).toBeInstanceOf(SessionExpiredError);
+  });
+
+  it("rethrows an abort as an AbortError", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError")));
+    const error = await apiStream("/x", { token: "tok", body: {}, onEvent: vi.fn() }).catch((e) => e);
+    expect(error.name).toBe("AbortError");
+  });
+
+  it("says PolicyPal can't be reached when the network fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    await expect(apiStream("/x", { token: "tok", body: {}, onEvent: vi.fn() })).rejects.toThrow(
+      /Can't reach PolicyPal/,
+    );
   });
 });

@@ -4,6 +4,90 @@
 
 ### Added
 
+- **Chat redesign, frontend:**
+  - The redesign's tokens (paper, sheet, ink, seal, pine) in light and dark,
+    and a theme choice (System, Light or Dark) remembered per browser in
+    `localStorage["policypal.theme"]` (`hooks/useTheme.js`). The brass seal
+    replaces Vite's favicon.
+  - Four dependencies, pinned exactly: `lucide-react` 1.48.0, `motion`
+    13.4.4, `react-markdown` 10.1.0 and `remark-gfm` 4.0.1. Motion respects
+    reduced motion (`MotionConfig reducedMotion="user"`).
+  - `services/sse.js` parses a `text/event-stream` body read through `fetch`,
+    and `apiStream` posts to a streaming route, rejecting before the stream
+    exactly as `apiFetch` does. `chatService` gains `streamMessage`,
+    `renameThread` and `getSource`.
+  - `utils/markers.js`: a remark plugin that turns `[Source: a; b]` into
+    numbered seals and `[Plan: id]` into plan links (unknown labels dropped,
+    unknown plans left as text), and the plain text Copy writes.
+    `utils/threadGroups.js` groups threads into Today, Previous 7 days and
+    Earlier; `utils/exchanges.js` pairs questions with their answers.
+  - Generic components: `Button` (primary, ghost, danger; a spinner while
+    busy), `IconButton` (its label is its name), an accessible `Menu` (arrow
+    keys, Home/End, Enter/Space, Esc and outside clicks close it and return
+    focus), a self-dismissing `Toast`, and a show/hide toggle and hint on
+    password `TextField`s.
+  - A redesigned sidebar (`features/chat/sidebar/`): threads grouped by date,
+    a search box that filters titles as you type and highlights the matches,
+    each thread's ⋯ menu to rename it inline (Enter saves, Esc cancels, a
+    blank name is refused) or delete it after an inline confirmation, and an
+    account menu with the profile link, the theme choice, the shortcuts and
+    sign out. `useThreads.renameThread` is optimistic and rolls back on
+    failure, which the page reports in a toast.
+  - `useMessages` sends through the stream: `user_message` replaces the
+    optimistic question, `stage`, `notice`, `delta` and `reset` build a live
+    draft, and `done` replaces it with the saved answer and updates the
+    thread. `stop()` aborts the fetch and keeps the question; an `error`
+    event, or a stream that ends without an answer, keeps it too and shows
+    an error. One answer streams at a time, and opening another thread
+    abandons it.
+  - The transcript (`features/chat/transcript/`) sets each question as the
+    heading of its answer. Answers render as Markdown (`react-markdown` and
+    `remark-gfm`; raw HTML stays text, links are https only and open in a new
+    tab, images show only their description). Citations are numbered seals
+    that open their source, plan names link to their table row and flash it,
+    and server notices show as notes. A streaming answer shows its progress
+    steps and a caret in an `aria-live` region; a stopped one says so, with
+    "Ask again". Seals stamp in only for an answer that just finished, never
+    for loaded history. Each answer has source chips and Copy (plain text,
+    seals as `[n]`). "Jump to latest" appears 200 px above the bottom, and a
+    streaming answer stays in view while you're at the bottom. A new empty
+    state offers four starters. Seal numbers count cited documents 1…n.
+  - A Sources panel (`features/chat/sources/`): a card per cited passage with
+    its title, document and section, the brief quote, a match meter and a
+    link ("Carrier's PDF", "Read on Wikipedia"), plus Wikipedia's licence
+    credit. An older citation says the passage may have changed; a changed or
+    missing one says it can't be shown. Passages are fetched when a card is
+    first shown and cached per source id (`useSource`, cleared on sign-out).
+    At 720 px and below the panel is a bottom sheet with a scrim that keeps
+    focus inside it. `hooks/useMediaQuery.js` follows a media query.
+  - The chat composed in `ChatPage` (replacing `ChatWindow`): an `AppShell`
+    whose sidebar collapses (remembered in `localStorage["policypal.sidebar"]`)
+    and becomes a drawer at 720 px and below; a `ChatHeader` whose title
+    renames the thread in place, with the Sources toggle and its count; and a
+    docked `Composer` that grows with its text, turns Send into Stop while an
+    answer streams, and keeps the privacy note. Shortcuts
+    (`hooks/useShortcuts.js`): Ctrl/⌘K starts a new question, `/` focuses the
+    composer when you're not typing, and Esc stops an answer, then closes the
+    panel or the drawer. Failed renames, deletes and new questions show a
+    toast.
+  - The plan table follows the design: rows numbered 1…n with ids a plan link
+    can reach, "Ask about this plan" (fills the composer with
+    `About plan {n}, {name}: `), and a head with the title, place and date as
+    separate parts. The premium, SBC and exchange notes are unchanged.
+  - Sign-in and register use the split layout: the promise and an example
+    cited answer (HealthCare.gov's glossary text for Copayment and
+    Coinsurance) beside the form, which keeps its validation, ZIP code and
+    date of birth, and gains a password show/hide toggle. On narrow screens
+    only the form and the promise show.
+  - The profile page sits in the app shell with the sidebar, beside a
+    "Where this goes" aside; its fieldset legend is in sentence case, and a
+    save is confirmed with a check. `useSidebarHidden` shares the sidebar's
+    remembered state between the chat and profile pages.
+  - README: the chat's features (streaming, seals and the Sources panel,
+    rename and search, themes, shortcuts) and the four new dependencies.
+    `frontend/CLAUDE.md`: the chat's folders, the design tokens, pinned
+    dependencies, and the Markdown, storage and motion rules.
+
 - Design for the chat redesign
   (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the
   approved mockups in `docs/design/chat-redesign/`. It covers:
