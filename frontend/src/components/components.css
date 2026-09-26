@@ -17,7 +17,7 @@
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--seal-strong);
+  background: var(--seal-deep);
 }
 
 .btn-ghost {
@@ -27,7 +27,7 @@
 }
 
 .btn-ghost:hover:not(:disabled) {
-  border-color: var(--ink-muted);
+  border-color: var(--ink-soft);
 }
 
 .btn-danger {
@@ -48,14 +48,14 @@
 
 .field label {
   font-size: 0.85rem;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
 }
 
 .field input {
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--sheet);
   color: var(--ink);
 }
 
@@ -70,7 +70,7 @@
 }
 
 .error-banner {
-  background: var(--danger-surface);
+  background: var(--danger-wash);
   color: var(--danger);
   border: 1px solid var(--danger);
   border-radius: var(--radius);
@@ -126,7 +126,7 @@
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--sheet);
   color: var(--ink);
 }
 

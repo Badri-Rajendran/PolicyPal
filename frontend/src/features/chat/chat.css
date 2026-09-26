@@ -36,7 +36,7 @@
 }
 
 .sidebar-hint {
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   font-size: 0.85rem;
   margin: 0;
 }
@@ -61,7 +61,7 @@
 }
 
 .thread-item.is-active {
-  background: var(--surface);
+  background: var(--sheet);
   border-left-color: var(--seal);
 }
 
@@ -78,13 +78,13 @@
 }
 
 .thread-item-select:hover {
-  background: var(--surface);
+  background: var(--sheet);
 }
 
 .thread-item-delete {
   background: none;
   border: none;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   padding: 0.4rem 0.6rem;
   font-size: 1.05rem;
   line-height: 1;
@@ -113,7 +113,7 @@
 .sidebar-email {
   flex: 1;
   min-width: 0;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -141,7 +141,7 @@
 .chat-window-header h2 {
   font-size: 1.05rem;
   font-weight: 500;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
 }
 
 .transcript {
@@ -154,7 +154,7 @@
 }
 
 .transcript-loading {
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   align-items: center;
   justify-content: center;
 }
@@ -181,7 +181,7 @@
   gap: 0.5rem;
   margin: 0 0 0.3rem;
   font-size: 0.78rem;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
 }
 
 .message-author {
@@ -193,7 +193,7 @@
 }
 
 .message-assistant .message-author {
-  color: var(--seal-strong);
+  color: var(--seal-deep);
 }
 
 .message-body {
@@ -230,7 +230,7 @@
 .message-sources h3 {
   font-size: 0.78rem;
   font-weight: 500;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   margin: 0 0 0.35rem;
 }
 
@@ -253,7 +253,7 @@
 }
 
 .source-relevance {
-  color: var(--ink-muted);
+  color: var(--ink-soft);
 }
 
 /* Empty state */
@@ -270,7 +270,7 @@
 }
 
 .empty-state p {
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   margin: 0 0 1.25rem;
 }
 
@@ -286,7 +286,7 @@
 .prompt-list button {
   width: 100%;
   text-align: left;
-  background: var(--surface);
+  background: var(--sheet);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   padding: 0.7rem 0.9rem;
@@ -318,13 +318,13 @@
   padding: 0.65rem 0.8rem;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--sheet);
   max-height: 8rem;
   field-sizing: content;
 }
 
 .composer-note {
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   font-size: 0.78rem;
   margin: 0;
 }

@@ -11,7 +11,7 @@
   overflow-x: auto;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--sheet);
 }
 
 .plan-table {
@@ -25,7 +25,7 @@
   padding: 0.6rem 0.75rem;
   text-align: left;
   font-size: 0.78rem;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   border-bottom: 1px solid var(--rule);
 }
 
@@ -45,7 +45,7 @@
 .plan-table thead th {
   font-size: 0.75rem;
   font-weight: 500;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   white-space: nowrap;
 }
 
@@ -71,7 +71,7 @@
 
 .plan-sub {
   font-size: 0.76rem;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
 }
 
 .plan-table a,
@@ -87,5 +87,5 @@
 .plan-footnote {
   margin: 0;
   font-size: 0.78rem;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
 }

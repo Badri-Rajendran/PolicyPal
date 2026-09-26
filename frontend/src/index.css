@@ -1,36 +1,70 @@
+/* Tokens from docs/design/chat-redesign/tokens.css (the `.pp` palette).
+   The theme is <html data-theme>: none follows the system, "light" or "dark"
+   overrides it (hooks/useTheme.js). */
 :root {
-  --paper: #e7e4d9;
-  --surface: #f5f2e8;
-  --ink: #23261f;
-  --ink-muted: #5c6156;
-  --seal: #a9762e;
-  --seal-strong: #8c5f20;
-  --pine: #3c6656;
-  --rule: #c9c3b0;
-  --danger: #9c3b2e;
-  --danger-surface: #f1e2dd;
+  --paper: #e8e5db;
+  --sheet: #f8f6f0;
+  --sheet-2: #f0ede3;
+  --ink: #1e211c;
+  --ink-soft: #575d51;
+  --rule: #d6d0bf;
+  --rule-strong: #bcb5a1;
+  --seal: #96651f;
+  --seal-deep: #744d15;
+  --seal-wash: #f0e3c9;
+  --pine: #2c5b4b;
+  --pine-wash: #dae6df;
+  --danger: #963728;
+  --danger-wash: #f4e1db;
+  --silver: #9ea5ab;
+  --float: 0 1px 0 rgba(30, 33, 28, 0.05), 0 18px 40px -22px rgba(52, 44, 24, 0.45);
 
-  --font-display: "IBM Plex Serif", Georgia, serif;
-  --font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --serif: "IBM Plex Serif", Georgia, serif;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
 
-  --radius: 6px;
+  --radius: 10px;
+  --radius-lg: 16px;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #1b1d18;
-    --surface: #232620;
-    --ink: #eae7dc;
-    --ink-muted: #9a9c8f;
-    --seal: #d69a4c;
-    --seal-strong: #e8b06a;
-    --pine: #7fae9a;
-    --rule: #3a3d34;
-    --danger: #e0897a;
-    --danger-surface: #3a2621;
+  :root:not([data-theme="light"]) {
+    --paper: #141611;
+    --sheet: #1d2019;
+    --sheet-2: #252820;
+    --ink: #ece8dc;
+    --ink-soft: #a4a697;
+    --rule: #32362d;
+    --rule-strong: #484c41;
+    --seal: #d69e52;
+    --seal-deep: #e9b879;
+    --seal-wash: #3a2e1b;
+    --pine: #8bb9a5;
+    --pine-wash: #1e2f28;
+    --danger: #e28d7e;
+    --danger-wash: #3b2520;
+    --float: 0 1px 0 rgba(0, 0, 0, 0.3), 0 18px 40px -20px rgba(0, 0, 0, 0.8);
     color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --paper: #141611;
+  --sheet: #1d2019;
+  --sheet-2: #252820;
+  --ink: #ece8dc;
+  --ink-soft: #a4a697;
+  --rule: #32362d;
+  --rule-strong: #484c41;
+  --seal: #d69e52;
+  --seal-deep: #e9b879;
+  --seal-wash: #3a2e1b;
+  --pine: #8bb9a5;
+  --pine-wash: #1e2f28;
+  --danger: #e28d7e;
+  --danger-wash: #3b2520;
+  --float: 0 1px 0 rgba(0, 0, 0, 0.3), 0 18px 40px -20px rgba(0, 0, 0, 0.8);
+  color-scheme: dark;
 }
 
 * {
@@ -47,7 +81,7 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--font-body);
+  font-family: var(--sans);
   font-size: 15px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
@@ -56,16 +90,16 @@ body {
 h1,
 h2,
 h3 {
-  font-family: var(--font-display);
-  font-weight: 600;
+  font-family: var(--serif);
+  font-weight: 500;
   margin: 0;
 }
 
 button,
 input,
-textarea {
-  font-family: inherit;
-  font-size: inherit;
+textarea,
+select {
+  font: inherit;
   color: inherit;
 }
 
@@ -73,9 +107,34 @@ button {
   cursor: pointer;
 }
 
+a {
+  color: var(--pine);
+  text-underline-offset: 2px;
+}
+
 :focus-visible {
   outline: 2px solid var(--seal);
   outline-offset: 2px;
+}
+
+.muted {
+  color: var(--ink-soft);
+}
+
+.tab {
+  font-variant-numeric: tabular-nums;
+}
+
+/* lucide icons: the artboards' `svg.i` sizing. */
+.i {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.i.sm {
+  width: 15px;
+  height: 15px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -83,6 +142,7 @@ button {
   *::before,
   *::after {
     animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
 }

@@ -4,6 +4,15 @@
 
 ### Added
 
+- **Chat redesign, frontend:**
+  - The redesign's tokens (paper, sheet, ink, seal, pine) in light and dark,
+    and a theme choice (System, Light or Dark) remembered per browser in
+    `localStorage["policypal.theme"]` (`hooks/useTheme.js`). The brass seal
+    replaces Vite's favicon.
+  - Four dependencies, pinned exactly: `lucide-react` 1.48.0, `motion`
+    13.4.4, `react-markdown` 10.1.0 and `remark-gfm` 4.0.1. Motion respects
+    reduced motion (`MotionConfig reducedMotion="user"`).
+
 - Design for the chat redesign
   (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the
   approved mockups in `docs/design/chat-redesign/`. It covers:

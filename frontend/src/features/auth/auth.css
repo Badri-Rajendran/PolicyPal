@@ -9,7 +9,7 @@
 .auth-card {
   width: 100%;
   max-width: 380px;
-  background: var(--surface);
+  background: var(--sheet);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   padding: 2.25rem 2rem;
@@ -25,7 +25,7 @@
 }
 
 .auth-tagline {
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   margin: 0 0 1.75rem;
   font-size: 0.92rem;
   max-width: 32ch;
@@ -49,5 +49,5 @@
 .auth-switch {
   margin: 0.25rem 0 0;
   font-size: 0.88rem;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
 }
