@@ -56,6 +56,11 @@
     and a missing file is reported for re-import.
 - Migration `3b1d6e2a9c47`: `sbc_documents.acquisition`, `crawl` or `manual`,
   checked, default `crawl`. `sbc-report` counts read documents by it.
+- California coverage answers say that a plan's SBC is its standard version,
+  so people who qualify for cost-sharing reductions or American Indian and
+  Alaska Native cost sharing pay less than it shows. The server writes the
+  notice, like the prior-year one. A first version asked the model to repeat
+  a note from the tool result, and in a live question it left it out.
 - **PolicyPal is deployed to Azure.** The API runs on Container Apps in
   Central US on the image digest built from `main`, backed by a PostgreSQL 16
   Flexible Server with `pgvector`, and the browser app is on Static Web Apps.

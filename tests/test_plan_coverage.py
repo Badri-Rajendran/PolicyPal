@@ -144,3 +144,12 @@ def test_a_long_plan_name_gives_way_so_the_label_fits():
 
     assert len(label) == 300
     assert label.endswith(" - Summary of Benefits - If you have a test.pdf")
+
+
+def test_a_plans_state_comes_back_with_its_coverage(session, issuer):
+    """Whether the standard-version notice applies is decided from it (ADR 0026)."""
+    _plan(session, issuer, "99999NH0010001", SHARED)
+    _document(session, SHARED, test="Imaging $100 copay")
+    _plan(session, issuer, "99999NH0010002", None)
+
+    assert [c.state for c in coverage_for(session, ["99999NH0010001", "99999NH0010002"], "MRI?")] == ["NH", "NH"]
