@@ -667,6 +667,10 @@
 
 ### Security
 
+- **A streamed round that never reports its usage is counted by estimate:**
+  the whole prompt plus the output cap. This covers a client that
+  disconnects, Stop, or a dropped connection. Without it, ending streams
+  early would spend past the daily token budget (OWASP LLM10).
 - Plan-summary links from CMS render only as `http(s)` URLs, never `javascript:` or
   `data:`, and open with `noopener noreferrer`.
 - Composer discloses that messages and retrieved sources are sent to

@@ -360,6 +360,15 @@ def _blocking(messages: list[dict], max_output_tokens: int, model: str, *,
     return message
 
 
+def _prompt_tokens(messages: list[dict]) -> int:
+    """A rough count of what a request sends: every turn's text and tool-call arguments."""
+    text = " ".join(
+        [str(m.get("content") or "") for m in messages]
+        + [c["function"]["arguments"] for m in messages for c in m.get("tool_calls") or []]
+    )
+    return count_tokens(text)
+
+
 def _complete_stream(messages: list[dict], max_output_tokens: int, model: str, *,
                      tools: list[dict] | None = None, tool_choice: str | None = None):
     """_complete, streaming: yields the reply's text as it arrives, and returns the
@@ -410,9 +419,16 @@ def _complete_stream(messages: list[dict], max_output_tokens: int, model: str, *
         close = getattr(stream, "close", None)
         if close is not None:
             close()
+        if not counted:
+            # Billed all the same, and most often the usage chunk is missing
+            # because the stream ended early. Counted high, the whole prompt
+            # plus the output cap, so ending streams early can't slip past
+            # the daily budget (OWASP LLM10, ADR 0027).
+            estimate = _prompt_tokens(messages) + max_output_tokens
+            _tokens_used.set(_tokens_used.get() + estimate)
+            logger.warning("streamed completion for %s returned no usage; counted an estimate of %d tokens",
+                           model, estimate)
 
-    if not counted:
-        logger.warning("streamed completion for %s returned no usage; spend uncounted", model)
     if finish_reason not in ("stop", "tool_calls"):
         logger.warning("completion for %s finished with reason %r, not 'stop'", model, finish_reason)
     tool_calls = [

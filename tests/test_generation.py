@@ -904,3 +904,33 @@ def test_answer_query_events_does_not_claim_to_rewrite_without_history():
          patch("src.services.generation.answer_events", return_value=iter([Done(Answer("x", []))])):
         out = list(answer_query_events("What is a deductible?"))
     assert out[0] == Stage("searching")
+
+
+def test_a_stream_without_usage_counts_an_estimate():
+    """The round was billed all the same: without a count, the daily budget
+    would not hold (OWASP LLM10). Estimated high: the prompt and the output cap."""
+    rounds = [_chunk("Text."), _chunk(finish="stop")]
+    with patch("src.services.generation._llm", return_value=_streaming_client(rounds)):
+        reset_token_usage()
+        list(answer_events("Q", [RetrievedChunk("c", "x", "wiki_X.txt", 0.9)], stream=True))
+    assert token_usage() >= settings.max_output_tokens
+
+
+def test_a_stream_closed_before_its_usage_still_counts_an_estimate():
+    stream = _Stream([_chunk("One "), _chunk("two."), _chunk(finish="stop"), _usage(5)])
+    client = MagicMock()
+    client.chat.completions.create.return_value = stream
+    with patch("src.services.generation._llm", return_value=client):
+        reset_token_usage()
+        events = answer_events("Q", [RetrievedChunk("c", "x", "wiki_X.txt", 0.9)], stream=True)
+        next(events), next(events)
+        events.close()
+    assert token_usage() >= settings.max_output_tokens
+
+
+def test_a_stream_that_reports_usage_counts_only_that():
+    rounds = [_chunk("Text."), _chunk(finish="stop"), _usage(42)]
+    with patch("src.services.generation._llm", return_value=_streaming_client(rounds)):
+        reset_token_usage()
+        list(answer_events("Q", [RetrievedChunk("c", "x", "wiki_X.txt", 0.9)], stream=True))
+    assert token_usage() == 42

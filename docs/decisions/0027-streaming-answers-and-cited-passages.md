@@ -132,8 +132,10 @@ sets `updated_at` to itself, which stops the column's `onupdate` from firing.
   close to it. A stream cut there ends like a client that went away: the spend
   is recorded, no answer is saved, and the client shows an error.
 - **A stopped or cut stream saves no answer,** only the question, as a failed
-  answer already did. The model's usage arrives in the stream's last chunk, so
-  the spend of a round cut short is not counted; earlier rounds are.
+  answer already did. The model's usage arrives in the stream's last chunk. A
+  round cut short never gets it, so it is counted by estimate, set high: the
+  whole prompt plus the output cap. Otherwise ending streams early would spend
+  past the daily budget (OWASP LLM10).
 - **Citations saved before this ADR are `unverified`,** never shown as if
   checked.
 - **The Wikipedia link is built from the stored label,** whose title was
