@@ -42,6 +42,26 @@ class SourceResponse(BaseModel):
     relevance: float
 
 
+class PassageLicense(BaseModel):
+    name: str
+    url: str
+
+
+class PassageResponse(BaseModel):
+    """A cited passage as it can be shown now (ADR 0027). Every field is set by
+    server code from stored data, never by the model."""
+
+    id: uuid.UUID
+    kind: str                      # sbc | wikipedia | healthcare_gov | other
+    title: str
+    document: str | None
+    section: str | None
+    quote: str | None              # null when status is changed or missing
+    status: str                    # ok | unverified | changed | missing
+    url: str | None                # https, public host, or null
+    license: PassageLicense | None
+
+
 class PlanCardResponse(BaseModel):
     """A plan as the answer showed it. Money serializes as an exact string
     ("620.15"), never a float that cannot hold cents."""

@@ -1,3 +1,4 @@
+import dataclasses
 import uuid
 
 import openai
@@ -13,6 +14,7 @@ from src.models.chat import Message, MessagePlan, MessageSource, Thread
 from src.schemas.chat import (
     MessageCreateRequest,
     MessageResponse,
+    PassageResponse,
     ThreadCreateRequest,
     ThreadRenameRequest,
     ThreadResponse,
@@ -24,7 +26,7 @@ from src.services.generation import (
     reset_token_usage,
     token_usage,
 )
-from src.services.passages import content_hash
+from src.services.passages import content_hash, passage_for
 from src.services.plan_search import PlanResult
 from src.services.profile import MIN_SIGNUP_AGE, plan_profile
 from src.services.usage import (
@@ -238,3 +240,34 @@ def create_message(thread_id: str):
     assistant_message = _save_answer(db, thread, body.content, result)
     response = MessageResponse.model_validate(assistant_message, from_attributes=True)
     return jsonify(response.model_dump(mode="json")), 201
+
+
+@bp.get("/sources/<source_id>")
+@jwt_required()
+@limiter.limit("60 per minute")
+def get_source(source_id: str):
+    """One of the current user's citations, quoted briefly (ADR 0027).
+
+    Addressed by the citation's own id, never by chunk id: chunk ids are
+    guessable. Someone else's citation is a 404, never a 403.
+    """
+    db = get_db()
+    user = get_current_user()
+    try:
+        parsed_id = uuid.UUID(source_id)
+    except ValueError:
+        abort(404)
+
+    row = db.execute(
+        select(MessageSource, Message.content)
+        .join(Message, Message.id == MessageSource.message_id)
+        .join(Thread, Thread.id == Message.thread_id)
+        .where(MessageSource.id == parsed_id, Thread.user_id == user.id)
+    ).first()
+    if row is None:
+        abort(404)
+
+    source, answer_text = row
+    passage = passage_for(db, source.chunk_id, source.source, source.content_sha256, answer_text)
+    response = PassageResponse(id=source.id, **dataclasses.asdict(passage))
+    return jsonify(response.model_dump(mode="json"))

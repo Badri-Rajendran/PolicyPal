@@ -143,3 +143,15 @@ def test_rename_thread_is_rate_limited(client):
     assert [r.status_code for r in responses[:30]] == [200] * 30
     assert responses[30].status_code == 429
     assert "Retry-After" in responses[30].headers
+
+
+def test_source_lookup_is_rate_limited(client):
+    headers = _auth_headers(client, "source-rl@example.com")
+    # A 404 counts towards the limit, as for delete_thread.
+    fake_id = "00000000-0000-0000-0000-000000000000"
+
+    responses = _hammer(client, "GET", f"/api/chat/sources/{fake_id}", times=61, headers=headers)
+
+    assert [r.status_code for r in responses[:60]] == [404] * 60
+    assert responses[60].status_code == 429
+    assert "Retry-After" in responses[60].headers

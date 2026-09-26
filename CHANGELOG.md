@@ -27,6 +27,10 @@
   characters, from the part of the passage most like the answer, with its kind,
   title, document, section, a safe `https` link and, for Wikipedia, the
   registry's CC BY-SA credit. `registry.registered(id)` reads one entry.
+- `GET /api/chat/sources/<id>` returns one of your citations as a brief quote,
+  with status `ok`, `unverified` (older answers, no hash), `changed` or
+  `missing` (60 per minute). It is addressed by citation id, never chunk id;
+  another user's citation is a 404.
 - Design and ADR 0026 for California's SBCs, sub-project 2
   (`docs/superpowers/specs/2026-09-25-ca-sbc-design.md`). CMS's California
   file has no SBC links, so each plan's link comes from a hand-built manifest.
