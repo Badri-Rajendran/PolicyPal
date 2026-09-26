@@ -23,6 +23,10 @@
 - Each citation now carries its id, and a SHA-256 of the passage text it used
   (`message_sources.content_sha256`, migration `9c1e4b7a2d10`). Older citations
   keep NULL.
+- `src/services/passages.py` turns a citation into a brief quote: at most 300
+  characters, from the part of the passage most like the answer, with its kind,
+  title, document, section, a safe `https` link and, for Wikipedia, the
+  registry's CC BY-SA credit. `registry.registered(id)` reads one entry.
 - Design and ADR 0026 for California's SBCs, sub-project 2
   (`docs/superpowers/specs/2026-09-25-ca-sbc-design.md`). CMS's California
   file has no SBC links, so each plan's link comes from a hand-built manifest.
@@ -379,6 +383,8 @@
 
 ### Changed
 
+- `unsafe_reason` moved to `src/core/urls.py`, so the API can vet links too;
+  `src/ingestion/sbc/fetch.py` still re-exports it.
 - `docs/runbooks/deploy.md` rewritten from what actually worked. The previous
   version would have failed mid-deploy four times over: it set
   `--public-access None` while step 6 restored from a laptop, created the app

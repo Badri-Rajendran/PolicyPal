@@ -11,7 +11,6 @@ robots.txt that cannot be served is not a refusal (ADR 0020).
 the issuer gave us, and writes nothing.
 """
 import hashlib
-import ipaddress
 import time
 from dataclasses import dataclass
 from functools import lru_cache
@@ -22,6 +21,7 @@ from urllib.robotparser import RobotFileParser
 import requests
 
 from src.core.logging import get_logger
+from src.core.urls import unsafe_reason  # re-exported: callers import it from here
 
 from ..constants import SBC_RAW, USER_AGENT
 
@@ -151,21 +151,6 @@ def save(body: bytes, target: Path) -> None:
     partial = target.with_suffix(".tmp")
     partial.write_bytes(body)
     partial.replace(target)
-
-
-def unsafe_reason(url: str) -> str | None:
-    """Why `url` must not be fetched, or None. Also vets a manifest's links before they are stored."""
-    parts = urlsplit(url)
-    host = (parts.hostname or "").lower()
-    if parts.scheme != "https":
-        return "not an https URL"
-    if not host or "." not in host or host == "localhost" or host.endswith((".local", ".internal")):
-        return "not a public host name"
-    try:
-        ipaddress.ip_address(host)
-    except ValueError:
-        return None
-    return "an IP address, not a host name"
 
 
 @lru_cache(maxsize=256)
