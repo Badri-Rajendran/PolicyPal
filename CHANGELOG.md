@@ -52,6 +52,14 @@
     seals as `[n]`). "Jump to latest" appears 200 px above the bottom, and a
     streaming answer stays in view while you're at the bottom. A new empty
     state offers four starters. Seal numbers count cited documents 1…n.
+  - A Sources panel (`features/chat/sources/`): a card per cited passage with
+    its title, document and section, the brief quote, a match meter and a
+    link ("Carrier's PDF", "Read on Wikipedia"), plus Wikipedia's licence
+    credit. An older citation says the passage may have changed; a changed or
+    missing one says it can't be shown. Passages are fetched when a card is
+    first shown and cached per source id (`useSource`, cleared on sign-out).
+    At 720 px and below the panel is a bottom sheet with a scrim that keeps
+    focus inside it. `hooks/useMediaQuery.js` follows a media query.
 
 - Design for the chat redesign
   (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the
