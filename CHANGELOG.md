@@ -4,6 +4,47 @@
 
 ### Added
 
+- Design for the chat redesign
+  (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the
+  approved mockups in `docs/design/chat-redesign/`. It covers:
+  - streaming answers;
+  - numbered citation seals that open a Sources panel with brief, credited
+    quotes;
+  - renaming and searching threads;
+  - a dark theme;
+  - keyboard shortcuts;
+  - a phone layout.
+
+  The work splits into a backend PR and a frontend PR. The implementation plan
+  is in `docs/superpowers/plans/2026-09-26-chat-redesign.md`.
+
+- `PATCH /api/chat/threads/<id>` renames a thread (1–200 characters, trimmed;
+  30 per minute). It leaves `updated_at`, and so the list order, alone.
+- Each citation now carries its id, and a SHA-256 of the passage text it used
+  (`message_sources.content_sha256`, migration `9c1e4b7a2d10`). Older citations
+  keep NULL.
+- `src/services/passages.py` turns a citation into a brief quote: at most 300
+  characters, from the part of the passage most like the answer, with its kind,
+  title, document, section, a safe `https` link and, for Wikipedia, the
+  registry's CC BY-SA credit. `registry.registered(id)` reads one entry.
+- `GET /api/chat/sources/<id>` returns one of your citations as a brief quote,
+  with status `ok`, `unverified` (older answers, no hash), `changed` or
+  `missing` (60 per minute). It is addressed by citation id, never chunk id;
+  another user's citation is a 404.
+- Generation is an event stream: `answer_events` and `answer_query_events` yield
+  stages, notices, text deltas, `Reset` and a final `Done`. Text streams only
+  once the answer is grounded, and a closed stream closes the model's.
+  `answer()` and `answer_query()` are unchanged wrappers.
+- `POST /api/chat/threads/<id>/messages/stream` streams an answer as
+  Server-Sent Events (`user_message`, `stage`, `notice`, `delta`, `reset`,
+  `done`, `error`). Errors before the stream are ordinary responses; the
+  question is committed first, the answer is saved before `done`, and spend is
+  recorded exactly once, also when the client goes away. It shares one
+  15-per-minute limit with the JSON send route (`scope="chat_send"`).
+- ADR 0027: streaming answers over Server-Sent Events, cited passages
+  (addressed by citation id, hash-checked, quoted briefly with their credit)
+  and renaming threads. It amends ADR 0007 and ADR 0022; sub-project 3's ADR
+  becomes 0028. The README documents the chat API, its limits and the stream.
 - Design and ADR 0026 for California's SBCs, sub-project 2
   (`docs/superpowers/specs/2026-09-25-ca-sbc-design.md`). CMS's California
   file has no SBC links, so each plan's link comes from a hand-built manifest.
@@ -360,6 +401,11 @@
 
 ### Changed
 
+- **HTTP errors are JSON:** 404, 405, 429 and the rest answer with
+  `{"error": "not found"}` and similar instead of Werkzeug's HTML page. The
+  status code and headers (`Allow`, `Retry-After`) are kept.
+- `unsafe_reason` moved to `src/core/urls.py`, so the API can vet links too;
+  `src/ingestion/sbc/fetch.py` still re-exports it.
 - `docs/runbooks/deploy.md` rewritten from what actually worked. The previous
   version would have failed mid-deploy four times over: it set
   `--public-access None` while step 6 restored from a laptop, created the app
@@ -513,6 +559,9 @@
 
 ### Fixed
 
+- **A streamed answer's spend survives a failed save.** Spend is marked as
+  recorded only after its commit succeeds. Before, a rolled-back commit took
+  the spend with it, and it was never recorded again.
 - `make ingest-sbc` counted a recorded failure twice: once as "already
   current" and again as a "recorded failure skipped". So a run over blocked
   documents read as healthier than it was. It now counts it once, as skipped.
@@ -621,6 +670,10 @@
 
 ### Security
 
+- **A streamed round that never reports its usage is counted by estimate:**
+  the whole prompt plus the output cap. This covers a client that
+  disconnects, Stop, or a dropped connection. Without it, ending streams
+  early would spend past the daily token budget (OWASP LLM10).
 - Plan-summary links from CMS render only as `http(s)` URLs, never `javascript:` or
   `data:`, and open with `noopener noreferrer`.
 - Composer discloses that messages and retrieved sources are sent to

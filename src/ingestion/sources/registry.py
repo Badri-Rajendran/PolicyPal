@@ -116,6 +116,11 @@ def _committed() -> dict[str, RegisteredSource]:
     return load_registry()
 
 
+def registered(source_id: str) -> RegisteredSource | None:
+    """The committed registry's entry for `source_id`, enabled or not."""
+    return _committed().get(source_id)
+
+
 def is_enabled(source_id: str) -> bool:
     entry = _committed().get(source_id)
     return entry is not None and entry.enabled

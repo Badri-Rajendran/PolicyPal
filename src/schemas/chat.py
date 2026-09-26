@@ -2,11 +2,25 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ThreadCreateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=200)
+
+
+class ThreadRenameRequest(BaseModel):
+    # max_length is checked before the validator strips, so a title padded
+    # past 200 characters is refused too.
+    title: str = Field(max_length=200)
+
+    @field_validator("title")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("title must not be blank")
+        return value
 
 
 class ThreadResponse(BaseModel):
@@ -21,9 +35,31 @@ class MessageCreateRequest(BaseModel):
 
 
 class SourceResponse(BaseModel):
+    # The citation's own id: the passage endpoint is addressed by it (ADR 0027).
+    id: uuid.UUID
     source: str
     chunk_id: str
     relevance: float
+
+
+class PassageLicense(BaseModel):
+    name: str
+    url: str
+
+
+class PassageResponse(BaseModel):
+    """A cited passage as it can be shown now (ADR 0027). Every field is set by
+    server code from stored data, never by the model."""
+
+    id: uuid.UUID
+    kind: str                      # sbc | wikipedia | healthcare_gov | other
+    title: str
+    document: str | None
+    section: str | None
+    quote: str | None              # null when status is changed or missing
+    status: str                    # ok | unverified | changed | missing
+    url: str | None                # https, public host, or null
+    license: PassageLicense | None
 
 
 class PlanCardResponse(BaseModel):

@@ -1,0 +1,130 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Empty.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "Chat: a new question",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "Main.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "Chat: answer, citations and sources",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "MainDark.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "Chat: dark theme",
+      "w": 1440,
+      "x": 0,
+      "y": 1300
+    },
+    "Mobile.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "title": "Phone: a source open as a sheet",
+      "w": 390,
+      "x": 1520,
+      "y": 1300
+    },
+    "Profile.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "Profile",
+      "w": 1440,
+      "x": 1520,
+      "y": 2600
+    },
+    "SidebarAccount.dc.html": {
+      "h": 700,
+      "title": "Sidebar: account menu and theme",
+      "w": 300,
+      "x": 2750,
+      "y": 1300
+    },
+    "SidebarRename.dc.html": {
+      "h": 700,
+      "title": "Sidebar: renaming, and confirming a delete",
+      "w": 300,
+      "x": 2370,
+      "y": 1300
+    },
+    "SidebarSearch.dc.html": {
+      "h": 700,
+      "title": "Sidebar: searching",
+      "w": 300,
+      "x": 1990,
+      "y": 1300
+    },
+    "SignIn.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "Sign in",
+      "w": 1440,
+      "x": 0,
+      "y": 2600
+    },
+    "Streaming.dc.html": {
+      "h": 900,
+      "title": "Chat: an answer streaming in, sidebar hidden",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-09-26T21:49:59Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "row1": {
+      "kind": "title1",
+      "maxW": 4480,
+      "text": "The chat",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "row2": {
+      "kind": "title1",
+      "maxW": 3050,
+      "text": "Dark theme, phone and sidebar states",
+      "w": 240,
+      "x": 0,
+      "y": 1000
+    },
+    "row3": {
+      "kind": "title1",
+      "maxW": 2960,
+      "text": "Sign in and profile",
+      "w": 240,
+      "x": 0,
+      "y": 2300
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Streaming.dc.html",
+    "Empty.dc.html",
+    "MainDark.dc.html",
+    "Mobile.dc.html",
+    "SidebarSearch.dc.html",
+    "SidebarRename.dc.html",
+    "SidebarAccount.dc.html",
+    "SignIn.dc.html",
+    "Profile.dc.html"
+  ],
+  "pages": [],
+  "title": "PolicyPal chat redesign"
+}

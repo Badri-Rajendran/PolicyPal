@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from src.models.chat import Message, MessagePlan, Thread
+from src.models.chat import Message, MessagePlan, MessageSource, Thread
 from src.models.user import User
 
 
@@ -89,3 +89,19 @@ def test_a_plan_card_rejects_an_unknown_sbc_status(session):
     session.add(_card(_answer(session), "readable"))
     with pytest.raises(IntegrityError):
         session.commit()
+
+
+@pytest.mark.parametrize("content_sha256", [None, "a" * 64])
+def test_a_citation_keeps_its_passage_hash_or_none(session, content_sha256):
+    """Citations saved before ADR 0027 have no hash; they read as unverified."""
+    user = _make_user(session)
+    thread = Thread(user_id=user.id)
+    session.add(thread)
+    session.commit()
+    message = Message(thread_id=thread.id, role="assistant", content="An answer.", sources=[
+        MessageSource(chunk_id="c1", source="wiki_Health.txt", relevance=0.9, content_sha256=content_sha256)])
+    session.add(message)
+    session.commit()
+
+    session.expire_all()
+    assert session.get(Message, message.id).sources[0].content_sha256 == content_sha256

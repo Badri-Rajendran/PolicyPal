@@ -1,13 +1,18 @@
+import hashlib
 import uuid
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import ANY, patch
 
-from sqlalchemy import func, select
+import pytest
+from sqlalchemy import func, select, update
 
 from src.api import deps
-from src.models.chat import Message, MessagePlan
+from src.models.chat import Message, MessagePlan, MessageSource, Thread
+from src.models.chunk import Chunk
+from src.models.sbc import SbcChunk, SbcDocument
+from src.policypal.config import settings
 from src.services.generation import Answer
 from src.services.plan_search import PlanResult
 from src.services.profile import PlanProfile, age_on, today
@@ -367,4 +372,218 @@ def test_a_follow_up_is_given_the_plans_last_shown_and_its_sbc_citations_are_kep
 
     assert [(p.position, p.plan_id, p.plan_year) for p in shown] == [(1, "66252TX0380010", 2026), (2, "33602TX0460725", 2026)]
     assert shown_again == shown
-    assert reply["sources"] == [{"chunk_id": passage.chunk_id, "source": passage.source, "relevance": 0.21}]
+    assert reply["sources"] == [{"id": ANY, "chunk_id": passage.chunk_id, "source": passage.source, "relevance": 0.21}]
+
+
+def _new_thread(client, headers):
+    return client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+
+
+def test_rename_thread_sets_a_stripped_title(client):
+    headers = _auth_headers(client, email="rename@example.com")
+    thread_id = _new_thread(client, headers)
+
+    resp = client.patch(f"/api/chat/threads/{thread_id}", json={"title": "  Silver plans, San Diego  "}, headers=headers)
+
+    assert resp.status_code == 200
+    assert resp.get_json()["title"] == "Silver plans, San Diego"
+    listed = client.get("/api/chat/threads", headers=headers).get_json()
+    assert listed[0]["title"] == "Silver plans, San Diego"
+
+
+def test_rename_does_not_move_a_thread_up_the_list(client):
+    # Every request in a test shares one transaction, where now() never moves,
+    # so a bump could not be seen: the thread is first dated a week back.
+    headers = _auth_headers(client, email="rename-order@example.com")
+    older = _new_thread(client, headers)
+    newer = _new_thread(client, headers)
+    week_ago = datetime.now(UTC) - timedelta(days=7)
+    db = deps.SessionLocal()
+    db.execute(update(Thread).where(Thread.id == uuid.UUID(older)).values(updated_at=week_ago))
+    db.flush()
+
+    client.patch(f"/api/chat/threads/{older}", json={"title": "Renamed"}, headers=headers)
+
+    after = client.get("/api/chat/threads", headers=headers).get_json()
+    assert [t["id"] for t in after] == [newer, older]
+    assert datetime.fromisoformat(after[1]["updated_at"]) == week_ago
+
+
+@pytest.mark.parametrize("title", ["", "   ", "x" * 201])
+def test_rename_rejects_a_blank_or_long_title(client, title):
+    headers = _auth_headers(client, email=f"rename-bad{len(title)}@example.com")
+    thread_id = _new_thread(client, headers)
+
+    resp = client.patch(f"/api/chat/threads/{thread_id}", json={"title": title}, headers=headers)
+
+    assert resp.status_code == 422
+
+
+def test_rename_accepts_a_title_of_exactly_200_characters(client):
+    headers = _auth_headers(client, email="rename-200@example.com")
+    thread_id = _new_thread(client, headers)
+
+    resp = client.patch(f"/api/chat/threads/{thread_id}", json={"title": "x" * 200}, headers=headers)
+
+    assert resp.status_code == 200
+
+
+@pytest.mark.parametrize("thread_id", ["00000000-0000-0000-0000-000000000000", "not-a-uuid"])
+def test_rename_of_a_missing_thread_is_404(client, thread_id):
+    headers = _auth_headers(client, email="rename-missing@example.com")
+    assert client.patch(f"/api/chat/threads/{thread_id}", json={"title": "x"}, headers=headers).status_code == 404
+
+
+def test_cannot_rename_another_users_thread(client):
+    owner = _auth_headers(client, email="rename-owner@example.com")
+    thread_id = _new_thread(client, owner)
+    other = _auth_headers(client, email="rename-other@example.com")
+
+    assert client.patch(f"/api/chat/threads/{thread_id}", json={"title": "x"}, headers=other).status_code == 404
+    listed = client.get("/api/chat/threads", headers=owner).get_json()
+    assert listed[0]["title"] is None
+
+
+def test_rename_requires_auth(client):
+    assert client.patch("/api/chat/threads/00000000-0000-0000-0000-000000000000", json={"title": "x"}).status_code == 401
+
+
+@patch("src.api.routes.chat.answer_query")
+def test_sources_carry_an_id_and_the_passage_hash(mock_answer_query, client):
+    mock_answer_query.return_value = Answer("A deductible is what you pay first.", _fake_chunks())
+    headers = _auth_headers(client, email="hash@example.com")
+    thread_id = _new_thread(client, headers)
+
+    sent = client.post(f"/api/chat/threads/{thread_id}/messages", json={"content": "Deductible?"}, headers=headers)
+
+    source = sent.get_json()["sources"][0]
+    assert uuid.UUID(source["id"])
+    reopened = client.get(f"/api/chat/threads/{thread_id}/messages", headers=headers).get_json()
+    assert next(m for m in reopened if m["role"] == "assistant")["sources"][0]["id"] == source["id"]
+    row = deps.SessionLocal().get(MessageSource, uuid.UUID(source["id"]))
+    assert row.content_sha256 == hashlib.sha256(b"A deductible is...").hexdigest()
+
+
+_WIKI = RetrievedChunk(chunk_id="wikipedia_Test_source_s0_c00", content="Health insurance covers medical expenses.",
+                       source="wiki_Health_insurance.txt", score=0.88)
+
+
+def _one_source(client, email, chunks=None, answer_text="Health insurance covers costs."):
+    headers = _auth_headers(client, email=email)
+    thread_id = _new_thread(client, headers)
+    with patch("src.api.routes.chat.answer_query", return_value=Answer(answer_text, chunks or [_WIKI])):
+        sent = client.post(f"/api/chat/threads/{thread_id}/messages", json={"content": "What is it?"}, headers=headers)
+    return headers, sent.get_json()["sources"][0]["id"]
+
+
+def _store_chunk(chunk_id, source, content):
+    db = deps.SessionLocal()
+    db.add(Chunk(chunk_id=chunk_id, source=source, content=content, embedding=[0.0] * settings.embedding_dim))
+    db.flush()
+
+
+def test_a_source_reads_as_missing_when_its_chunk_is_gone(client):
+    headers, source_id = _one_source(client, "src-missing@example.com")
+
+    resp = client.get(f"/api/chat/sources/{source_id}", headers=headers)
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["id"] == source_id
+    assert (body["kind"], body["title"], body["status"], body["quote"]) == ("wikipedia", "Health insurance", "missing", None)
+    assert body["url"] == "https://en.wikipedia.org/wiki/Health_insurance"
+    assert body["license"] == {"name": "CC BY-SA 4.0", "url": "https://creativecommons.org/licenses/by-sa/4.0/"}
+
+
+def test_a_source_quotes_its_chunk(client):
+    _store_chunk(_WIKI.chunk_id, _WIKI.source, _WIKI.content)
+    headers, source_id = _one_source(client, "src-ok@example.com")
+
+    body = client.get(f"/api/chat/sources/{source_id}", headers=headers).get_json()
+
+    assert (body["status"], body["quote"], body["document"], body["section"]) == (
+        "ok", "Health insurance covers medical expenses.", "Wikipedia article", None)
+
+
+def test_a_source_whose_chunk_was_rebuilt_is_changed_and_unquoted(client):
+    _store_chunk(_WIKI.chunk_id, _WIKI.source, "Something else entirely now.")
+    headers, source_id = _one_source(client, "src-changed@example.com")
+
+    body = client.get(f"/api/chat/sources/{source_id}", headers=headers).get_json()
+
+    assert (body["status"], body["quote"]) == ("changed", None)
+
+
+def test_an_older_citation_without_a_hash_is_unverified(client):
+    _store_chunk(_WIKI.chunk_id, _WIKI.source, _WIKI.content)
+    headers, source_id = _one_source(client, "src-old@example.com")
+    db = deps.SessionLocal()
+    db.execute(update(MessageSource).where(MessageSource.id == uuid.UUID(source_id)).values(content_sha256=None))
+    db.flush()
+
+    body = client.get(f"/api/chat/sources/{source_id}", headers=headers).get_json()
+
+    assert (body["status"], body["quote"]) == ("unverified", _WIKI.content)
+
+
+def test_a_healthcare_gov_source(client):
+    chunk = RetrievedChunk("healthcare_gov_glossary_Test_source_s0_c00", "Copayment: A fixed amount you pay.",
+                           "hcg_glossary_Copayment.md", 0.7)
+    _store_chunk(chunk.chunk_id, chunk.source, chunk.content)
+    headers, source_id = _one_source(client, "src-hcg@example.com", [chunk])
+
+    body = client.get(f"/api/chat/sources/{source_id}", headers=headers).get_json()
+
+    assert (body["kind"], body["title"], body["document"], body["status"], body["url"], body["license"]) == (
+        "healthcare_gov", "Copayment", "HealthCare.gov glossary", "ok", None, None)
+
+
+def _sbc_source(client, email, url):
+    content = "Urgent care | $50 copay/visit; deductible does not apply"
+    db = deps.SessionLocal()
+    doc = SbcDocument(url=url, plan_year=2026, status="ok")
+    db.add(doc)
+    db.flush()
+    db.add(SbcChunk(document_id=doc.id, chunk_id="sbc_2026_testsrc_s11_c00",
+                    section="If you need immediate medical attention", position=0, content=content))
+    db.flush()
+    chunk = RetrievedChunk("sbc_2026_testsrc_s11_c00", content,
+                           "Sharp Silver 70 Premier HMO - Summary of Benefits - If you need immediate medical attention.pdf",
+                           0.5)
+    return _one_source(client, email, [chunk], answer_text="Urgent care is a $50 copay.")
+
+
+def test_an_sbc_source(client):
+    headers, source_id = _sbc_source(client, "src-sbc@example.com", "https://www.sharphealthplan.com/sbc.pdf")
+
+    body = client.get(f"/api/chat/sources/{source_id}", headers=headers).get_json()
+
+    assert body == {
+        "id": source_id, "kind": "sbc", "title": "Sharp Silver 70 Premier HMO",
+        "document": "Summary of Benefits and Coverage, 2026", "section": "If you need immediate medical attention",
+        "quote": "Urgent care | $50 copay/visit; deductible does not apply", "status": "ok",
+        "url": "https://www.sharphealthplan.com/sbc.pdf", "license": None,
+    }
+
+
+@pytest.mark.parametrize("url", ["http://www.sharphealthplan.com/sbc.pdf", "https://localhost/sbc.pdf"])
+def test_an_unsafe_sbc_link_is_not_returned(client, url):
+    headers, source_id = _sbc_source(client, f"src-unsafe-{len(url)}@example.com", url)
+
+    assert client.get(f"/api/chat/sources/{source_id}", headers=headers).get_json()["url"] is None
+
+
+def test_another_users_source_is_404(client):
+    _, source_id = _one_source(client, "src-owner@example.com")
+    other = _auth_headers(client, email="src-other@example.com")
+    assert client.get(f"/api/chat/sources/{source_id}", headers=other).status_code == 404
+
+
+@pytest.mark.parametrize("source_id", ["00000000-0000-0000-0000-000000000000", "nope"])
+def test_a_missing_source_is_404(client, source_id):
+    headers = _auth_headers(client, email="src-none@example.com")
+    assert client.get(f"/api/chat/sources/{source_id}", headers=headers).status_code == 404
+
+
+def test_sources_require_auth(client):
+    assert client.get("/api/chat/sources/00000000-0000-0000-0000-000000000000").status_code == 401

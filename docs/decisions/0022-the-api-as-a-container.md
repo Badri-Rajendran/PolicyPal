@@ -6,6 +6,9 @@ Accepted. Closes the first of ADR 0002's two deferred items ("Docker build +
 image vulnerability scan. There is no Dockerfile for the app."). Depends on
 ADR 0021, without which the image cannot serve a request.
 
+Amended by ADR 0027: an answer stream holds one gthread thread for as long
+as it runs, so the 8 threads also bound concurrent streams.
+
 ## Context
 
 The app has only ever run on the machine that built its corpus. Everything
