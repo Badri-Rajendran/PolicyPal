@@ -41,6 +41,15 @@ describe("remarkMarkers", () => {
     expect(nodes.at(-1).value).toContain("[Plan: 11111XX1111111]");
   });
 
+  it("while an answer is pending, hides plan markers it can't resolve yet", () => {
+    const tree = { type: "root", children: [{ type: "paragraph", children: [{ type: "text", value: "See [Plan: X]." }] }] };
+    remarkMarkers({ pending: true })(tree);
+    expect(tree.children[0].children).toEqual([
+      { type: "text", value: "See " },
+      { type: "text", value: "." },
+    ]);
+  });
+
   it("walks into nested nodes, but leaves link text alone", () => {
     const tree = {
       type: "root",
@@ -82,5 +91,20 @@ describe("sourceNumbers", () => {
       ["Sharp - Summary of Benefits - Urgent.pdf", 1],
       ["wiki_Health.txt", 2],
     ]);
+  });
+
+  it("numbers labels without gaps when one label has several passages", () => {
+    // Two passages of one document are two sources with one label (_distinct).
+    expect([...sourceNumbers([sources[0], { id: "s3", source: sources[0].source }, sources[1]])]).toEqual([
+      ["Sharp - Summary of Benefits - Urgent.pdf", 1],
+      ["wiki_Health.txt", 2],
+    ]);
+  });
+});
+
+describe("seal order", () => {
+  it("gives each seal its place in the answer, for the stamp's stagger", () => {
+    const nodes = run("A[Source: wiki_Health.txt] B[Source: Sharp - Summary of Benefits - Urgent.pdf; wiki_Health.txt]");
+    expect(nodes.filter((n) => n.data?.hName === "pp-seal").map((n) => n.data.hProperties.index)).toEqual([0, 1, 2]);
   });
 });

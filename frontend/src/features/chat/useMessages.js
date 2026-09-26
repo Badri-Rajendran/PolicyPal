@@ -34,6 +34,8 @@ export function useMessages(threadId, onThreadUpdated) {
     setSendError("");
     setLive(null);
     setStoppedId(null);
+    // Coming back to a thread loads its history, which never stamps.
+    setFinishedId(null);
     setStatus(threadId ? "loading" : "idle");
   }
 

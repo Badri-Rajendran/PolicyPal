@@ -6,13 +6,14 @@ const MARKER = /\[(Source|Plan):\s*([^\]]+)\]/g;
 // Link text can't hold a button, so markers inside a link stay text.
 const SKIP = new Set(["link", "linkReference"]);
 
-// A seal's number is its source's position in message.sources, which the API
-// orders by relevance. A label cited twice keeps its first number.
+// A seal's number is its source's place in message.sources, which the API
+// orders by relevance. The model cites by label, and one label can have
+// several passages, so labels are numbered 1…n by first appearance.
 export function sourceNumbers(sources = []) {
   const numbers = new Map();
-  sources.forEach((s, i) => {
-    if (!numbers.has(s.source)) numbers.set(s.source, i + 1);
-  });
+  for (const s of sources) {
+    if (!numbers.has(s.source)) numbers.set(s.source, numbers.size + 1);
+  }
   return numbers;
 }
 
@@ -20,10 +21,15 @@ function planIndex(plans = []) {
   return new Map(plans.map((p, i) => [p.hios_plan_id, { position: i + 1, name: p.name }]));
 }
 
-function sealNode(number, label) {
+// `index` is the seal's place in the answer, which staggers the stamp.
+function sealNode(number, label, index) {
   return {
     type: "ppSeal",
-    data: { hName: "pp-seal", hProperties: { number, label }, hChildren: [{ type: "text", value: String(number) }] },
+    data: {
+      hName: "pp-seal",
+      hProperties: { number, label, index },
+      hChildren: [{ type: "text", value: String(number) }],
+    },
   };
 }
 
@@ -38,7 +44,7 @@ function planNode(plan, planId) {
   };
 }
 
-function splitText(value, numbers, planned) {
+function splitText(value, numbers, planned, counter, pending) {
   const nodes = [];
   let last = 0;
   for (const match of value.matchAll(MARKER)) {
@@ -47,13 +53,15 @@ function splitText(value, numbers, planned) {
     if (kind === "Source") {
       for (const label of body.split(";").map((l) => l.trim()).filter(Boolean)) {
         const number = numbers.get(label);
-        if (number) replacement.push(sealNode(number, label));
+        if (number) replacement.push(sealNode(number, label, counter.seals++));
       }
     } else {
       const planId = body.trim();
       const plan = planned.get(planId);
-      if (!plan) continue; // unknown plan: leave the text
-      replacement.push(planNode(plan, planId));
+      // An unknown plan stays as text, unless the answer is still streaming:
+      // its plans only arrive with `done`.
+      if (!plan && !pending) continue;
+      if (plan) replacement.push(planNode(plan, planId));
     }
     if (match.index > last) nodes.push({ type: "text", value: value.slice(last, match.index) });
     nodes.push(...replacement);
@@ -65,18 +73,21 @@ function splitText(value, numbers, planned) {
 
 // A remark plugin: react-markdown calls it with the options and runs the
 // transformer it returns. The custom elements are rendered by AnswerBody.
-export function remarkMarkers({ sources, plans } = {}) {
+export function remarkMarkers({ sources, plans, pending = false } = {}) {
   const numbers = sourceNumbers(sources);
   const planned = planIndex(plans);
-  function walk(node) {
-    if (!Array.isArray(node.children) || SKIP.has(node.type)) return;
-    node.children = node.children.flatMap((child) => {
-      if (child.type === "text") return splitText(child.value, numbers, planned);
-      walk(child);
-      return [child];
-    });
-  }
-  return (tree) => walk(tree);
+  return (tree) => {
+    const counter = { seals: 0 };
+    function walk(node) {
+      if (!Array.isArray(node.children) || SKIP.has(node.type)) return;
+      node.children = node.children.flatMap((child) => {
+        if (child.type === "text") return splitText(child.value, numbers, planned, counter, pending);
+        walk(child);
+        return [child];
+      });
+    }
+    walk(tree);
+  };
 }
 
 // The answer as plain text for the clipboard: seals as [n], plans by name.

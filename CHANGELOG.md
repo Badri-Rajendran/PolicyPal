@@ -40,6 +40,18 @@
     event, or a stream that ends without an answer, keeps it too and shows
     an error. One answer streams at a time, and opening another thread
     abandons it.
+  - The transcript (`features/chat/transcript/`) sets each question as the
+    heading of its answer. Answers render as Markdown (`react-markdown` and
+    `remark-gfm`; raw HTML stays text, links are https only and open in a new
+    tab, images show only their description). Citations are numbered seals
+    that open their source, plan names link to their table row and flash it,
+    and server notices show as notes. A streaming answer shows its progress
+    steps and a caret in an `aria-live` region; a stopped one says so, with
+    "Ask again". Seals stamp in only for an answer that just finished, never
+    for loaded history. Each answer has source chips and Copy (plain text,
+    seals as `[n]`). "Jump to latest" appears 200 px above the bottom, and a
+    streaming answer stays in view while you're at the bottom. A new empty
+    state offers four starters. Seal numbers count cited documents 1…n.
 
 - Design for the chat redesign
   (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the

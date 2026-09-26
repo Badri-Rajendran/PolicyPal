@@ -158,6 +158,24 @@ describe("useMessages", () => {
     expect(result.current.live.text).toBe("");
   });
 
+  it("forgets the finished answer when the thread changes, so reloaded history never stamps", async () => {
+    chatService.listMessages.mockResolvedValue([]);
+    streamWith([
+      { event: "user_message", data: { message: question } },
+      { event: "done", data: { message: { id: "a1", role: "assistant", content: "A", sources: [], plans: [] }, thread: { id: "t1" } } },
+    ]);
+    const { result, rerender } = renderHook(({ threadId }) => useMessages(threadId, vi.fn()), {
+      initialProps: { threadId: "t1" },
+    });
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    await act(() => result.current.send("Q"));
+    expect(result.current.finishedId).toBe("a1");
+
+    rerender({ threadId: "t2" });
+    rerender({ threadId: "t1" });
+    expect(result.current.finishedId).toBeNull();
+  });
+
   it("a repeated stage moves to the end", async () => {
     chatService.listMessages.mockResolvedValue([]);
     const stream = openStream();

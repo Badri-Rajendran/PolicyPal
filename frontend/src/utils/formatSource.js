@@ -1,6 +1,6 @@
 export function formatSourceLabel(filename) {
   return filename
-    .replace(/^wiki_/, "")
+    .replace(/^(wiki_|hcg_glossary_|hcg_article_)/, "")
     .replace(/\.[^.]+$/, "")
     .replaceAll("_", " ");
 }

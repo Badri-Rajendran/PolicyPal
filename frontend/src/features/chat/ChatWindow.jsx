@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import ErrorBanner from "../../components/ErrorBanner";
 import Composer from "./Composer";
-import MessageTranscript from "./MessageTranscript";
+import Transcript from "./transcript/Transcript";
 import { useMessages } from "./useMessages";
 
 export default function ChatWindow({ threadId, threadTitle, notice, onCreateThread, onThreadTitled }) {
-  const { messages, status, error, isSending, sendError, send, retry } = useMessages(threadId, onThreadTitled);
+  const { messages, status, error, live, isSending, sendError, stoppedId, finishedId, send, retry } = useMessages(
+    threadId,
+    onThreadTitled,
+  );
   const [draft, setDraft] = useState("");
   const [draftThreadId, setDraftThreadId] = useState(threadId);
   const pendingFirstMessage = useRef(null);
@@ -36,19 +39,22 @@ export default function ChatWindow({ threadId, threadTitle, notice, onCreateThre
   }
 
   return (
-    <main className="chat-window">
+    <main className="chat-window main">
       <header className="chat-window-header">
         <h2>{threadTitle || "New question"}</h2>
       </header>
       {notice}
 
-      <MessageTranscript
+      <Transcript
         messages={messages}
         status={status}
         error={error}
-        isSending={isSending}
+        live={live}
+        stoppedId={stoppedId}
+        finishedId={finishedId}
         onPrompt={setDraft}
         onRetry={retry}
+        onAskAgain={send}
       />
 
       <div className="composer-area">

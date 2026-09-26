@@ -1,0 +1,512 @@
+/* Ported from docs/design/chat-redesign/tokens.css: the transcript. */
+
+.scroll {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.column {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 36px 32px 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 44px;
+}
+
+.transcript-state {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 18vh 32px 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink-soft);
+}
+
+/* An exchange: the question is the heading, the answer is the brief. */
+.exchange {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.q {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.q h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 25px;
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.q time {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.a {
+  font-size: 16px;
+  line-height: 1.68;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.a p {
+  margin: 0 0 12px;
+}
+
+.a ul,
+.a ol {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.a li {
+  margin: 4px 0;
+}
+
+.a strong {
+  font-weight: 600;
+}
+
+.a h3,
+.a h4,
+.a h5 {
+  margin: 18px 0 8px;
+  font-family: var(--serif);
+  font-weight: 600;
+}
+
+.a h3 {
+  font-size: 19px;
+}
+
+.a h4 {
+  font-size: 17px;
+}
+
+.a h5 {
+  font-size: 16px;
+}
+
+/* A document link is one long word; on a phone it must wrap, not widen the page. */
+.a a {
+  overflow-wrap: anywhere;
+}
+
+.a code {
+  font-size: 0.92em;
+  background: var(--sheet-2);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.a blockquote {
+  margin: 0 0 12px;
+  padding-left: 12px;
+  border-left: 3px solid var(--rule-strong);
+  color: var(--ink-soft);
+}
+
+.md-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 6px 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--sheet);
+}
+
+.md-table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.md-table-scroll th,
+.md-table-scroll td {
+  text-align: left;
+  vertical-align: top;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.md-table-scroll thead th {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  background: var(--sheet-2);
+}
+
+.md-table-scroll tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--seal-wash);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+.notice .i {
+  color: var(--seal-deep);
+  margin-top: 2px;
+}
+
+/* The seal: a citation. */
+.seal {
+  display: inline-grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  margin: 0 1px 0 3px;
+  border-radius: 999px;
+  background: var(--seal);
+  color: #fff8ea;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: 2px;
+  border: none;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 248, 234, 0.3);
+  font-variant-numeric: tabular-nums;
+}
+
+button.seal:hover {
+  background: var(--seal-deep);
+}
+
+.seal.sel {
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--seal);
+}
+
+/* motion scales and turns this wrapper; the seal inside keeps its place. */
+.stamp {
+  display: inline-block;
+}
+
+.planref {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: underline dotted var(--rule-strong) 1.5px;
+  text-underline-offset: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.planref .num {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pine);
+  border: 1.5px solid var(--pine);
+  border-radius: 5px;
+  padding: 0 4px;
+  line-height: 15px;
+  align-self: center;
+}
+
+/* Answer footer */
+.afoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 11px 5px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.chip:hover {
+  border-color: var(--seal);
+}
+
+.chip .seal {
+  margin: 0;
+  vertical-align: 0;
+  flex-shrink: 0;
+}
+
+.chip .t {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tool:hover {
+  background: var(--sheet-2);
+  color: var(--ink);
+}
+
+.tool.done {
+  color: var(--pine);
+}
+
+.afoot .sep {
+  flex: 1;
+}
+
+/* Streaming */
+.steps {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  font-size: 14px;
+}
+
+.steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.steps .ok {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--pine);
+  color: var(--sheet);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.steps .ok .i {
+  width: 12px;
+  height: 12px;
+  stroke-width: 3;
+}
+
+.steps .now {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--seal);
+  border-right-color: transparent;
+  animation: spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+
+.steps .todo {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px dashed var(--rule-strong);
+  flex-shrink: 0;
+}
+
+.steps li.pending {
+  color: var(--ink-soft);
+}
+
+/* The caret sits at the end of the last block of the text so far. */
+.caret-end > :last-child::after,
+.caret-end > ul:last-child > li:last-child::after,
+.caret-end > ol:last-child > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 18px;
+  background: var(--seal);
+  vertical-align: -3px;
+  margin-left: 2px;
+  border-radius: 2px;
+  animation: blink 1s steps(1) infinite;
+}
+
+.caret-end > ul:last-child::after,
+.caret-end > ol:last-child::after {
+  content: none;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.stopped {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px dashed var(--rule-strong);
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.stopped p {
+  margin: 0;
+}
+
+/* Empty state */
+.hello {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 12vh 32px 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.hello h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 40px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  max-width: 18ch;
+}
+
+.hello .lede {
+  margin: 0;
+  font-size: 16.5px;
+  color: var(--ink-soft);
+  max-width: 56ch;
+}
+
+.starters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.starter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  cursor: pointer;
+}
+
+.starter:hover {
+  border-color: var(--seal);
+}
+
+.starter .k {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.starter .t {
+  font-size: 15.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.jump {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 150px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px 7px 10px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: var(--float);
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .column {
+    padding: 22px 18px 170px;
+    gap: 28px;
+  }
+
+  .q h2 {
+    font-size: 21px;
+  }
+
+  .a {
+    font-size: 15.5px;
+  }
+
+  .hello {
+    padding: 8vh 18px 200px;
+  }
+
+  .hello h1 {
+    font-size: 30px;
+  }
+
+  .starters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
