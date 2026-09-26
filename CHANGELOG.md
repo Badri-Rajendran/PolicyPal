@@ -41,6 +41,10 @@
   question is committed first, the answer is saved before `done`, and spend is
   recorded exactly once, also when the client goes away. It shares one
   15-per-minute limit with the JSON send route (`scope="chat_send"`).
+- ADR 0027: streaming answers over Server-Sent Events, cited passages
+  (addressed by citation id, hash-checked, quoted briefly with their credit)
+  and renaming threads. It amends ADR 0007 and ADR 0022; sub-project 3's ADR
+  becomes 0028. The README documents the chat API, its limits and the stream.
 - Design and ADR 0026 for California's SBCs, sub-project 2
   (`docs/superpowers/specs/2026-09-25-ca-sbc-design.md`). CMS's California
   file has no SBC links, so each plan's link comes from a hand-built manifest.

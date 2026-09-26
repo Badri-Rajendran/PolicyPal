@@ -14,9 +14,10 @@ Because HealthCare.gov is the authoritative consumer source, answers about healt
 
 ## Features
 
-- **Conversational Q&A**, organized into threads, over a curated insurance knowledge base
+- **Conversational Q&A**, organized into threads you can rename, over a curated insurance knowledge base
 - **Hybrid RAG pipeline** — BM25 + pgvector semantic search, cross-encoder reranked and relevance-filtered before reaching the LLM, so weakly-relevant matches never become context
 - **Cited answers** — every reply lists the source passages and their relevance score, and the plans it compared in a side-by-side table; both survive reloading the conversation. Each plan in the table says whether its Summary of Benefits was read, and why not (ADR 0017)
+- **Streamed answers, readable sources** — answers stream in as they are written, with progress along the way; each citation can be opened to a brief quote of the passage it used, checked against a hash of what was cited, with its link and licence credit (ADR 0027)
 - **Real plan comparison** — ask about ACA Marketplace plans; the model searches the ingested catalog and CMS prices the plans live for your age (ADR 0010). In California, premiums are CMS's filed rates for your age and ZIP's rating area, and answers name Covered California (ADR 0024). It compares plans and never recommends one
 - **A profile, kept off the model** — signup takes a ZIP code, date of birth and county, and plan questions use them without their ever being sent to the LLM. Nobody under 13 can sign up (ADR 0012)
 - **JWT-authenticated API** — only a signed-in user can query, and only ever sees their own threads
@@ -54,6 +55,41 @@ User ──► React UI ──► Flask API ──► Retrieval ──► LLM �
 - **Coverage questions** about a specific plan ("does the second one cover MRIs?") reach the `plan_coverage` tool. It reranks that plan's own SBC sections and returns the best four, cited by plan and section. The plans last shown in the thread are handed to the model so "the second one" resolves. A situational question ("will my MRI be covered?") gets a fixed boundary sentence and the plan's terms, never a yes or no (ADR 0014).
 
 Both halves share the same embedding model (`src/core/embedding.py`) so ingestion-time and query-time vectors stay comparable.
+
+### Chat API
+
+Every chat endpoint needs a JWT, and a thread or citation that isn't yours is a
+404, never a 403. Each is rate-limited per user and answers 429 with
+`Retry-After` past its limit.
+
+| Endpoint | Does | Limit |
+| --- | --- | --- |
+| `GET /api/chat/threads` | Your threads, most recently active first | 60/min |
+| `POST /api/chat/threads` | Starts a thread | 30/min |
+| `PATCH /api/chat/threads/<id>` | Renames it (1–200 characters); its place in the list stays | 30/min |
+| `DELETE /api/chat/threads/<id>` | Deletes it with its messages | 30/min |
+| `GET /api/chat/threads/<id>/messages` | The transcript, with citations and plans | 60/min |
+| `POST /api/chat/threads/<id>/messages` | Asks, and returns the answer as JSON | 15/min, shared with the stream |
+| `POST /api/chat/threads/<id>/messages/stream` | Asks, and streams the answer | 15/min, shared with the JSON route |
+| `GET /api/chat/sources/<id>` | One of your citations, as a brief quote | 60/min |
+
+**Streaming** ([ADR 0027](docs/decisions/0027-streaming-answers-and-cited-passages.md)). The stream route sends Server-Sent Events:
+`user_message` (the saved question), then `stage` for progress
+(`understanding`, `searching`, `plans`, `coverage`, `writing`), `notice`,
+`delta` for answer text and `reset` to discard it, and finally `done` with the
+saved answer and thread, or `error`. Errors that can be known up front (401,
+404, 422, 429) come back as ordinary responses before the stream starts. Text
+is streamed only once the answer is grounded, the answer is saved before
+`done` is sent, and a client that goes away saves no answer but is still
+charged for what the model wrote. The frontend reads the stream with `fetch`,
+since `EventSource` can't send a POST with a Bearer header.
+
+**Cited passages.** `GET /api/chat/sources/<id>` takes a citation's own id
+(each source in a message carries one) and returns its kind, title, document,
+section, link, licence and a quote of at most 300 characters, taken from the
+part of the passage most like the answer. Its `status` says whether the quote
+can be trusted: `ok`, `unverified` (an answer from before hashes were stored),
+`changed` or `missing`; the last two carry no quote.
 
 ## Project Structure
 

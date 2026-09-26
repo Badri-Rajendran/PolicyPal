@@ -5,6 +5,9 @@
 Accepted. Amended by ADR 0017: an answer that called `plan_coverage`
 saves only the corpus sources it cites.
 
+Amended by ADR 0027: each citation also stores a SHA-256 of the passage
+text it used, so a rebuilt chunk is never shown as what was cited.
+
 ## Context
 
 Citations were returned once and never stored. `POST /messages` answers with

@@ -235,3 +235,20 @@ def test_the_first_answer_titles_an_untitled_thread_only(client, title):
     thread_id = client.post("/api/chat/threads", json={"title": title}, headers=headers).get_json()["id"]
     done = _events(_stream(client, headers, thread_id, [Done(Answer("A.", CHUNKS))], content="Q about deductibles"))[-1]
     assert done[1]["thread"]["title"] == (title or "Q about deductibles")
+
+
+def test_a_thread_deleted_while_it_is_answered_ends_with_error(client):
+    headers, thread_id = _thread(client, "stream-deleted@example.com")
+
+    def source(*_args, **_kwargs):
+        yield Stage("searching")
+        assert client.delete(f"/api/chat/threads/{thread_id}", headers=headers).status_code == 204
+        yield Done(Answer("Too late.", CHUNKS))
+
+    with patch("src.api.routes.chat.answer_query_events", side_effect=source), \
+         patch("src.api.routes.chat.record_tokens") as record:
+        events = _events(client.post(_url(thread_id), json={"content": "x"}, headers=headers, buffered=True))
+
+    assert [e for e, _ in events] == ["user_message", "stage", "error"]
+    record.assert_called_once()
+    assert client.get(f"/api/chat/threads/{thread_id}/messages", headers=headers).status_code == 404
