@@ -18,11 +18,13 @@ from src.schemas.chat import (
     ThreadResponse,
 )
 from src.services.generation import (
+    Answer,
     ShownPlan,
     answer_query,
     reset_token_usage,
     token_usage,
 )
+from src.services.passages import content_hash
 from src.services.plan_search import PlanResult
 from src.services.profile import MIN_SIGNUP_AGE, plan_profile
 from src.services.usage import (
@@ -97,6 +99,37 @@ def _shown_plans(db, thread_id) -> tuple[ShownPlan, ...]:
                   metal_level=row.metal_level, plan_year=row.plan_year)
         for row in rows
     )
+
+
+def _context(db, thread) -> tuple[list[dict], tuple[ShownPlan, ...]]:
+    """The thread's history and last-shown plans, read before the new question is added,
+    so the question isn't its own history."""
+    prior = db.execute(
+        select(Message).where(Message.thread_id == thread.id).order_by(Message.created_at)
+    ).scalars().all()
+    return [{"role": m.role, "content": m.content} for m in prior], _shown_plans(db, thread.id)
+
+
+def _save_answer(db, thread, question: str, result: Answer) -> Message:
+    """The assistant message with its citations and plan snapshots (ADR 0007, 0011, 0027),
+    and the thread's automatic title."""
+    message = Message(
+        thread_id=thread.id,
+        role="assistant",
+        content=result.text,
+        sources=[
+            MessageSource(chunk_id=c.chunk_id, source=c.source, relevance=c.score,
+                          content_sha256=content_hash(c.content))
+            for c in result.chunks
+        ],
+        # A snapshot of what the answer showed, in the order shown (ADR 0011).
+        plans=[_plan_row(position, plan) for position, plan in enumerate(result.plans)],
+    )
+    db.add(message)
+    db.flush()
+    if thread.title is None:
+        thread.title = question[:80]
+    return message
 
 
 @bp.get("/threads")
@@ -182,12 +215,7 @@ def create_message(thread_id: str):
     if budget_exhausted(db, user.id):
         raise TokenBudgetExhaustedError(seconds_until_budget_resets())
 
-    # Read before adding the new message, so the question isn't its own history.
-    prior = db.execute(
-        select(Message).where(Message.thread_id == thread.id).order_by(Message.created_at)
-    ).scalars().all()
-    history = [{"role": m.role, "content": m.content} for m in prior]
-    shown_plans = _shown_plans(db, thread.id)
+    history, shown_plans = _context(db, thread)
 
     user_message = Message(thread_id=thread.id, role="user", content=body.content)
     db.add(user_message)
@@ -207,21 +235,6 @@ def create_message(thread_id: str):
         return jsonify(error="generation failed"), 502
     record_tokens(db, user.id, token_usage())
 
-    assistant_message = Message(
-        thread_id=thread.id,
-        role="assistant",
-        content=result.text,
-        sources=[
-            MessageSource(chunk_id=c.chunk_id, source=c.source, relevance=c.score) for c in result.chunks
-        ],
-        # A snapshot of what the answer showed, in the order shown (ADR 0011).
-        plans=[_plan_row(position, plan) for position, plan in enumerate(result.plans)],
-    )
-    db.add(assistant_message)
-    db.flush()
-
-    if thread.title is None:
-        thread.title = body.content[:80]
-
+    assistant_message = _save_answer(db, thread, body.content, result)
     response = MessageResponse.model_validate(assistant_message, from_attributes=True)
     return jsonify(response.model_dump(mode="json")), 201

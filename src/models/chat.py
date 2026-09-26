@@ -89,6 +89,9 @@ class MessageSource(Base):
     chunk_id: Mapped[str] = mapped_column(String(255), nullable=False)
     source: Mapped[str] = mapped_column(String(300), nullable=False)
     relevance: Mapped[float] = mapped_column(Float, nullable=False)
+    # SHA-256 of the passage text as the answer used it; NULL on citations saved
+    # before ADR 0027. How the passage endpoint tells a rebuilt chunk apart.
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     message: Mapped["Message"] = relationship(back_populates="sources")
 

@@ -20,6 +20,9 @@
 
 - `PATCH /api/chat/threads/<id>` renames a thread (1–200 characters, trimmed;
   30 per minute). It leaves `updated_at`, and so the list order, alone.
+- Each citation now carries its id, and a SHA-256 of the passage text it used
+  (`message_sources.content_sha256`, migration `9c1e4b7a2d10`). Older citations
+  keep NULL.
 - Design and ADR 0026 for California's SBCs, sub-project 2
   (`docs/superpowers/specs/2026-09-25-ca-sbc-design.md`). CMS's California
   file has no SBC links, so each plan's link comes from a hand-built manifest.

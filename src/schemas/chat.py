@@ -35,6 +35,8 @@ class MessageCreateRequest(BaseModel):
 
 
 class SourceResponse(BaseModel):
+    # The citation's own id: the passage endpoint is addressed by it (ADR 0027).
+    id: uuid.UUID
     source: str
     chunk_id: str
     relevance: float

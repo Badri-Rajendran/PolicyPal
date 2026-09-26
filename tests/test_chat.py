@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
@@ -8,7 +9,7 @@ import pytest
 from sqlalchemy import func, select, update
 
 from src.api import deps
-from src.models.chat import Message, MessagePlan, Thread
+from src.models.chat import Message, MessagePlan, MessageSource, Thread
 from src.services.generation import Answer
 from src.services.plan_search import PlanResult
 from src.services.profile import PlanProfile, age_on, today
@@ -368,7 +369,7 @@ def test_a_follow_up_is_given_the_plans_last_shown_and_its_sbc_citations_are_kep
 
     assert [(p.position, p.plan_id, p.plan_year) for p in shown] == [(1, "66252TX0380010", 2026), (2, "33602TX0460725", 2026)]
     assert shown_again == shown
-    assert reply["sources"] == [{"chunk_id": passage.chunk_id, "source": passage.source, "relevance": 0.21}]
+    assert reply["sources"] == [{"id": ANY, "chunk_id": passage.chunk_id, "source": passage.source, "relevance": 0.21}]
 
 
 def _new_thread(client, headers):
@@ -442,3 +443,19 @@ def test_cannot_rename_another_users_thread(client):
 
 def test_rename_requires_auth(client):
     assert client.patch("/api/chat/threads/00000000-0000-0000-0000-000000000000", json={"title": "x"}).status_code == 401
+
+
+@patch("src.api.routes.chat.answer_query")
+def test_sources_carry_an_id_and_the_passage_hash(mock_answer_query, client):
+    mock_answer_query.return_value = Answer("A deductible is what you pay first.", _fake_chunks())
+    headers = _auth_headers(client, email="hash@example.com")
+    thread_id = _new_thread(client, headers)
+
+    sent = client.post(f"/api/chat/threads/{thread_id}/messages", json={"content": "Deductible?"}, headers=headers)
+
+    source = sent.get_json()["sources"][0]
+    assert uuid.UUID(source["id"])
+    reopened = client.get(f"/api/chat/threads/{thread_id}/messages", headers=headers).get_json()
+    assert next(m for m in reopened if m["role"] == "assistant")["sources"][0]["id"] == source["id"]
+    row = deps.SessionLocal().get(MessageSource, uuid.UUID(source["id"]))
+    assert row.content_sha256 == hashlib.sha256(b"A deductible is...").hexdigest()
