@@ -12,6 +12,10 @@
   - Four dependencies, pinned exactly: `lucide-react` 1.48.0, `motion`
     13.4.4, `react-markdown` 10.1.0 and `remark-gfm` 4.0.1. Motion respects
     reduced motion (`MotionConfig reducedMotion="user"`).
+  - `services/sse.js` parses a `text/event-stream` body read through `fetch`,
+    and `apiStream` posts to a streaming route, rejecting before the stream
+    exactly as `apiFetch` does. `chatService` gains `streamMessage`,
+    `renameThread` and `getSource`.
 
 - Design for the chat redesign
   (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the
