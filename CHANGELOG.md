@@ -61,6 +61,15 @@
   Alaska Native cost sharing pay less than it shows. The server writes the
   notice, like the prior-year one. A first version asked the model to repeat
   a note from the tool result, and in a live question it left it out.
+- `docs/findings/ca-sbc.md`: where each California carrier publishes its SBCs,
+  what its Terms and `robots.txt` say (quoted), how each manifest row was
+  checked, what scripts requested before the Terms were read, and the first
+  run's counts. The eval still passes: 1,303 of 1,320 ranking questions put
+  the right section in the top 4 (98.7%; floor 97%).
+- Runbooks: `california.md` gains the yearly SBC routine (re-check Terms, write
+  the manifest, apply, crawl, import, check), and `sbc.md` how manual documents
+  behave in the monthly one. The README documents the new commands and the
+  registry's `mandated_disclosure`.
 - **PolicyPal is deployed to Azure.** The API runs on Container Apps in
   Central US on the image digest built from `main`, backed by a PostgreSQL 16
   Flexible Server with `pgvector`, and the browser app is on Static Web Apps.
