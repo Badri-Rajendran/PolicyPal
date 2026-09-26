@@ -33,6 +33,13 @@
     account menu with the profile link, the theme choice, the shortcuts and
     sign out. `useThreads.renameThread` is optimistic and rolls back on
     failure, which the page reports in a toast.
+  - `useMessages` sends through the stream: `user_message` replaces the
+    optimistic question, `stage`, `notice`, `delta` and `reset` build a live
+    draft, and `done` replaces it with the saved answer and updates the
+    thread. `stop()` aborts the fetch and keeps the question; an `error`
+    event, or a stream that ends without an answer, keeps it too and shows
+    an error. One answer streams at a time, and opening another thread
+    abandons it.
 
 - Design for the chat redesign
   (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the

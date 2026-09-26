@@ -1,22 +1,57 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth } from "../../hooks/useAuth";
+import { ApiError, SessionExpiredError } from "../../services/apiClient";
 import * as chatService from "../../services/chatService";
 import { useMessages } from "./useMessages";
 
 vi.mock("../../hooks/useAuth");
 vi.mock("../../services/chatService");
 
+let expireSession;
+
 beforeEach(() => {
   vi.clearAllMocks();
-  useAuth.mockReturnValue({ token: "tok123" });
+  expireSession = vi.fn();
+  useAuth.mockReturnValue({ token: "tok123", expireSession });
 });
+
+// streamMessage resolves after handing each event to onEvent, as apiStream does.
+function streamWith(events) {
+  chatService.streamMessage.mockImplementation(async (_t, _id, _c, { onEvent }) => {
+    for (const e of events) onEvent(e);
+  });
+}
+
+// A stream left open: the test emits events, and aborting rejects it.
+function openStream() {
+  const stream = {};
+  chatService.streamMessage.mockImplementation(
+    (_t, _i, _c, { onEvent, signal }) =>
+      new Promise((_resolve, reject) => {
+        stream.emit = onEvent;
+        stream.signal = signal;
+        signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      }),
+  );
+  return stream;
+}
+
+const question = { id: "q1", role: "user", content: "Q" };
+
+async function ready(threadId = "t1", onThreadUpdated = vi.fn()) {
+  const hook = renderHook(() => useMessages(threadId, onThreadUpdated));
+  await waitFor(() => expect(hook.result.current.status).toBe("ready"));
+  return hook;
+}
 
 describe("useMessages", () => {
   it("stays idle with no thread selected", () => {
     const { result } = renderHook(() => useMessages(null, vi.fn()));
     expect(result.current.status).toBe("idle");
     expect(result.current.messages).toEqual([]);
+    expect(result.current.live).toBeNull();
+    expect(result.current.isSending).toBe(false);
   });
 
   it("loads messages for the given thread", async () => {
@@ -25,6 +60,7 @@ describe("useMessages", () => {
 
     await waitFor(() => expect(result.current.status).toBe("ready"));
     expect(result.current.messages).toEqual([{ id: "m1", role: "user", content: "Hi" }]);
+    expect(result.current.finishedId).toBeNull();
   });
 
   it("resets when switching to a different thread", async () => {
@@ -44,7 +80,7 @@ describe("useMessages", () => {
   it("keeps an optimistic message even if the history fetch resolves empty afterwards", async () => {
     let resolveHistory;
     chatService.listMessages.mockReturnValue(new Promise((resolve) => (resolveHistory = resolve)));
-    chatService.sendMessage.mockImplementation(() => new Promise(() => {})); // never resolves in this test
+    chatService.streamMessage.mockImplementation(() => new Promise(() => {})); // never resolves in this test
 
     const { result } = renderHook(() => useMessages("t1", vi.fn()));
 
@@ -64,25 +100,220 @@ describe("useMessages", () => {
     expect(result.current.messages[0].role).toBe("user");
   });
 
-  it("appends the assistant reply and titles a first message", async () => {
+  it("streams stages, notices and text, then replaces the draft with done", async () => {
     chatService.listMessages.mockResolvedValue([]);
-    chatService.sendMessage.mockResolvedValue({
-      id: "m2",
-      role: "assistant",
-      content: "It's the amount you pay first.",
-      sources: [{ source: "wiki_Health.txt", chunk_id: "c1", relevance: 0.9 }],
+    const onThreadUpdated = vi.fn();
+    const saved = { id: "a1", role: "assistant", content: "Notice.\n\nAnswer.", sources: [], plans: [] };
+    streamWith([
+      { event: "user_message", data: { message: question } },
+      { event: "stage", data: { stage: "searching" } },
+      { event: "notice", data: { text: "Notice." } },
+      { event: "delta", data: { text: "Ans" } },
+      { event: "done", data: { message: saved, thread: { id: "t1", title: "Q" } } },
+    ]);
+    const { result } = await ready("t1", onThreadUpdated);
+
+    await act(() => result.current.send("Q"));
+
+    expect(chatService.streamMessage).toHaveBeenCalledWith("tok123", "t1", "Q", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(result.current.messages.map((m) => m.id)).toEqual(["q1", "a1"]);
+    expect(result.current.live).toBeNull();
+    expect(result.current.isSending).toBe(false);
+    expect(result.current.finishedId).toBe("a1");
+    expect(result.current.sendError).toBe("");
+    expect(onThreadUpdated).toHaveBeenCalledWith({ id: "t1", title: "Q" });
+  });
+
+  it("shows the live draft while it streams", async () => {
+    chatService.listMessages.mockResolvedValue([]);
+    const stream = openStream();
+    const { result } = await ready();
+
+    act(() => {
+      result.current.send("Q");
     });
-    const onThreadTitled = vi.fn();
-    const { result } = renderHook(() => useMessages("t1", onThreadTitled));
-    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.isSending).toBe(true);
+    expect(result.current.live).toEqual({ questionId: expect.stringMatching(/^temp-/), stages: [], notices: [], text: "" });
+
+    act(() => stream.emit({ event: "user_message", data: { message: question } }));
+    act(() => stream.emit({ event: "stage", data: { stage: "searching" } }));
+    act(() => stream.emit({ event: "notice", data: { text: "Plans in CA…" } }));
+    act(() => stream.emit({ event: "delta", data: { text: "Let " } }));
+    act(() => stream.emit({ event: "delta", data: { text: "me look" } }));
+
+    expect(result.current.messages).toEqual([question]);
+    expect(result.current.live).toEqual({ questionId: "q1", stages: ["searching"], notices: ["Plans in CA…"], text: "Let me look" });
+  });
+
+  it("reset clears the streamed text", async () => {
+    chatService.listMessages.mockResolvedValue([]);
+    const stream = openStream();
+    const { result } = await ready();
+    act(() => {
+      result.current.send("Q");
+    });
+    act(() => stream.emit({ event: "delta", data: { text: "Let me look" } }));
+    expect(result.current.live.text).toBe("Let me look");
+    act(() => stream.emit({ event: "reset", data: {} }));
+    expect(result.current.live.text).toBe("");
+  });
+
+  it("a repeated stage moves to the end", async () => {
+    chatService.listMessages.mockResolvedValue([]);
+    const stream = openStream();
+    const { result } = await ready();
+    act(() => {
+      result.current.send("Q");
+    });
+    act(() => stream.emit({ event: "stage", data: { stage: "writing" } }));
+    act(() => stream.emit({ event: "stage", data: { stage: "plans" } }));
+    act(() => stream.emit({ event: "stage", data: { stage: "writing" } }));
+    expect(result.current.live.stages).toEqual(["plans", "writing"]);
+  });
+
+  it("an error event keeps the saved question and shows the send error", async () => {
+    chatService.listMessages.mockResolvedValue([]);
+    streamWith([
+      { event: "user_message", data: { message: question } },
+      { event: "delta", data: { text: "Half" } },
+      { event: "error", data: { error: "generation failed" } },
+    ]);
+    const { result } = await ready();
+
+    await act(() => result.current.send("Q"));
+
+    expect(result.current.messages.map((m) => m.id)).toEqual(["q1"]);
+    expect(result.current.sendError).toBe("PolicyPal couldn't write an answer just now. Try again.");
+    expect(result.current.live).toBeNull();
+  });
+
+  it("a stream that ends without an answer says so", async () => {
+    chatService.listMessages.mockResolvedValue([]);
+    streamWith([{ event: "user_message", data: { message: question } }]);
+    const { result } = await ready();
+
+    await act(() => result.current.send("Q"));
+
+    expect(result.current.messages.map((m) => m.id)).toEqual(["q1"]);
+    expect(result.current.sendError).toBe("PolicyPal couldn't write an answer just now. Try again.");
+  });
+
+  it("a failure before the stream removes the optimistic question", async () => {
+    chatService.listMessages.mockResolvedValue([]);
+    chatService.streamMessage.mockRejectedValue(
+      new ApiError("You're sending requests too quickly. Wait a moment and try again.", 429),
+    );
+    const { result } = await ready();
+
+    await act(() => result.current.send("What is a deductible?"));
+
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.sendError).toBe("You're sending requests too quickly. Wait a moment and try again.");
+    expect(result.current.live).toBeNull();
+  });
+
+  it("a new send clears the last send error", async () => {
+    chatService.listMessages.mockResolvedValue([]);
+    chatService.streamMessage.mockRejectedValueOnce(new ApiError("Something went wrong.", 500));
+    const { result } = await ready();
+    await act(() => result.current.send("Q"));
+    expect(result.current.sendError).toBe("Something went wrong.");
+
+    openStream();
+    act(() => {
+      result.current.send("Q");
+    });
+    expect(result.current.sendError).toBe("");
+  });
+
+  it("stop aborts, keeps the question, and marks it stopped", async () => {
+    chatService.listMessages.mockResolvedValue([]);
+    const stream = openStream();
+    const { result } = await ready();
+    let sending;
+    act(() => {
+      sending = result.current.send("Q");
+    });
+    act(() => stream.emit({ event: "user_message", data: { message: question } }));
+    act(() => stream.emit({ event: "delta", data: { text: "Partial" } }));
 
     await act(async () => {
-      await result.current.send("What is a deductible?");
+      result.current.stop();
+      await sending;
     });
 
-    expect(result.current.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
-    expect(result.current.isSending).toBe(false);
-    expect(onThreadTitled).toHaveBeenCalledWith("t1", "What is a deductible?");
+    expect(stream.signal.aborted).toBe(true);
+    expect(result.current.live).toBeNull();
+    expect(result.current.stoppedId).toBe("q1");
+    expect(result.current.messages).toEqual([question]);
+    expect(result.current.sendError).toBe("");
+  });
+
+  it("the next send clears the stopped mark", async () => {
+    chatService.listMessages.mockResolvedValue([]);
+    const stream = openStream();
+    const { result } = await ready();
+    let sending;
+    act(() => {
+      sending = result.current.send("Q");
+    });
+    act(() => stream.emit({ event: "user_message", data: { message: question } }));
+    await act(async () => {
+      result.current.stop();
+      await sending;
+    });
+    expect(result.current.stoppedId).toBe("q1");
+
+    openStream();
+    act(() => {
+      result.current.send("Q again");
+    });
+    expect(result.current.stoppedId).toBeNull();
+  });
+
+  it("ignores a second send while an answer is live", async () => {
+    chatService.listMessages.mockResolvedValue([]);
+    openStream();
+    const { result } = await ready();
+    act(() => {
+      result.current.send("Q");
+    });
+    act(() => {
+      result.current.send("Q");
+    });
+    expect(chatService.streamMessage).toHaveBeenCalledOnce();
+    expect(result.current.messages).toHaveLength(1);
+  });
+
+  it("aborts a live answer when the thread changes", async () => {
+    chatService.listMessages.mockResolvedValue([]);
+    const stream = openStream();
+    const { result, rerender } = renderHook(({ threadId }) => useMessages(threadId, vi.fn()), {
+      initialProps: { threadId: "t1" },
+    });
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    act(() => {
+      result.current.send("Q");
+    });
+
+    await act(async () => {
+      rerender({ threadId: "t2" });
+    });
+
+    expect(stream.signal.aborted).toBe(true);
+    expect(result.current.live).toBeNull();
+    expect(result.current.messages).toEqual([]);
+  });
+
+  it("an expired session calls expireSession", async () => {
+    chatService.listMessages.mockResolvedValue([]);
+    chatService.streamMessage.mockRejectedValue(new SessionExpiredError());
+    const { result } = await ready();
+
+    await act(() => result.current.send("Q"));
+
+    expect(expireSession).toHaveBeenCalled();
+    expect(result.current.sendError).toBe("");
   });
 
   it("reports a failed history load rather than looking empty", async () => {
@@ -121,19 +352,5 @@ describe("useMessages", () => {
 
     expect(result.current.error).toBe("");
     await waitFor(() => expect(result.current.status).toBe("ready"));
-  });
-
-  it("rolls back the optimistic message and surfaces an error on failure", async () => {
-    chatService.listMessages.mockResolvedValue([]);
-    chatService.sendMessage.mockRejectedValue(new Error("You're sending requests too quickly."));
-    const { result } = renderHook(() => useMessages("t1", vi.fn()));
-    await waitFor(() => expect(result.current.status).toBe("ready"));
-
-    await act(async () => {
-      await result.current.send("What is a deductible?");
-    });
-
-    expect(result.current.messages).toEqual([]);
-    expect(result.current.sendError).toBe("You're sending requests too quickly.");
   });
 });

@@ -66,7 +66,7 @@ export default function ChatPage() {
         // Strictly false: a session stored before profiles existed has no flag, and is not nagged on a guess.
         notice={user?.profile_complete === false ? <ProfileNudge /> : null}
         onCreateThread={startThread}
-        onThreadTitled={touchThread}
+        onThreadTitled={(thread) => touchThread(thread.id, thread.title, thread.updated_at)}
       />
       <Toast message={toast} onDone={() => setToast("")} />
     </div>
