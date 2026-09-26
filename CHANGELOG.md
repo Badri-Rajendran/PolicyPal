@@ -16,6 +16,11 @@
     and `apiStream` posts to a streaming route, rejecting before the stream
     exactly as `apiFetch` does. `chatService` gains `streamMessage`,
     `renameThread` and `getSource`.
+  - `utils/markers.js`: a remark plugin that turns `[Source: a; b]` into
+    numbered seals and `[Plan: id]` into plan links (unknown labels dropped,
+    unknown plans left as text), and the plain text Copy writes.
+    `utils/threadGroups.js` groups threads into Today, Previous 7 days and
+    Earlier; `utils/exchanges.js` pairs questions with their answers.
 
 - Design for the chat redesign
   (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the
