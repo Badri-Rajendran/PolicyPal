@@ -26,6 +26,7 @@ function mockThreads(overrides = {}) {
     error: "",
     createThread: vi.fn(),
     removeThread: vi.fn(),
+    renameThread: vi.fn().mockResolvedValue({}),
     touchThread: vi.fn(),
     retry: vi.fn(),
     ...overrides,
@@ -97,6 +98,20 @@ describe("ChatPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Can't reach PolicyPal");
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(retry).toHaveBeenCalledOnce();
+  });
+
+  it("renames a thread from the sidebar, and says so when that fails", async () => {
+    const user = userEvent.setup();
+    const renameThread = vi.fn().mockRejectedValue(new Error("validation failed"));
+    mockThreads({ renameThread });
+    renderAt("/chat/t1");
+
+    await user.click(screen.getByRole("button", { name: "Options for Deductibles" }));
+    await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+    await user.type(screen.getByRole("textbox", { name: "Thread name" }), " 101{Enter}");
+
+    expect(renameThread).toHaveBeenCalledWith("t1", "Deductibles 101");
+    expect(await screen.findByRole("status")).toHaveTextContent("Couldn't rename this thread. Try again.");
   });
 
   it("asks an account without a profile to add one, and nobody else", () => {

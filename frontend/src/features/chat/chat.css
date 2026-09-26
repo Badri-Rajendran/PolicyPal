@@ -2,7 +2,8 @@
   display: grid;
   /* minmax(0, …): a plain 1fr column never narrows below its widest content,
      so a plan table would widen the whole page on a phone. */
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 276px minmax(0, 1fr);
+  position: relative;
   height: 100%;
 }
 
@@ -11,117 +12,6 @@
   align-content: center;
   justify-items: center;
   gap: 0.75rem;
-}
-
-/* Sidebar */
-
-.sidebar {
-  border-right: 1px solid var(--rule);
-  display: flex;
-  flex-direction: column;
-  padding: 1.25rem 1rem;
-  gap: 1rem;
-  min-height: 0;
-}
-
-.sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.sidebar-header h1 {
-  font-size: 1.15rem;
-}
-
-.sidebar-hint {
-  color: var(--ink-soft);
-  font-size: 0.85rem;
-  margin: 0;
-}
-
-.thread-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  overflow-y: auto;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-height: 0;
-}
-
-.thread-item {
-  display: flex;
-  align-items: center;
-  border-radius: var(--radius);
-  border-left: 3px solid transparent;
-}
-
-.thread-item.is-active {
-  background: var(--sheet);
-  border-left-color: var(--seal);
-}
-
-.thread-item-select {
-  flex: 1;
-  text-align: left;
-  background: none;
-  border: none;
-  padding: 0.55rem 0.6rem;
-  border-radius: var(--radius);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.thread-item-select:hover {
-  background: var(--sheet);
-}
-
-.thread-item-delete {
-  background: none;
-  border: none;
-  color: var(--ink-soft);
-  padding: 0.4rem 0.6rem;
-  font-size: 1.05rem;
-  line-height: 1;
-  visibility: hidden;
-}
-
-.thread-item:hover .thread-item-delete,
-.thread-item:focus-within .thread-item-delete {
-  visibility: visible;
-}
-
-.thread-item-delete:hover {
-  color: var(--danger);
-}
-
-.sidebar-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  border-top: 1px solid var(--rule);
-  padding-top: 0.85rem;
-  font-size: 0.85rem;
-}
-
-.sidebar-email {
-  flex: 1;
-  min-width: 0;
-  color: var(--ink-soft);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The email gives way first; the links keep their words on one line. */
-.sidebar-footer .link {
-  white-space: nowrap;
 }
 
 /* Chat window */
@@ -335,7 +225,7 @@
     grid-template-rows: auto 1fr;
   }
 
-  .sidebar {
+  .side {
     border-right: none;
     border-bottom: 1px solid var(--rule);
     max-height: 40vh;

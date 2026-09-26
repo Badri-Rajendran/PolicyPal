@@ -87,6 +87,68 @@ describe("useThreads", () => {
     expect(result.current.threads[0]).toEqual({ id: "t2", title: "Auto claims process" });
   });
 
+  it("records a thread's new activity time when it is touched", async () => {
+    chatService.listThreads.mockResolvedValue([
+      { id: "t1", title: "Deductibles", updated_at: "2026-09-01T00:00:00Z" },
+      { id: "t2", title: "Copays", updated_at: "2026-08-01T00:00:00Z" },
+    ]);
+    const { result } = renderHook(() => useThreads());
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+
+    act(() => result.current.touchThread("t2", null, "2026-09-26T12:00:00Z"));
+
+    expect(result.current.threads[0]).toEqual({ id: "t2", title: "Copays", updated_at: "2026-09-26T12:00:00Z" });
+  });
+
+  it("renames a thread at once, keeping the server's copy", async () => {
+    chatService.listThreads.mockResolvedValue([{ id: "t1", title: "Deductibles" }]);
+    let resolve;
+    chatService.renameThread.mockReturnValue(new Promise((r) => (resolve = r)));
+    const { result } = renderHook(() => useThreads());
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+
+    let pending;
+    act(() => {
+      pending = result.current.renameThread("t1", "What a deductible covers");
+    });
+    expect(result.current.threads[0].title).toBe("What a deductible covers");
+    expect(chatService.renameThread).toHaveBeenCalledWith("tok123", "t1", "What a deductible covers");
+
+    await act(async () => {
+      resolve({ id: "t1", title: "What a deductible covers", updated_at: "x" });
+      await pending;
+    });
+    expect(result.current.threads[0]).toEqual({ id: "t1", title: "What a deductible covers", updated_at: "x" });
+  });
+
+  it("restores the old title and rethrows when a rename fails", async () => {
+    chatService.listThreads.mockResolvedValue([{ id: "t1", title: "Deductibles" }]);
+    chatService.renameThread.mockRejectedValue(new Error("validation failed"));
+    const { result } = renderHook(() => useThreads());
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+
+    let error;
+    await act(async () => {
+      error = await result.current.renameThread("t1", "New").catch((e) => e);
+    });
+
+    expect(error.message).toBe("validation failed");
+    expect(result.current.threads[0].title).toBe("Deductibles");
+  });
+
+  it("expires the session when a rename's token is dead", async () => {
+    chatService.listThreads.mockResolvedValue([{ id: "t1", title: "Deductibles" }]);
+    chatService.renameThread.mockRejectedValue(new SessionExpiredError());
+    const { result } = renderHook(() => useThreads());
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+
+    await act(async () => {
+      await result.current.renameThread("t1", "New").catch(() => {});
+    });
+
+    expect(expireSession).toHaveBeenCalled();
+  });
+
   it("retries after an error", async () => {
     chatService.listThreads.mockRejectedValueOnce(new Error("network down"));
     const { result } = renderHook(() => useThreads());

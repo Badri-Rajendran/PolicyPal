@@ -26,6 +26,13 @@
     keys, Home/End, Enter/Space, Esc and outside clicks close it and return
     focus), a self-dismissing `Toast`, and a show/hide toggle and hint on
     password `TextField`s.
+  - A redesigned sidebar (`features/chat/sidebar/`): threads grouped by date,
+    a search box that filters titles as you type and highlights the matches,
+    each thread's ⋯ menu to rename it inline (Enter saves, Esc cancels, a
+    blank name is refused) or delete it after an inline confirmation, and an
+    account menu with the profile link, the theme choice, the shortcuts and
+    sign out. `useThreads.renameThread` is optimistic and rolls back on
+    failure, which the page reports in a toast.
 
 - Design for the chat redesign
   (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the
