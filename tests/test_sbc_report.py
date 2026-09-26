@@ -180,3 +180,19 @@ def test_verifying_files_checks_a_partly_read_documents_pdf_too(session, catalog
 
     assert report.missing_files == ["https://sbc.example.com/partial.pdf"]
     assert report.changed_files == []
+
+
+def test_read_documents_are_counted_by_how_they_were_acquired(session, catalog):
+    """A crawled document and one a person imported by hand (ADR 0026)."""
+    session.execute(SbcDocument.__table__.update()
+                    .where(SbcDocument.url == "https://sbc.example.com/partial.pdf").values(acquisition="manual"))
+
+    report = collect(session, YEAR)
+
+    assert report.acquired == {"crawl": 1, "manual": 1}
+    assert "Documents read: 1 crawled, 1 imported by hand" in render(report)
+
+
+def test_the_report_takes_california_and_all_is_still_the_api_states():
+    assert sbc_report.parse_args(["--states", "CA"]).states == ["CA"]
+    assert "CA" not in sbc_report.parse_args(["--states", "ALL"]).states

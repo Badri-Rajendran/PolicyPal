@@ -13,6 +13,11 @@ Every downloaded PDF is kept (ADR 0016); a replaced one is archived.
 Its chunks go to `sbc_chunks`, apart from the corpus, which `make ingest`
 rebuilds without touching them.
 
+California's links come from a hand-built manifest (ADR 0026), and each is
+read only as its host's source-registry entry allows: `crawl` is fetched here,
+`manual` never is — a person downloads it and `make import-sbc` reads it. A
+manually imported document is re-parsed from disk, never requested again.
+
     uv run python -m src.ingestion.sbc --states NH,DE --limit 5
 """
 import argparse
@@ -29,6 +34,7 @@ from sqlalchemy.exc import DataError
 from tqdm import tqdm
 
 from src.core.db import get_session
+from src.core.exchanges import CATALOG_STATES, FILED_RATE_STATES
 from src.core.logging import get_logger
 from src.core.text import count_tokens
 from src.models.plan import Issuer, Plan
@@ -37,8 +43,9 @@ from src.policypal.config import settings
 from src.services.sbc_status import READ_STATUSES
 
 from ..chunking import make_recursive_splitter
-from ..constants import SBC_ARCHIVE, SBC_REJECTED
+from ..constants import SBC_ARCHIVE, SBC_RAW, SBC_REJECTED
 from ..plans import resolve_states, upsert
+from ..sources.registry import host_access
 from .extract import (
     PARSER_VERSION,
     SbcParse,
@@ -73,6 +80,7 @@ class PlanRef:
     hios_plan_id: str
     name: str
     issuer: str
+    state: str
 
 
 def documents_for(session, states: list[str], year: int,
@@ -82,7 +90,7 @@ def documents_for(session, states: list[str], year: int,
     `issuer_ids` narrows it to those HIOS issuers' plans.
     """
     stmt = (
-        select(Plan.benefits_url, Plan.hios_plan_id, Plan.marketing_name, Issuer.name)
+        select(Plan.benefits_url, Plan.hios_plan_id, Plan.marketing_name, Issuer.name, Plan.state)
         .join(Issuer, Issuer.id == Plan.issuer_id)
         .where(Plan.plan_year == year, Plan.state.in_(states), Plan.benefits_url.is_not(None))
         .order_by(Issuer.name, Plan.hios_plan_id)
@@ -91,8 +99,8 @@ def documents_for(session, states: list[str], year: int,
         stmt = stmt.where(Issuer.hios_issuer_id.in_(issuer_ids))
     rows = session.execute(stmt).all()
     documents = defaultdict(list)
-    for url, plan_id, name, issuer in rows:
-        documents[url].append(PlanRef(plan_id, name, issuer))
+    for url, plan_id, name, issuer, state in rows:
+        documents[url].append(PlanRef(plan_id, name, issuer, state))
     return dict(documents)
 
 
@@ -117,12 +125,17 @@ def build_chunks(url: str, year: int, parse: SbcParse) -> list[dict]:
     return chunks
 
 
-def ingest_document(url: str, year: int, stored=None) -> str:
-    """Fetch, parse and store one SBC. Returns its status. The PDF is always kept."""
+def ingest_document(url: str, year: int, stored=None, acquisition: str | None = None) -> str:
+    """Fetch, parse and store one SBC. Returns its status. The PDF is always kept.
+
+    A file already in the cache is read from there, with no request, which is
+    how a manual import is parsed. `acquisition` is recorded only when given,
+    so re-parsing an imported document keeps it marked `manual`.
+    """
     _restore_rejected(url, year, stored)
     fetched = fetch_pdf(url, year)
     if fetched.status != "ok":
-        _store(url, year, fetched)
+        _store(url, year, fetched, acquisition=acquisition)
         return fetched.status
 
     digest = hashlib.sha256(fetched.path.read_bytes()).hexdigest()
@@ -131,13 +144,13 @@ def ingest_document(url: str, year: int, stored=None) -> str:
     try:
         pages, parse = read_parsed(fetched.path)
     except SbcParseError as exc:
-        return _reject(url, year, "unparseable", str(exc), digest, downloaded)
+        return _reject(url, year, "unparseable", str(exc), digest, downloaded, acquisition)
     if parse.coverage_year != year:
         status = _reject(url, year, "wrong_year", f"coverage period starts in {parse.coverage_year}",
-                         digest, downloaded)
+                         digest, downloaded, acquisition)
         # Moved aside, not deleted: the issuer may correct the file at the
         # same URL, and only a fresh download would see it.
-        rejected = SBC_REJECTED / str(year) / f"{fetched.path.stem}-{digest[:12]}.pdf"
+        rejected = _rejected_path(url, year, digest)
         rejected.parent.mkdir(parents=True, exist_ok=True)
         fetched.path.replace(rejected)
         return status
@@ -148,10 +161,11 @@ def ingest_document(url: str, year: int, stored=None) -> str:
     read = replace(fetched, status="partial", detail=f"missing {missing}") if missing else fetched
     try:
         _store(url, year, read, sha256=digest, pages=len(pages), title=parse.title,
-               chunks=build_chunks(url, year, parse), parser_version=PARSER_VERSION, fetched_at=downloaded)
+               chunks=build_chunks(url, year, parse), parser_version=PARSER_VERSION, fetched_at=downloaded,
+               acquisition=acquisition)
     except DataError:
         # One document the database refuses must not end a run over thousands.
-        return _reject(url, year, "unparseable", "text the database refuses", digest, downloaded)
+        return _reject(url, year, "unparseable", "text the database refuses", digest, downloaded, acquisition)
     return read.status
 
 
@@ -165,35 +179,53 @@ def _restore_rejected(url: str, year: int, stored) -> None:
     if stored is None or stored.status != "wrong_year" or not stored.sha256:
         return
     current = cache_path(url, year)
-    rejected = SBC_REJECTED / str(year) / f"{current.stem}-{stored.sha256[:12]}.pdf"
+    rejected = _rejected_path(url, year, stored.sha256)
     if rejected.exists() and not current.exists():
         current.parent.mkdir(parents=True, exist_ok=True)
         rejected.replace(current)
 
 
-def _reject(url: str, year: int, status: str, detail: str, sha256: str, downloaded: datetime) -> str:
+def _rejected_path(url: str, year: int, sha256: str):
+    """Where a `wrong_year` file is kept aside (ADR 0018)."""
+    return SBC_REJECTED / str(year) / f"{cache_path(url, year).stem}-{sha256[:12]}.pdf"
+
+
+def _on_disk(url: str, year: int, stored) -> bool:
+    """Whether the document's PDF is kept here, in the cache or set aside as the wrong year."""
+    return cache_path(url, year).exists() or bool(
+        stored is not None and stored.status == "wrong_year" and stored.sha256
+        and _rejected_path(url, year, stored.sha256).exists())
+
+
+def _reject(url: str, year: int, status: str, detail: str, sha256: str, downloaded: datetime,
+            acquisition: str | None = None) -> str:
     """A file the parser turned down. Which file, and which parser, are kept (ADR 0018)."""
     _store(url, year, FetchResult(status, detail=detail), sha256=sha256, parser_version=PARSER_VERSION,
-           fetched_at=downloaded)
+           fetched_at=downloaded, acquisition=acquisition)
     return status
 
 
 def _store(url: str, year: int, fetched: FetchResult, *, sha256: str | None = None,
            pages: int | None = None, title: str | None = None, chunks: list[dict] | None = None,
-           parser_version: int | None = None, fetched_at: datetime | None = None) -> None:
+           parser_version: int | None = None, fetched_at: datetime | None = None,
+           acquisition: str | None = None) -> None:
     """Record the attempt and replace the document's chunks, in one transaction.
 
     A document that fails now loses the chunks an earlier run gave it: an
     answer must never quote an SBC that is no longer the plan's. Only a file
     the parser judged keeps its parser version, so a parser change reads it
     again (ADR 0018). A fetch that failed is stamped with the attempt's time.
+    `acquisition` is written only when given, so it survives a re-parse.
     """
+    row = {
+        "url": url, "plan_year": year, "status": fetched.status, "detail": fetched.detail,
+        "sha256": sha256, "pages": pages, "title": title, "fetched_at": fetched_at or datetime.now(UTC),
+        "parser_version": parser_version,
+    }
+    if acquisition is not None:
+        row["acquisition"] = acquisition
     with get_session() as session:
-        upsert(session, SbcDocument, [{
-            "url": url, "plan_year": year, "status": fetched.status, "detail": fetched.detail,
-            "sha256": sha256, "pages": pages, "title": title, "fetched_at": fetched_at or datetime.now(UTC),
-            "parser_version": parser_version,
-        }], "uq_sbc_documents_url_plan_year", ("url", "plan_year"))
+        upsert(session, SbcDocument, [row], "uq_sbc_documents_url_plan_year", ("url", "plan_year"))
         document_id = session.scalar(
             select(SbcDocument.id).where(SbcDocument.url == url, SbcDocument.plan_year == year)
         )
@@ -217,7 +249,7 @@ def refresh_document(url: str, year: int, stored) -> str:
         # its text stays, and the next refresh asks again.
         return "unreachable"
     if fetched.status != "ok":
-        _archive(url, year)
+        archive(url, year)
         _store(url, year, fetched)
         return fetched.status
 
@@ -225,14 +257,14 @@ def refresh_document(url: str, year: int, stored) -> str:
         _checked(url, year, fetched)
         return "unchanged"
 
-    _archive(url, year, stored.sha256)
+    archive(url, year, stored.sha256)
     save(fetched.body, cache_path(url, year))
     status = ingest_document(url, year)
     _checked(url, year, fetched)
     return f"changed:{status}"
 
 
-def _archive(url: str, year: int, sha256: str | None = None) -> None:
+def archive(url: str, year: int, sha256: str | None = None) -> None:
     """Move the file a new one replaces out of the cache, keeping it for good (ADR 0016)."""
     current = cache_path(url, year)
     if not current.exists():
@@ -268,6 +300,17 @@ def _needs_reading(url: str, row, year: int, refresh: bool) -> bool:
             or (row.status in READ_STATUSES and not cache_path(url, year).exists()))
 
 
+def _access(url: str, plans: list[PlanRef]) -> str | None:
+    """How this run may read a link: "crawl", "manual", or None when the registry doesn't allow it.
+
+    Only a filed-rate state's links are gated (ADR 0026); the HealthCare.gov
+    states' links come from CMS and are read as before.
+    """
+    if not any(plan.state in FILED_RATE_STATES for plan in plans):
+        return "crawl"
+    return host_access(url)
+
+
 def execute(states: list[str], year: int, limit: int | None = None,
             issuer_ids: Collection[str] | None = None, refresh: bool = False) -> Counter:
     """Read what is new or outdated; with `refresh`, ask about every stored document too.
@@ -278,26 +321,50 @@ def execute(states: list[str], year: int, limit: int | None = None,
         documents = documents_for(session, states, year, issuer_ids)
         stored = {row.url: row for row in session.execute(
             select(SbcDocument.url, SbcDocument.status, SbcDocument.parser_version, SbcDocument.sha256,
-                   SbcDocument.etag, SbcDocument.last_modified).where(SbcDocument.plan_year == year)
+                   SbcDocument.etag, SbcDocument.last_modified, SbcDocument.acquisition)
+            .where(SbcDocument.plan_year == year)
         ).all()}
     if not documents:
-        sys.exit(f"No catalog plans with an SBC link for {', '.join(states)} in {year}. "
-                 f"Run `make ingest-plans STATES={','.join(states)}` first.")
-    pending = [url for url in documents if _needs_reading(url, stored.get(url), year, refresh)]
+        first = (f"`make apply-sbc-manifest YEAR={year}`" if set(states) <= set(FILED_RATE_STATES)
+                 else f"`make ingest-plans STATES={','.join(states)}`")
+        sys.exit(f"No catalog plans with an SBC link for {', '.join(states)} in {year}. Run {first} first.")
+    pending, awaiting, reimport, unapproved = [], [], [], []
+    for url, plans in documents.items():
+        row = stored.get(url)
+        if row is not None and row.acquisition == "manual":
+            # A person's download is never requested again, not even by a
+            # refresh: it is only re-parsed from disk (ADR 0026).
+            if _needs_reading(url, row, year, refresh=False):
+                (pending if _on_disk(url, year, row) else reimport).append(url)
+            continue
+        if not _needs_reading(url, row, year, refresh):
+            continue
+        access = _access(url, plans)
+        {"crawl": pending, "manual": awaiting}.get(access, unapproved).append(url)
     urls = pending[:limit]
+    held = {*pending, *awaiting, *reimport, *unapproved}
     skipped = sum(1 for url in documents
-                  if url not in pending and stored.get(url) and stored[url].status not in READ_STATUSES)
+                  if url not in held and stored.get(url) and stored[url].status not in READ_STATUSES)
     print(f"{len(documents)} SBC documents behind the {', '.join(states)} plans for {year}; "
-          f"{len(documents) - len(pending)} already current, "
+          f"{len(documents) - len(held)} already current, "
           f"{'re-checking' if refresh else 'reading'} {len(urls)}")
     if skipped:
         print(f"{skipped} recorded failures skipped; `make refresh-sbc STATES={','.join(states)}` retries them")
+    if awaiting:
+        print(f"{len(awaiting)} awaiting a manual import (their host is manual-only): "
+              f"`make import-sbc YEAR={year} DIR=<folder>`")
+    if reimport:
+        print(f"{len(reimport)} manually imported PDFs are missing from {SBC_RAW / str(year)}: "
+              f"import them again")
+    if unapproved:
+        print(f"{len(unapproved)} links skipped: their host has no enabled sbc_host entry in the source registry")
 
     statuses = Counter()
     failures = defaultdict(list)   # (issuer, status) -> plans
     for url in tqdm(urls, desc="SBCs"):
         row = stored.get(url)
-        status = refresh_document(url, year, row) if refresh and row and row.status in READ_STATUSES \
+        status = refresh_document(url, year, row) \
+            if refresh and row and row.status in READ_STATUSES and row.acquisition != "manual" \
             else ingest_document(url, year, row)
         statuses[status] += 1
         if status not in KEPT_OUTCOMES:
@@ -319,7 +386,8 @@ def execute(states: list[str], year: int, limit: int | None = None,
 
 def parse_args(args):
     parser = argparse.ArgumentParser(description="Ingest Summary of Benefits and Coverage PDFs for catalog plans.")
-    parser.add_argument("--states", required=True, help="Comma-separated state codes, or ALL, e.g. NH,DE")
+    parser.add_argument("--states", required=True,
+                        help="Comma-separated state codes, or ALL (the HealthCare.gov states), e.g. NH,DE or CA")
     parser.add_argument("--year", type=int, default=datetime.now(UTC).year,
                         help="Plan year (default: this year); must match an ingested catalog year")
     parser.add_argument("--limit", type=int, default=None, help="Read at most this many documents, for a smoke run")
@@ -331,7 +399,7 @@ def parse_args(args):
     issuers.add_argument("--issuers", help="Only these HIOS issuer IDs' plans, comma-separated, e.g. 40788,66252")
     parsed = parser.parse_args(args)
     try:
-        parsed.states = resolve_states(parsed.states)
+        parsed.states = resolve_states(parsed.states, CATALOG_STATES)
     except ValueError as exc:
         parser.error(str(exc))
     if parsed.limit is not None and parsed.limit < 1:

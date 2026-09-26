@@ -209,3 +209,13 @@ def test_asking_the_api_loader_for_california_names_its_own_loader():
     with pytest.raises(ValueError) as other:
         resolve_states("NY")
     assert "ingest-ca-plans" not in str(other.value)
+
+
+def test_a_command_that_reads_california_too_can_allow_it():
+    """The SBC ingest and report pass CATALOG_STATES; ALL stays the 30 API states (ADR 0026)."""
+    from src.core.exchanges import CATALOG_STATES
+
+    assert resolve_states("ca, tx", CATALOG_STATES) == ["CA", "TX"]
+    assert "CA" not in resolve_states("ALL", CATALOG_STATES)
+    with pytest.raises(ValueError, match="not states PolicyPal has plans for here: NY"):
+        resolve_states("NY", CATALOG_STATES)

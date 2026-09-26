@@ -311,3 +311,52 @@ def test_an_empty_file_changes_nothing(tmp_path, session):
         _load(session, empty)
 
     assert _counts(session) == before
+
+
+def _manifest(tmp_path, monkeypatch, session, *lines):
+    """The year's SBC manifest, applied in the test's transaction (ADR 0026)."""
+    from src.ingestion.sbc import manifest
+
+    folder = tmp_path / "manifests"
+    folder.mkdir()
+    (folder / f"ca-{YEAR}.csv").write_text("\n".join(["hios_plan_id,plan_year,sbc_url,verified_on,note", *lines]),
+                                            encoding="utf-8")
+    monkeypatch.setattr(manifest, "MANIFEST_DIR", folder)
+    monkeypatch.setattr(manifest, "get_session", _in(session))
+
+
+def test_the_command_applies_the_years_sbc_manifest_after_loading(tmp_path, session, capsys, monkeypatch, sbc_hosts):
+    _crosswalk(session)
+    _manifest(tmp_path, monkeypatch, session, f"{KAISER},{YEAR},{sbc_hosts['crawl']}kaiser.pdf,2026-09-26,")
+
+    with patch.object(cli, "get_session", _in(session)):
+        cli.main(["--year", str(YEAR), "--zip", str(_zip(tmp_path))])
+
+    assert f"1 California plans for {YEAR} linked to 1 SBC documents" in capsys.readouterr().out
+    assert session.scalar(select(Plan.benefits_url).where(Plan.hios_plan_id == KAISER)) == (
+        f"{sbc_hosts['crawl']}kaiser.pdf")
+
+
+def test_a_broken_manifest_leaves_the_plans_loaded_and_says_the_links_were_not_applied(
+        tmp_path, session, monkeypatch, sbc_hosts):
+    _crosswalk(session)
+    _manifest(tmp_path, monkeypatch, session, f"{KAISER},{YEAR},https://nobody.example.com/k.pdf,2026-09-26,")
+
+    with patch.object(cli, "get_session", _in(session)), pytest.raises(SystemExit) as exit_:
+        cli.main(["--year", str(YEAR), "--zip", str(_zip(tmp_path))])
+
+    assert "Plans loaded, but their SBC links were not applied: line 2" in str(exit_.value.code)
+    assert session.scalar(select(Plan.benefits_url).where(Plan.hios_plan_id == KAISER, Plan.plan_year == YEAR)) is None
+
+
+def test_without_a_manifest_the_command_says_every_plan_has_no_link(tmp_path, session, capsys, monkeypatch):
+    from src.ingestion.sbc import manifest
+
+    _crosswalk(session)
+    monkeypatch.setattr(manifest, "MANIFEST_DIR", tmp_path)
+
+    with patch.object(cli, "get_session", _in(session)):
+        cli.main(["--year", str(YEAR), "--zip", str(_zip(tmp_path))])
+
+    assert f"No SBC manifest for {YEAR} (ca-{YEAR}.csv): every plan is shown with no SBC link" in (
+        capsys.readouterr().out)

@@ -87,7 +87,7 @@ def _fetch(url: str, target: Path | None, validators: tuple[str | None, str | No
 
 def _download(url: str, target: Path | None, validators: tuple[str | None, str | None]) -> FetchResult:
     for _ in range(_MAX_REDIRECTS + 1):
-        refusal = _unsafe(url) or _robots_refusal(url)
+        refusal = unsafe_reason(url) or _robots_refusal(url)
         if refusal:
             return FetchResult("blocked", detail=refusal)
 
@@ -126,7 +126,7 @@ def _read(response: requests.Response, target: Path | None) -> FetchResult:
         body += block
         if len(body) > MAX_BYTES:
             return FetchResult("too_large", detail=f"over {MAX_BYTES // (1024 * 1024)} MB")
-    if b"%PDF-" not in body[:_PDF_MAGIC_WINDOW]:
+    if not looks_like_pdf(body):
         return FetchResult("not_pdf", detail="response is not a PDF")
 
     served = {"etag": response.headers.get("ETag"), "last_modified": response.headers.get("Last-Modified")}
@@ -134,6 +134,11 @@ def _read(response: requests.Response, target: Path | None) -> FetchResult:
         return FetchResult("ok", body=bytes(body), **served)
     save(bytes(body), target)
     return FetchResult("ok", target, **served)
+
+
+def looks_like_pdf(head: bytes | bytearray) -> bool:
+    """Whether a file's first bytes carry a PDF header, where readers look for one."""
+    return b"%PDF-" in head[:_PDF_MAGIC_WINDOW]
 
 
 def save(body: bytes, target: Path) -> None:
@@ -148,8 +153,8 @@ def save(body: bytes, target: Path) -> None:
     partial.replace(target)
 
 
-def _unsafe(url: str) -> str | None:
-    """Why `url` must not be fetched, or None."""
+def unsafe_reason(url: str) -> str | None:
+    """Why `url` must not be fetched, or None. Also vets a manifest's links before they are stored."""
     parts = urlsplit(url)
     host = (parts.hostname or "").lower()
     if parts.scheme != "https":

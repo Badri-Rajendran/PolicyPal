@@ -14,6 +14,7 @@ re-run changes no row count.
 import argparse
 import sys
 from collections import Counter
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -40,19 +41,24 @@ _REQUIRED_PLAN_FIELDS = ("id", "name", "metal_level", "type", "state", "hsa_elig
 _REQUIRED_ISSUER_FIELDS = ("id", "name", "state")
 
 
-def resolve_states(raw: str) -> list[str]:
-    """`"tx, FL"` → `["TX", "FL"]`; `"ALL"` → every marketplace state."""
+def resolve_states(raw: str, allowed: Sequence[str] = MARKETPLACE_STATES) -> list[str]:
+    """`"tx, FL"` → `["TX", "FL"]`; `"ALL"` → every marketplace state.
+
+    `allowed` widens what may be named: the SBC commands pass CATALOG_STATES,
+    so California's plans, loaded from the PUF, can be read too. `ALL` stays
+    the marketplace states, so it never starts a California crawl unasked.
+    """
     requested = [code.strip().upper() for code in raw.split(",") if code.strip()]
     if not requested:
         raise ValueError("no states given")
     if "ALL" in requested:
         return list(MARKETPLACE_STATES)
 
-    unknown = sorted(set(requested) - set(MARKETPLACE_STATES))
+    unknown = sorted(set(requested) - set(allowed))
     if unknown:
         hint = "; California is loaded by `make ingest-ca-plans`" if "CA" in unknown else ""
         raise ValueError(
-            f"not HealthCare.gov marketplace states: {', '.join(unknown)} "
+            f"not states PolicyPal has plans for here: {', '.join(unknown)} "
             f"(they run their own exchange, or are not state codes){hint}"
         )
     return list(dict.fromkeys(requested))

@@ -23,6 +23,39 @@
   `sbc_host`, and its commercial use stays `review`. `sbc_host_for` finds a
   link's entry by the longest matching prefix, and every scope URL must now be
   an `https://host/…` prefix, so it can't also match a look-alike host.
+- California's SBCs are linked from a committed, hand-built manifest,
+  `src/ingestion/sbc/manifests/ca-2026.csv`: 114 of 190 plans, 58 documents.
+  - `make apply-sbc-manifest YEAR=` checks every row first: plan ID, year, a
+    safe HTTPS link, and a California registry entry covering it. Then it sets
+    each California plan's link, and a plan with no row, or whose carrier is
+    disabled, gets none. `make ingest-ca-plans` applies it after each load.
+  - `make check-sbc-manifest YEAR=` lists, for a person to check:
+    - documents whose printed title lacks the plan's name;
+    - failures;
+    - plans awaiting a manual import;
+    - unread links;
+    - plans with no link.
+- `make ingest-sbc STATES=CA` and `make sbc-report STATES=CA`. California links
+  are read only as their carrier's entry allows:
+  - `crawl` is fetched;
+  - `manual` is never requested, and is counted as awaiting import;
+  - disabled or unregistered is skipped.
+
+  `STATES=ALL` is still the 30 HealthCare.gov states. First run: the 19 IEHP,
+  Molina and Sharp SBCs all read `ok`, with no name mismatches.
+- `make import-sbc YEAR= DIR=` (or `FILE= URL=`) reads an SBC a person
+  downloaded in a browser.
+  - **Checks:** the link must be a plan's and its carrier enabled, and the file
+    a PDF within the size cap.
+  - **What it does:** it is copied to the link's cache path, and any different
+    file there is archived. It is then parsed like a crawled one, with no
+    request. `DIR=` matches each file to the one manual-only link with its
+    name, or its `?fileName=` value.
+  - **Afterwards:** the document is recorded as `manual` and never re-requested.
+    `refresh-sbc` skips it; after a parser change it is re-parsed from disk,
+    and a missing file is reported for re-import.
+- Migration `3b1d6e2a9c47`: `sbc_documents.acquisition`, `crawl` or `manual`,
+  checked, default `crawl`. `sbc-report` counts read documents by it.
 - **PolicyPal is deployed to Azure.** The API runs on Container Apps in
   Central US on the image digest built from `main`, backed by a PostgreSQL 16
   Flexible Server with `pgvector`, and the browser app is on Static Web Apps.
