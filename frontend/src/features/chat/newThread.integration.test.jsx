@@ -9,8 +9,8 @@ import * as chatService from "../../services/chatService";
 vi.mock("../../hooks/useAuth");
 vi.mock("../../services/chatService");
 
-// Real ChatWindow and useMessages: the point is the handoff between them and
-// the route change, which a mocked ChatWindow would hide.
+// Real ChatPage and useMessages: the point is the handoff between them and
+// the route change, which mocked hooks would hide.
 describe("sending the first message in a new thread", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -50,7 +50,7 @@ describe("sending the first message in a new thread", () => {
     await userEvent.click(screen.getByRole("button", { name: /send/i }));
 
     await waitFor(() => expect(chatService.createThread).toHaveBeenCalled());
-    // The pending message lives in a ref inside ChatWindow. If the route change
+    // The pending message lives in a ref inside ChatPage. If the route change
     // remounts it, that ref resets and the message is silently dropped.
     await waitFor(() =>
       expect(chatService.streamMessage).toHaveBeenCalledWith("tok123", "t2", "What is a deductible?", expect.anything()),

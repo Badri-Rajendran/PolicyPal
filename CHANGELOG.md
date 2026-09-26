@@ -60,6 +60,20 @@
     first shown and cached per source id (`useSource`, cleared on sign-out).
     At 720 px and below the panel is a bottom sheet with a scrim that keeps
     focus inside it. `hooks/useMediaQuery.js` follows a media query.
+  - The chat composed in `ChatPage` (replacing `ChatWindow`): an `AppShell`
+    whose sidebar collapses (remembered in `localStorage["policypal.sidebar"]`)
+    and becomes a drawer at 720 px and below; a `ChatHeader` whose title
+    renames the thread in place, with the Sources toggle and its count; and a
+    docked `Composer` that grows with its text, turns Send into Stop while an
+    answer streams, and keeps the privacy note. Shortcuts
+    (`hooks/useShortcuts.js`): Ctrl/⌘K starts a new question, `/` focuses the
+    composer when you're not typing, and Esc stops an answer, then closes the
+    panel or the drawer. Failed renames, deletes and new questions show a
+    toast.
+  - The plan table follows the design: rows numbered 1…n with ids a plan link
+    can reach, "Ask about this plan" (fills the composer with
+    `About plan {n}, {name}: `), and a head with the title, place and date as
+    separate parts. The premium, SBC and exchange notes are unchanged.
 
 - Design for the chat redesign
   (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the

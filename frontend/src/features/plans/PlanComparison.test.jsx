@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 import PlanComparison from "./PlanComparison";
 
 const SHOWN_AT = "2026-09-18T15:00:00Z";
@@ -33,14 +34,68 @@ function rowFor(name) {
 }
 
 describe("PlanComparison", () => {
-  it("is a captioned table in a scrollable region a keyboard can reach", () => {
+  it("is a titled table in a scrollable region a keyboard can reach", () => {
     render(<PlanComparison plans={[plan()]} shownAt={SHOWN_AT} />);
 
-    const table = screen.getByRole("table", { name: "2026 Silver plans · Anderson County, TX · shown Sep 18, 2026" });
+    const table = screen.getByRole("table", { name: "2026 Silver plans" });
     expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
-      "Plan", "Premium", "Deductible", "Out-of-pocket max", "Quality rating",
+      "Number", "Plan", "Premium", "Deductible", "Out-of-pocket max", "Quality rating",
     ]);
-    expect(screen.getByRole("region", { name: /scrolls sideways/ })).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("region", { name: "2026 Silver plans, scrolls sideways" })).toHaveAttribute("tabindex", "0");
+  });
+
+  it("heads the table with its place and date as separate parts, not joined with dots", () => {
+    const { container } = render(<PlanComparison plans={[plan()]} shownAt={SHOWN_AT} />);
+
+    const head = container.querySelector(".plans-head");
+    expect(within(head).getByRole("heading", { level: 3, name: "2026 Silver plans" })).toBeInTheDocument();
+    expect([...head.querySelectorAll("span")].map((s) => s.textContent)).toEqual(["Anderson County, TX", "Shown Sep 18, 2026"]);
+    expect(head).not.toHaveTextContent("·");
+  });
+
+  it("numbers the rows 1…n, with ids a plan link can find", () => {
+    render(
+      <PlanComparison
+        plans={[plan(), plan({ hios_plan_id: "x2", name: "Oscar Silver Classic" })]}
+        shownAt={SHOWN_AT}
+        messageId="a1"
+      />,
+    );
+
+    expect(rowFor("CHRISTUS Value Silver 70")).toHaveAttribute("id", "plan-a1-1");
+    expect(within(rowFor("CHRISTUS Value Silver 70")).getByText("1")).toBeInTheDocument();
+    expect(rowFor("Oscar Silver Classic")).toHaveAttribute("id", "plan-a1-2");
+    expect(within(rowFor("Oscar Silver Classic")).getByText("2")).toBeInTheDocument();
+  });
+
+  it("asks about a plan by its number and name", async () => {
+    const onAskAboutPlan = vi.fn();
+    render(
+      <PlanComparison
+        plans={[plan(), plan({ hios_plan_id: "x2", name: "Oscar Silver Classic" })]}
+        shownAt={SHOWN_AT}
+        messageId="a1"
+        onAskAboutPlan={onAskAboutPlan}
+      />,
+    );
+
+    await userEvent.click(within(rowFor("Oscar Silver Classic")).getByRole("button", { name: /Ask about this plan/ }));
+    expect(onAskAboutPlan).toHaveBeenCalledWith(2, "Oscar Silver Classic");
+  });
+
+  it("offers no Ask button without somewhere to ask", () => {
+    render(<PlanComparison plans={[plan()]} shownAt={SHOWN_AT} />);
+    expect(screen.queryByRole("button", { name: /Ask about this plan/ })).not.toBeInTheDocument();
+  });
+
+  it("describes each plan by issuer, metal and type, joined by commas", () => {
+    render(<PlanComparison plans={[plan()]} shownAt={SHOWN_AT} />);
+    expect(within(rowFor("CHRISTUS Value Silver 70")).getByText("CHRISTUS Health Plan, Silver, HMO")).toBeInTheDocument();
+  });
+
+  it("marks no plan as best", () => {
+    render(<PlanComparison plans={[plan(), plan({ hios_plan_id: "x2" })]} shownAt={SHOWN_AT} />);
+    expect(screen.queryByText(/best|recommended/i)).not.toBeInTheDocument();
   });
 
   it("shows a live premium with the age it was priced for", () => {
@@ -70,8 +125,8 @@ describe("PlanComparison", () => {
   it("shows both deductibles when a plan has separate medical and drug ones", () => {
     render(<PlanComparison plans={[plan({ deductible: "0.00", drug_deductible: "5500.00" })]} shownAt={SHOWN_AT} />);
 
-    expect(screen.getByText("$0 medical")).toBeInTheDocument();
-    expect(screen.getByText("$5,500 drugs")).toBeInTheDocument();
+    expect(rowFor("CHRISTUS Value Silver 70")).toHaveTextContent("$0 medical");
+    expect(rowFor("CHRISTUS Value Silver 70")).toHaveTextContent("$5,500 drugs");
   });
 
   it("says what is missing rather than leaving a blank", () => {
@@ -171,7 +226,8 @@ describe("PlanComparison", () => {
   it("leaves the county out of the caption when plans come from several", () => {
     render(<PlanComparison plans={[plan(), plan({ hios_plan_id: "x2", county_name: "Tulsa", state: "OK", metal_level: "Gold" })]} shownAt={SHOWN_AT} />);
 
-    expect(screen.getByRole("table", { name: "2026 plans · shown Sep 18, 2026" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "2026 plans" })).toBeInTheDocument();
+    expect(screen.queryByText(/County, /)).not.toBeInTheDocument();
   });
 
   it("leaves the plan year out when the plans' years differ", () => {
@@ -179,7 +235,7 @@ describe("PlanComparison", () => {
       <PlanComparison plans={[plan(), plan({ hios_plan_id: "x2", plan_year: 2027 })]} shownAt={SHOWN_AT} />,
     );
 
-    expect(screen.getByRole("table", { name: "Silver plans · Anderson County, TX · shown Sep 18, 2026" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Silver plans" })).toBeInTheDocument();
   });
 
   it("names Covered California and CMS's filed rates for California plans", () => {
@@ -190,7 +246,8 @@ describe("PlanComparison", () => {
       />,
     );
 
-    expect(screen.getByRole("table", { name: /^2026 Silver plans · Los Angeles County, CA/ })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "2026 Silver plans" })).toBeInTheDocument();
+    expect(screen.getByText("Los Angeles County, CA")).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /Covered California/ });
     expect(link).toHaveAttribute("href", "https://www.coveredca.com/");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
