@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chat, an answered thread with sources</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Serif:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.pp{--paper:#E8E5DB;--sheet:#F8F6F0;--sheet-2:#F0EDE3;--ink:#1E211C;--ink-soft:#575D51;--rule:#D6D0BF;--rule-strong:#BCB5A1;--seal:#96651F;--seal-deep:#744D15;--seal-wash:#F0E3C9;--pine:#2C5B4B;--pine-wash:#DAE6DF;--danger:#963728;--danger-wash:#F4E1DB;--silver:#9EA5AB;--float:0 1px 0 rgba(30,33,28,.05),0 18px 40px -22px rgba(52,44,24,.45);
+  --serif:"IBM Plex Serif",Georgia,serif;--sans:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  font-family:var(--sans);font-size:15px;line-height:1.55;color:var(--ink);background:var(--paper);-webkit-font-smoothing:antialiased;box-sizing:border-box;position:relative;overflow:hidden}
+.pp.dark{--paper:#141611;--sheet:#1D2019;--sheet-2:#252820;--ink:#ECE8DC;--ink-soft:#A4A697;--rule:#32362D;--rule-strong:#484C41;--seal:#D69E52;--seal-deep:#E9B879;--seal-wash:#3A2E1B;--pine:#8BB9A5;--pine-wash:#1E2F28;--danger:#E28D7E;--danger-wash:#3B2520;--float:0 1px 0 rgba(0,0,0,.3),0 18px 40px -20px rgba(0,0,0,.8)}
+.pp *{box-sizing:border-box}
+.pp button,.pp input,.pp textarea{font:inherit;color:inherit}
+.pp a{color:var(--pine);text-underline-offset:2px}
+.pp svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.pp svg.i.sm{width:15px;height:15px}
+.pp .focus{outline:2px solid var(--seal);outline-offset:2px}
+.pp .muted{color:var(--ink-soft)}
+.pp .tab{font-variant-numeric:tabular-nums}
+
+/* shell */
+.shell{display:grid;grid-template-columns:276px minmax(0,1fr);height:100%}
+.shell.with-panel{grid-template-columns:276px minmax(0,1fr) 392px}
+.shell.collapsed{grid-template-columns:0 minmax(0,1fr)}
+
+/* sidebar */
+.side{display:flex;flex-direction:column;gap:14px;padding:18px 14px 14px;border-right:1px solid var(--rule);min-height:0;background:var(--paper)}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 6px 6px}
+.brand-mark{width:28px;height:28px;border-radius:50%;background:var(--seal);color:#FFF8EA;display:grid;place-items:center;font-family:var(--serif);font-weight:600;font-size:15px;box-shadow:inset 0 0 0 2px rgba(255,248,234,.28),inset 0 0 0 4px var(--seal)}
+.brand-name{font-family:var(--serif);font-weight:600;font-size:18px;letter-spacing:-.01em}
+.brand .iconbtn{margin-left:auto}
+.iconbtn{width:34px;height:34px;border-radius:10px;border:none;background:none;display:grid;place-items:center;color:var(--ink-soft);cursor:pointer}
+.iconbtn:hover{background:var(--sheet-2);color:var(--ink)}
+.newq{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--rule-strong);background:var(--sheet);font-weight:500;cursor:pointer}
+.newq:hover{border-color:var(--seal)}
+.kbd{margin-left:auto;font-size:12px;color:var(--ink-soft);border:1px solid var(--rule);border-radius:5px;padding:0 5px;line-height:18px;background:var(--paper)}
+.search{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:var(--sheet-2);color:var(--ink-soft)}
+.search input{border:none;background:none;outline:none;flex:1;min-width:0;color:var(--ink)}
+.group{display:flex;flex-direction:column;gap:2px}
+.group-label{font-size:12.5px;color:var(--ink-soft);padding:8px 10px 4px}
+.threads{flex:1;overflow:auto;display:flex;flex-direction:column;gap:6px;min-height:0;margin:0 -4px;padding:0 4px}
+.thread{display:flex;align-items:center;border-radius:9px;min-height:38px}
+.thread-title{flex:1;min-width:0;padding:8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:none;border:none;text-align:left;cursor:pointer}
+.thread:hover{background:var(--sheet-2)}
+.thread.active{background:var(--sheet);box-shadow:inset 0 0 0 1px var(--rule)}
+.thread.active .thread-title{font-weight:500}
+.thread .iconbtn{width:30px;height:30px;visibility:hidden}
+.thread:hover .iconbtn,.thread.active .iconbtn{visibility:visible}
+.menu{position:absolute;z-index:5;min-width:188px;padding:6px;border-radius:12px;background:var(--sheet);border:1px solid var(--rule);box-shadow:var(--float);display:flex;flex-direction:column}
+.menu button{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;border:none;background:none;text-align:left;cursor:pointer}
+.menu button:hover,.menu button.hot{background:var(--sheet-2)}
+.menu .danger{color:var(--danger)}
+.menu hr{border:none;border-top:1px solid var(--rule);margin:6px 2px}
+.account{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px;border:none;background:none;width:100%;cursor:pointer;text-align:left;border-top:1px solid var(--rule);border-radius:0;padding-top:14px}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--pine-wash);color:var(--pine);display:grid;place-items:center;font-weight:600;font-size:13px;flex-shrink:0}
+.account-email{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px}
+
+/* main column */
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relative}
+.topbar{display:flex;align-items:center;gap:8px;padding:12px 20px;border-bottom:1px solid var(--rule);min-height:58px}
+.title-btn{display:flex;align-items:center;gap:8px;border:none;background:none;padding:6px 8px;border-radius:8px;font-family:var(--serif);font-size:17px;font-weight:500;cursor:text;min-width:0}
+.title-btn:hover{background:var(--sheet-2)}
+.title-btn .i{opacity:0;color:var(--ink-soft)}
+.title-btn:hover .i{opacity:1}
+.topbar .spacer{flex:1}
+.pill-btn{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;border:1px solid var(--rule-strong);background:var(--sheet);font-size:13.5px;font-weight:500;cursor:pointer}
+.pill-btn.on{background:var(--seal-wash);border-color:var(--seal);color:var(--seal-deep)}
+.count{min-width:20px;height:20px;border-radius:999px;background:var(--seal);color:#FFF8EA;font-size:11.5px;display:grid;place-items:center;padding:0 6px;font-weight:600}
+.nudge{display:flex;align-items:center;gap:12px;padding:10px 20px;background:var(--pine-wash);color:var(--ink);font-size:14px;border-bottom:1px solid var(--rule)}
+.nudge a{font-weight:500}
+.scroll{flex:1;overflow:auto;min-height:0}
+.column{max-width:760px;margin:0 auto;padding:36px 32px 200px;display:flex;flex-direction:column;gap:44px}
+
+/* an exchange: the question is the heading, the answer is the brief */
+.exchange{display:flex;flex-direction:column;gap:18px}
+.q{display:flex;align-items:baseline;gap:14px}
+.q h2{margin:0;font-family:var(--serif);font-weight:500;font-size:25px;line-height:1.3;letter-spacing:-.012em;flex:1}
+.q time{font-size:12.5px;color:var(--ink-soft);white-space:nowrap}
+.a{font-size:16px;line-height:1.68}
+.a p{margin:0 0 12px}
+.a ul{margin:0 0 12px;padding-left:20px}
+.a li{margin:4px 0}
+.a strong{font-weight:600}
+.notice{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:12px;background:var(--seal-wash);color:var(--ink);font-size:14px;line-height:1.5;margin-bottom:14px}
+.notice .i{color:var(--seal-deep);margin-top:2px}
+
+/* the seal: a citation */
+.seal{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 5px;margin:0 1px 0 3px;border-radius:999px;background:var(--seal);color:#FFF8EA;font-size:11px;font-weight:600;line-height:1;vertical-align:2px;border:none;cursor:pointer;box-shadow:inset 0 0 0 1.5px rgba(255,248,234,.3);font-variant-numeric:tabular-nums}
+.seal:hover{background:var(--seal-deep)}
+.seal.sel{box-shadow:0 0 0 2px var(--paper),0 0 0 4px var(--seal)}
+.stamp .seal{animation:stamp .42s cubic-bezier(.2,.9,.3,1.3) both}
+.stamp .seal:nth-of-type(2){animation-delay:.08s}
+.stamp .seal:nth-of-type(3){animation-delay:.16s}
+@keyframes stamp{0%{transform:scale(1.9) rotate(-14deg);opacity:0}60%{opacity:1}100%{transform:none;opacity:1}}
+.planref{display:inline-flex;align-items:baseline;gap:6px;border:none;background:none;padding:0;color:var(--ink);font-weight:500;text-decoration:underline dotted var(--rule-strong) 1.5px;text-underline-offset:4px;cursor:pointer}
+.planref .num{font-size:11px;font-weight:600;color:var(--pine);border:1.5px solid var(--pine);border-radius:5px;padding:0 4px;line-height:15px;align-self:center}
+
+/* answer footer */
+.afoot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:6px}
+.chip{display:inline-flex;align-items:center;gap:8px;max-width:100%;padding:5px 11px 5px 6px;border-radius:999px;border:1px solid var(--rule);background:var(--sheet);font-size:13px;cursor:pointer}
+.chip:hover{border-color:var(--seal)}
+.chip .seal{margin:0;vertical-align:0}
+.chip span.t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tool{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;border:none;background:none;color:var(--ink-soft);font-size:13px;cursor:pointer}
+.tool:hover{background:var(--sheet-2);color:var(--ink)}
+.tool.done{color:var(--pine)}
+.afoot .sep{flex:1}
+
+/* plan table */
+.plans{border-radius:16px;background:var(--sheet);border:1px solid var(--rule);overflow:hidden;margin:6px 0 14px}
+.plans-head{display:flex;align-items:baseline;gap:12px;padding:14px 18px 12px;border-bottom:1px solid var(--rule)}
+.plans-head h3{margin:0;font-family:var(--serif);font-size:16px;font-weight:600}
+.plans-head span{font-size:13px;color:var(--ink-soft)}
+.plans table{width:100%;border-collapse:collapse;font-size:14px}
+.plans th,.plans td{text-align:left;vertical-align:top;padding:12px 14px;border-bottom:1px solid var(--rule)}
+.plans thead th{font-size:12.5px;font-weight:500;color:var(--ink-soft);padding-top:10px;padding-bottom:10px;white-space:nowrap;background:var(--sheet-2)}
+.plans tbody tr:last-child th,.plans tbody tr:last-child td{border-bottom:none}
+.plans tbody tr:hover{background:var(--paper)}
+.plans tbody tr.flash{background:var(--seal-wash)}
+.plans .pos{width:44px;padding-right:0}
+.plans .pos span{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:7px;border:1.5px solid var(--pine);color:var(--pine);font-size:12px;font-weight:600}
+.pname{font-weight:600;display:block}
+.psub{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft);margin-top:2px}
+.metal{width:9px;height:9px;border-radius:50%;background:var(--silver);box-shadow:inset 0 0 0 1px rgba(0,0,0,.15)}
+.fig{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;display:block}
+.sub{font-size:12.5px;color:var(--ink-soft);display:block}
+.rowacts{display:flex;gap:4px;margin-top:6px}
+.rowacts a,.rowacts button{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;padding:3px 8px 3px 6px;border-radius:7px;border:none;background:none;color:var(--pine);font-weight:500;cursor:pointer;text-decoration:none}
+.rowacts a:hover,.rowacts button:hover{background:var(--pine-wash)}
+.plans-foot{padding:12px 18px;font-size:12.5px;color:var(--ink-soft);border-top:1px solid var(--rule);background:var(--sheet-2)}
+
+/* composer */
+.dock{position:absolute;left:0;right:0;bottom:0;padding:0 32px 18px;background:linear-gradient(to bottom,transparent,var(--paper) 38%)}
+.composer{max-width:760px;margin:0 auto;border-radius:18px;background:var(--sheet);border:1px solid var(--rule-strong);box-shadow:var(--float);padding:14px 14px 10px 18px;display:flex;flex-direction:column;gap:8px}
+.composer.focus-ring{border-color:var(--seal);box-shadow:var(--float),0 0 0 3px var(--seal-wash)}
+.composer textarea{border:none;outline:none;background:none;resize:none;font-size:16px;line-height:1.5;min-height:26px;padding:0}
+.composer textarea::placeholder{color:var(--ink-soft)}
+.crow{display:flex;align-items:center;gap:10px}
+.crow .hint{font-size:12.5px;color:var(--ink-soft);flex:1}
+.send{width:38px;height:38px;border-radius:50%;border:none;background:var(--seal);color:#FFF8EA;display:grid;place-items:center;cursor:pointer;box-shadow:inset 0 0 0 2px rgba(255,248,234,.25)}
+.send:hover{background:var(--seal-deep)}
+.send:disabled{background:var(--rule-strong);cursor:not-allowed}
+.send.stop{background:var(--ink);color:var(--paper)}
+.privacy{max-width:760px;margin:8px auto 0;font-size:12px;color:var(--ink-soft);text-align:center}
+.jump{position:absolute;left:50%;transform:translateX(-50%);bottom:150px;display:flex;align-items:center;gap:6px;padding:7px 14px 7px 10px;border-radius:999px;background:var(--ink);color:var(--paper);border:none;font-size:13px;font-weight:500;box-shadow:var(--float);cursor:pointer}
+
+/* sources panel */
+.panel{border-left:1px solid var(--rule);background:var(--sheet);display:flex;flex-direction:column;min-height:0}
+.panel-head{display:flex;align-items:center;gap:8px;padding:14px 14px 12px 20px;border-bottom:1px solid var(--rule);min-height:58px}
+.panel-head h2{margin:0;font-family:var(--serif);font-size:17px;font-weight:600;flex:1}
+.panel-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.src{border-radius:14px;padding:14px 16px 14px;border:1px solid var(--rule);background:var(--sheet);display:flex;flex-direction:column;gap:8px;cursor:pointer}
+.src:hover{border-color:var(--rule-strong)}
+.src.sel{border-color:var(--seal);box-shadow:0 0 0 3px var(--seal-wash)}
+.src-top{display:flex;gap:10px;align-items:flex-start}
+.src-top .seal{margin:2px 0 0;vertical-align:0}
+.src-title{font-weight:600;font-size:14px;line-height:1.35}
+.src-kind{font-size:12.5px;color:var(--ink-soft)}
+.quote{margin:0;font-family:var(--serif);font-size:14px;line-height:1.6;color:var(--ink);padding-left:10px;position:relative}
+.quote::before{content:"\201C";position:absolute;left:-4px;top:-6px;font-size:26px;color:var(--seal)}
+.src-meta{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ink-soft)}
+.meter{width:54px;height:5px;border-radius:999px;background:var(--rule);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--pine)}
+.src-meta a{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-weight:500}
+.gone{font-size:13px;color:var(--ink-soft);font-style:italic}
+
+/* streaming */
+.steps{list-style:none;margin:0 0 16px;padding:14px 16px;border-radius:14px;background:var(--sheet);border:1px solid var(--rule);display:flex;flex-direction:column;gap:9px;font-size:14px}
+.steps li{display:flex;align-items:center;gap:10px}
+.steps .ok{width:20px;height:20px;border-radius:50%;background:var(--pine);color:var(--sheet);display:grid;place-items:center}
+.steps .ok svg.i{width:12px;height:12px;stroke-width:3}
+.steps .now{width:20px;height:20px;border-radius:50%;border:2px solid var(--seal);border-right-color:transparent;animation:spin .9s linear infinite}
+.steps .todo{width:20px;height:20px;border-radius:50%;border:2px dashed var(--rule-strong)}
+.steps li.pending{color:var(--ink-soft)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.caret{display:inline-block;width:8px;height:18px;background:var(--seal);vertical-align:-3px;margin-left:2px;border-radius:2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* empty state */
+.hello{max-width:760px;margin:0 auto;padding:12vh 32px 220px;display:flex;flex-direction:column;gap:30px}
+.hello h1{margin:0;font-family:var(--serif);font-weight:500;font-size:40px;line-height:1.15;letter-spacing:-.02em;max-width:18ch}
+.hello .lede{margin:0;font-size:16.5px;color:var(--ink-soft);max-width:56ch}
+.starters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.starter{display:flex;flex-direction:column;gap:6px;text-align:left;padding:16px 18px;border-radius:14px;border:1px solid var(--rule);background:var(--sheet);cursor:pointer}
+.starter:hover{border-color:var(--seal)}
+.starter .k{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-soft)}
+.starter .t{font-size:15.5px;font-weight:500;line-height:1.4}
+
+/* forms */
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:14px;font-weight:500}
+.field input,.field select{padding:11px 13px;border-radius:10px;border:1px solid var(--rule-strong);background:var(--sheet);font-size:15px;color:var(--ink)}
+.field input.focus-ring{border-color:var(--seal);box-shadow:0 0 0 3px var(--seal-wash);outline:none}
+.field .help{font-size:13px;color:var(--ink-soft)}
+.field .err{font-size:13px;color:var(--danger);display:flex;gap:6px;align-items:center}
+.field input.bad{border-color:var(--danger)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 18px;border-radius:12px;border:none;background:var(--seal);color:#FFF8EA;font-weight:600;font-size:15px;cursor:pointer}
+.btn:hover{background:var(--seal-deep)}
+.btn.ghost{background:none;border:1px solid var(--rule-strong);color:var(--ink);font-weight:500}
+.btn.danger{background:var(--danger);color:#FFF6F2}
+.toast{position:absolute;left:50%;transform:translateX(-50%);bottom:28px;display:flex;align-items:center;gap:10px;padding:10px 16px 10px 12px;border-radius:12px;background:var(--ink);color:var(--paper);font-size:14px;box-shadow:var(--float)}
+.toast .i{color:#9ED0B8}
+.pp .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+</style>
+</helmet>
+<div class="{{rootClass}}" style="width: 1440px; height: 900px;">
+<div class="{{shellClass}}">
+
+<aside class="side" aria-label="Your questions">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">P</span>
+    <span class="brand-name">PolicyPal</span>
+    <button class="iconbtn" type="button" aria-label="Hide the sidebar"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg></button>
+  </div>
+  <button class="newq" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg> New question <span class="kbd">Ctrl K</span></button>
+  <label class="search"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="search" placeholder="Search your questions" aria-label="Search your questions"></label>
+  <nav class="threads" aria-label="Threads">
+    <div class="group">
+      <div class="group-label">Today</div>
+      <div class="thread active"><button class="thread-title" type="button" aria-current="page">Compare silver plans near me</button><button class="iconbtn" type="button" aria-label="Options for Compare silver plans near me" onClick="{{toggleMenu}}"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div>
+      <div class="thread"><button class="thread-title" type="button">What does a deductible cover?</button><button class="iconbtn" type="button" aria-label="Options"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div>
+      <div class="thread"><button class="thread-title" type="button">Copay vs coinsurance</button><button class="iconbtn" type="button" aria-label="Options"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div>
+    </div>
+    <div class="group">
+      <div class="group-label">Previous 7 days</div>
+      <div class="thread"><button class="thread-title" type="button">Is an MRI covered by my plan?</button><button class="iconbtn" type="button" aria-label="Options"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div>
+      <div class="thread"><button class="thread-title" type="button">HSA-eligible bronze plans</button><button class="iconbtn" type="button" aria-label="Options"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div>
+    </div>
+    <div class="group">
+      <div class="group-label">Earlier</div>
+      <div class="thread"><button class="thread-title" type="button">What is an out-of-pocket maximum?</button><button class="iconbtn" type="button" aria-label="Options"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button></div>
+    </div>
+  </nav>
+  <sc-if value="{{menuOpen}}" hint-placeholder-val="{{ false }}">
+    <div class="menu" role="menu" style="left: 200px; top: 176px;">
+      <button type="button" role="menuitem"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg> Rename</button>
+      <button type="button" role="menuitem" class="danger"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Delete</button>
+    </div>
+  </sc-if>
+  <button class="account" type="button" aria-label="Account menu for you@example.com"><span class="avatar">Y</span><span class="account-email">you@example.com</span><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></button>
+</aside>
+
+<main class="main">
+  <header class="topbar">
+    <button class="title-btn" type="button" aria-label="Rename this thread">Compare silver plans near me <svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></button>
+    <span class="spacer"></span>
+    <button class="{{panelBtnClass}}" type="button" aria-pressed="{{panelOpen}}" onClick="{{togglePanel}}"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/></svg> Sources <span class="count">2</span></button>
+  </header>
+
+  <div class="scroll">
+    <div class="column">
+
+      <section class="exchange" aria-label="Question and answer">
+        <div class="q"><h2>Compare silver plans near me</h2><time>2:14 PM</time></div>
+        <div class="a">
+          <p>Here are 6 of the silver plans sold in San Diego County, California, priced for your age. The premiums are CMS's published 2026 rates, before any federal tax credit or state premium help; Covered California has today's prices.</p>
+          <div class="plans">
+            <div class="plans-head"><h3>2026 Silver plans</h3><span>San Diego County, CA</span><span style="margin-left: auto;">Shown Sep 26, 2026</span></div>
+            <table>
+              <thead><tr><th class="pos" scope="col"><span class="visually-hidden">Number</span></th><th scope="col">Plan</th><th scope="col">Premium</th><th scope="col">Deductible</th><th scope="col">Out-of-pocket max</th><th scope="col">Quality rating</th></tr></thead>
+              <tbody>
+                <sc-for list="{{plans}}" as="p" hint-placeholder-count="6">
+                  <tr class="{{p.rowClass}}">
+                    <td class="pos"><span>{{p.n}}</span></td>
+                    <th scope="row" style="font-weight: 400;"><span class="pname">{{p.name}}</span><span class="psub"><i class="metal"></i>{{p.issuer}}, Silver, HMO</span><span class="sub">{{p.sbc}}</span>
+                      <div class="rowacts"><button type="button"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Ask about this plan</button><sc-if value="{{p.hasPdf}}" hint-placeholder-val="{{ true }}"><a href="#"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg> Summary of Benefits</a></sc-if></div>
+                    </th>
+                    <td><span class="fig">{{p.premium}}/mo</span><span class="sub">for your age</span></td>
+                    <td><span class="fig">$5,200</span><span class="sub">medical</span><span class="fig" style="margin-top: 4px;">$50</span><span class="sub">drugs</span></td>
+                    <td><span class="fig">$9,800</span></td>
+                    <td><span class="sub">Not available</span></td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+            <div class="plans-foot">Premiums are CMS's published 2026 rates for the age shown, before any federal tax credit or state premium help. Plans and prices change, so check today's at <a href="#">Covered California</a>.</div>
+          </div>
+          <p>All six have a $5,200 medical deductible, a separate $50 drug deductible and a $9,800 out-of-pocket maximum. The lowest premium shown is <button class="planref" type="button" onClick="{{flash1}}"><span class="num">1</span>Sharp Silver 70 Premier HMO</button> at $474.70 a month.</p>
+        </div>
+        <div class="afoot"><span class="sep"></span><button class="tool" type="button"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> Copy</button></div>
+      </section>
+
+      <section class="exchange" aria-label="Question and answer">
+        <div class="q"><h2>What do plans 1 and 2 charge for urgent care?</h2><time>2:16 PM</time></div>
+        <div class="a stamp">
+          <div class="notice" role="note"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>Summaries of Benefits and Coverage quoted here for Covered California plans are for each plan's standard version; people who qualify for cost-sharing reductions or American Indian and Alaska Native cost sharing pay less than they show.</span></div>
+          <p><strong>Sharp Silver 70 Premier HMO</strong> charges a $50 copay per urgent care visit, and the deductible does not apply.<button class="{{seal1}}" type="button" aria-label="Source 1" onClick="{{pick1}}">1</button></p>
+          <p><strong>Molina Healthcare's Silver 70 HMO</strong> also charges a $50 copay per visit with the deductible not applying. Its summary lists urgent care from providers outside its network as not covered.<button class="{{seal2}}" type="button" aria-label="Source 2" onClick="{{pick2}}">2</button></p>
+        </div>
+        <div class="afoot">
+          <button class="chip" type="button" onClick="{{pick1}}"><span class="seal">1</span><span class="t">Sharp Silver 70 Premier HMO</span></button>
+          <button class="chip" type="button" onClick="{{pick2}}"><span class="seal">2</span><span class="t">Silver 70 HMO, Molina Healthcare</span></button>
+          <span class="sep"></span>
+          <button class="{{copyClass}}" type="button" onClick="{{copy}}">{{copyLabel}}</button>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <div class="dock">
+    <form class="composer" aria-label="Ask a question">
+      <textarea rows="1" aria-label="Your question" placeholder="Ask a follow-up, or about another plan"></textarea>
+      <div class="crow"><span class="hint">Enter to send, Shift+Enter for a new line</span><button class="send" type="submit" aria-label="Send" disabled><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button></div>
+    </form>
+    <p class="privacy">Questions and the passages found for them are sent to OpenAI to write answers. Don't include personal details.</p>
+  </div>
+</main>
+
+<sc-if value="{{panelOpen}}" hint-placeholder-val="{{ true }}">
+<aside class="panel" aria-label="Sources">
+  <div class="panel-head"><h2>Sources</h2><button class="iconbtn" type="button" aria-label="Close sources" onClick="{{togglePanel}}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+  <div class="panel-body">
+    <p class="muted" style="margin: 2px 4px 4px; font-size: 13.5px;">What the latest answer quotes. Select a numbered seal in the answer to jump here.</p>
+    <article class="{{src1}}" onClick="{{pick1}}">
+      <div class="src-top"><span class="seal">1</span><div><div class="src-title">Sharp Silver 70 Premier HMO</div><div class="src-kind">Sharp Health Plan. Summary of Benefits and Coverage, 2026. If you need immediate medical attention</div></div></div>
+      <p class="quote">Urgent care <span class="muted">|</span> $50 copay/visit; deductible does not apply <span class="muted">|</span> $50 copay/visit; deductible does not apply <span class="muted">|</span> In most cases, …</p>
+      <div class="src-meta"><span class="meter"><i style="width: 94%;"></i></span>94% match<a href="#">Carrier's PDF <svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a></div>
+    </article>
+    <article class="{{src2}}" onClick="{{pick2}}">
+      <div class="src-top"><span class="seal">2</span><div><div class="src-title">Silver 70 HMO</div><div class="src-kind">Molina Healthcare. Summary of Benefits and Coverage, 2026. If you need immediate medical attention</div></div></div>
+      <p class="quote">Urgent care <span class="muted">|</span> $50 copay/visit; deductible does not apply. <span class="muted">|</span> Not covered <span class="muted">|</span> None.</p>
+      <div class="src-meta"><span class="meter"><i style="width: 91%;"></i></span>91% match<a href="#">Carrier's PDF <svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a></div>
+    </article>
+    <p class="muted" style="margin: 6px 4px; font-size: 12.5px;">Quotes are short extracts. The carrier's PDF is the full document.</p>
+  </div>
+</aside>
+</sc-if>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { panel: true, sel: 1, copied: false, flash: 0, menu: false }; }
+  renderVals() {
+    const s = this.state;
+    const rows = [
+      ["Sharp Silver 70 Premier HMO", "Sharp Health Plan", "$474.70", "Summary of Benefits read", true],
+      ["Silver 70 HMO", "Molina Healthcare", "$489.81", "Summary of Benefits read", true],
+      ["Silver 70 Trio HMO", "Blue Shield of California", "$515.74", "Summary of Benefits not loaded yet", true],
+      ["Silver 70 HMO", "Kaiser Permanente", "$530.08", "Summary of Benefits not loaded yet", true],
+      ["Silver 70 HMO", "Anthem Blue Cross", "$543.89", "Summary of Benefits not loaded yet", true],
+      ["Silver 70 Ambetter HMO", "Health Net", "$553.03", "No Summary of Benefits listed", false]
+    ];
+    const pick = (n) => () => this.setState({ sel: n, panel: true });
+    return {
+      rootClass: this.props.dark ? "pp dark" : "pp",
+      shellClass: s.panel ? "shell with-panel" : "shell",
+      panelOpen: s.panel,
+      panelBtnClass: s.panel ? "pill-btn on" : "pill-btn",
+      togglePanel: () => this.setState({ panel: !s.panel }),
+      toggleMenu: () => this.setState({ menu: !s.menu }),
+      menuOpen: s.menu,
+      pick1: pick(1), pick2: pick(2),
+      seal1: s.sel === 1 && s.panel ? "seal sel" : "seal",
+      seal2: s.sel === 2 && s.panel ? "seal sel" : "seal",
+      src1: s.sel === 1 ? "src sel" : "src",
+      src2: s.sel === 2 ? "src sel" : "src",
+      copy: () => { this.setState({ copied: true }); setTimeout(() => this.setState({ copied: false }), 1600); },
+      copyLabel: s.copied ? "Copied" : "Copy",
+      copyClass: s.copied ? "tool done" : "tool",
+      flash1: () => { this.setState({ flash: 1 }); setTimeout(() => this.setState({ flash: 0 }), 1400); },
+      plans: rows.map((r, i) => ({ n: i + 1, name: r[0], issuer: r[1], premium: r[2], sbc: r[3], hasPdf: r[4], rowClass: s.flash === i + 1 ? "flash" : "" }))
+    };
+  }
+}
+</script>
+</body>
+</html>

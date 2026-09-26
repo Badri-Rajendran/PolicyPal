@@ -4,6 +4,19 @@
 
 ### Added
 
+- Design for the chat redesign
+  (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the
+  approved mockups in `docs/design/chat-redesign/`. It covers:
+  - streaming answers;
+  - numbered citation seals that open a Sources panel with brief, credited
+    quotes;
+  - renaming and searching threads;
+  - a dark theme;
+  - keyboard shortcuts;
+  - a phone layout.
+
+  The work splits into a backend PR and a frontend PR.
+
 - Design and ADR 0026 for California's SBCs, sub-project 2
   (`docs/superpowers/specs/2026-09-25-ca-sbc-design.md`). CMS's California
   file has no SBC links, so each plan's link comes from a hand-built manifest.

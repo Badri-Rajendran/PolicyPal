@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Profile</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Serif:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.pp{--paper:#E8E5DB;--sheet:#F8F6F0;--sheet-2:#F0EDE3;--ink:#1E211C;--ink-soft:#575D51;--rule:#D6D0BF;--rule-strong:#BCB5A1;--seal:#96651F;--seal-deep:#744D15;--seal-wash:#F0E3C9;--pine:#2C5B4B;--pine-wash:#DAE6DF;--danger:#963728;--danger-wash:#F4E1DB;--silver:#9EA5AB;--float:0 1px 0 rgba(30,33,28,.05),0 18px 40px -22px rgba(52,44,24,.45);
+  --serif:"IBM Plex Serif",Georgia,serif;--sans:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  font-family:var(--sans);font-size:15px;line-height:1.55;color:var(--ink);background:var(--paper);-webkit-font-smoothing:antialiased;box-sizing:border-box;position:relative;overflow:hidden}
+.pp.dark{--paper:#141611;--sheet:#1D2019;--sheet-2:#252820;--ink:#ECE8DC;--ink-soft:#A4A697;--rule:#32362D;--rule-strong:#484C41;--seal:#D69E52;--seal-deep:#E9B879;--seal-wash:#3A2E1B;--pine:#8BB9A5;--pine-wash:#1E2F28;--danger:#E28D7E;--danger-wash:#3B2520;--float:0 1px 0 rgba(0,0,0,.3),0 18px 40px -20px rgba(0,0,0,.8)}
+.pp *{box-sizing:border-box}
+.pp button,.pp input,.pp textarea{font:inherit;color:inherit}
+.pp a{color:var(--pine);text-underline-offset:2px}
+.pp svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.pp svg.i.sm{width:15px;height:15px}
+.pp .focus{outline:2px solid var(--seal);outline-offset:2px}
+.pp .muted{color:var(--ink-soft)}
+.pp .tab{font-variant-numeric:tabular-nums}
+
+/* shell */
+.shell{display:grid;grid-template-columns:276px minmax(0,1fr);height:100%}
+.shell.with-panel{grid-template-columns:276px minmax(0,1fr) 392px}
+.shell.collapsed{grid-template-columns:0 minmax(0,1fr)}
+
+/* sidebar */
+.side{display:flex;flex-direction:column;gap:14px;padding:18px 14px 14px;border-right:1px solid var(--rule);min-height:0;background:var(--paper)}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 6px 6px}
+.brand-mark{width:28px;height:28px;border-radius:50%;background:var(--seal);color:#FFF8EA;display:grid;place-items:center;font-family:var(--serif);font-weight:600;font-size:15px;box-shadow:inset 0 0 0 2px rgba(255,248,234,.28),inset 0 0 0 4px var(--seal)}
+.brand-name{font-family:var(--serif);font-weight:600;font-size:18px;letter-spacing:-.01em}
+.brand .iconbtn{margin-left:auto}
+.iconbtn{width:34px;height:34px;border-radius:10px;border:none;background:none;display:grid;place-items:center;color:var(--ink-soft);cursor:pointer}
+.iconbtn:hover{background:var(--sheet-2);color:var(--ink)}
+.newq{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--rule-strong);background:var(--sheet);font-weight:500;cursor:pointer}
+.newq:hover{border-color:var(--seal)}
+.kbd{margin-left:auto;font-size:12px;color:var(--ink-soft);border:1px solid var(--rule);border-radius:5px;padding:0 5px;line-height:18px;background:var(--paper)}
+.search{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:var(--sheet-2);color:var(--ink-soft)}
+.search input{border:none;background:none;outline:none;flex:1;min-width:0;color:var(--ink)}
+.group{display:flex;flex-direction:column;gap:2px}
+.group-label{font-size:12.5px;color:var(--ink-soft);padding:8px 10px 4px}
+.threads{flex:1;overflow:auto;display:flex;flex-direction:column;gap:6px;min-height:0;margin:0 -4px;padding:0 4px}
+.thread{display:flex;align-items:center;border-radius:9px;min-height:38px}
+.thread-title{flex:1;min-width:0;padding:8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:none;border:none;text-align:left;cursor:pointer}
+.thread:hover{background:var(--sheet-2)}
+.thread.active{background:var(--sheet);box-shadow:inset 0 0 0 1px var(--rule)}
+.thread.active .thread-title{font-weight:500}
+.thread .iconbtn{width:30px;height:30px;visibility:hidden}
+.thread:hover .iconbtn,.thread.active .iconbtn{visibility:visible}
+.menu{position:absolute;z-index:5;min-width:188px;padding:6px;border-radius:12px;background:var(--sheet);border:1px solid var(--rule);box-shadow:var(--float);display:flex;flex-direction:column}
+.menu button{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;border:none;background:none;text-align:left;cursor:pointer}
+.menu button:hover,.menu button.hot{background:var(--sheet-2)}
+.menu .danger{color:var(--danger)}
+.menu hr{border:none;border-top:1px solid var(--rule);margin:6px 2px}
+.account{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px;border:none;background:none;width:100%;cursor:pointer;text-align:left;border-top:1px solid var(--rule);border-radius:0;padding-top:14px}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--pine-wash);color:var(--pine);display:grid;place-items:center;font-weight:600;font-size:13px;flex-shrink:0}
+.account-email{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px}
+
+/* main column */
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relative}
+.topbar{display:flex;align-items:center;gap:8px;padding:12px 20px;border-bottom:1px solid var(--rule);min-height:58px}
+.title-btn{display:flex;align-items:center;gap:8px;border:none;background:none;padding:6px 8px;border-radius:8px;font-family:var(--serif);font-size:17px;font-weight:500;cursor:text;min-width:0}
+.title-btn:hover{background:var(--sheet-2)}
+.title-btn .i{opacity:0;color:var(--ink-soft)}
+.title-btn:hover .i{opacity:1}
+.topbar .spacer{flex:1}
+.pill-btn{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;border:1px solid var(--rule-strong);background:var(--sheet);font-size:13.5px;font-weight:500;cursor:pointer}
+.pill-btn.on{background:var(--seal-wash);border-color:var(--seal);color:var(--seal-deep)}
+.count{min-width:20px;height:20px;border-radius:999px;background:var(--seal);color:#FFF8EA;font-size:11.5px;display:grid;place-items:center;padding:0 6px;font-weight:600}
+.nudge{display:flex;align-items:center;gap:12px;padding:10px 20px;background:var(--pine-wash);color:var(--ink);font-size:14px;border-bottom:1px solid var(--rule)}
+.nudge a{font-weight:500}
+.scroll{flex:1;overflow:auto;min-height:0}
+.column{max-width:760px;margin:0 auto;padding:36px 32px 200px;display:flex;flex-direction:column;gap:44px}
+
+/* an exchange: the question is the heading, the answer is the brief */
+.exchange{display:flex;flex-direction:column;gap:18px}
+.q{display:flex;align-items:baseline;gap:14px}
+.q h2{margin:0;font-family:var(--serif);font-weight:500;font-size:25px;line-height:1.3;letter-spacing:-.012em;flex:1}
+.q time{font-size:12.5px;color:var(--ink-soft);white-space:nowrap}
+.a{font-size:16px;line-height:1.68}
+.a p{margin:0 0 12px}
+.a ul{margin:0 0 12px;padding-left:20px}
+.a li{margin:4px 0}
+.a strong{font-weight:600}
+.notice{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:12px;background:var(--seal-wash);color:var(--ink);font-size:14px;line-height:1.5;margin-bottom:14px}
+.notice .i{color:var(--seal-deep);margin-top:2px}
+
+/* the seal: a citation */
+.seal{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 5px;margin:0 1px 0 3px;border-radius:999px;background:var(--seal);color:#FFF8EA;font-size:11px;font-weight:600;line-height:1;vertical-align:2px;border:none;cursor:pointer;box-shadow:inset 0 0 0 1.5px rgba(255,248,234,.3);font-variant-numeric:tabular-nums}
+.seal:hover{background:var(--seal-deep)}
+.seal.sel{box-shadow:0 0 0 2px var(--paper),0 0 0 4px var(--seal)}
+.stamp .seal{animation:stamp .42s cubic-bezier(.2,.9,.3,1.3) both}
+.stamp .seal:nth-of-type(2){animation-delay:.08s}
+.stamp .seal:nth-of-type(3){animation-delay:.16s}
+@keyframes stamp{0%{transform:scale(1.9) rotate(-14deg);opacity:0}60%{opacity:1}100%{transform:none;opacity:1}}
+.planref{display:inline-flex;align-items:baseline;gap:6px;border:none;background:none;padding:0;color:var(--ink);font-weight:500;text-decoration:underline dotted var(--rule-strong) 1.5px;text-underline-offset:4px;cursor:pointer}
+.planref .num{font-size:11px;font-weight:600;color:var(--pine);border:1.5px solid var(--pine);border-radius:5px;padding:0 4px;line-height:15px;align-self:center}
+
+/* answer footer */
+.afoot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:6px}
+.chip{display:inline-flex;align-items:center;gap:8px;max-width:100%;padding:5px 11px 5px 6px;border-radius:999px;border:1px solid var(--rule);background:var(--sheet);font-size:13px;cursor:pointer}
+.chip:hover{border-color:var(--seal)}
+.chip .seal{margin:0;vertical-align:0}
+.chip span.t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tool{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;border:none;background:none;color:var(--ink-soft);font-size:13px;cursor:pointer}
+.tool:hover{background:var(--sheet-2);color:var(--ink)}
+.tool.done{color:var(--pine)}
+.afoot .sep{flex:1}
+
+/* plan table */
+.plans{border-radius:16px;background:var(--sheet);border:1px solid var(--rule);overflow:hidden;margin:6px 0 14px}
+.plans-head{display:flex;align-items:baseline;gap:12px;padding:14px 18px 12px;border-bottom:1px solid var(--rule)}
+.plans-head h3{margin:0;font-family:var(--serif);font-size:16px;font-weight:600}
+.plans-head span{font-size:13px;color:var(--ink-soft)}
+.plans table{width:100%;border-collapse:collapse;font-size:14px}
+.plans th,.plans td{text-align:left;vertical-align:top;padding:12px 14px;border-bottom:1px solid var(--rule)}
+.plans thead th{font-size:12.5px;font-weight:500;color:var(--ink-soft);padding-top:10px;padding-bottom:10px;white-space:nowrap;background:var(--sheet-2)}
+.plans tbody tr:last-child th,.plans tbody tr:last-child td{border-bottom:none}
+.plans tbody tr:hover{background:var(--paper)}
+.plans tbody tr.flash{background:var(--seal-wash)}
+.plans .pos{width:44px;padding-right:0}
+.plans .pos span{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:7px;border:1.5px solid var(--pine);color:var(--pine);font-size:12px;font-weight:600}
+.pname{font-weight:600;display:block}
+.psub{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft);margin-top:2px}
+.metal{width:9px;height:9px;border-radius:50%;background:var(--silver);box-shadow:inset 0 0 0 1px rgba(0,0,0,.15)}
+.fig{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;display:block}
+.sub{font-size:12.5px;color:var(--ink-soft);display:block}
+.rowacts{display:flex;gap:4px;margin-top:6px}
+.rowacts a,.rowacts button{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;padding:3px 8px 3px 6px;border-radius:7px;border:none;background:none;color:var(--pine);font-weight:500;cursor:pointer;text-decoration:none}
+.rowacts a:hover,.rowacts button:hover{background:var(--pine-wash)}
+.plans-foot{padding:12px 18px;font-size:12.5px;color:var(--ink-soft);border-top:1px solid var(--rule);background:var(--sheet-2)}
+
+/* composer */
+.dock{position:absolute;left:0;right:0;bottom:0;padding:0 32px 18px;background:linear-gradient(to bottom,transparent,var(--paper) 38%)}
+.composer{max-width:760px;margin:0 auto;border-radius:18px;background:var(--sheet);border:1px solid var(--rule-strong);box-shadow:var(--float);padding:14px 14px 10px 18px;display:flex;flex-direction:column;gap:8px}
+.composer.focus-ring{border-color:var(--seal);box-shadow:var(--float),0 0 0 3px var(--seal-wash)}
+.composer textarea{border:none;outline:none;background:none;resize:none;font-size:16px;line-height:1.5;min-height:26px;padding:0}
+.composer textarea::placeholder{color:var(--ink-soft)}
+.crow{display:flex;align-items:center;gap:10px}
+.crow .hint{font-size:12.5px;color:var(--ink-soft);flex:1}
+.send{width:38px;height:38px;border-radius:50%;border:none;background:var(--seal);color:#FFF8EA;display:grid;place-items:center;cursor:pointer;box-shadow:inset 0 0 0 2px rgba(255,248,234,.25)}
+.send:hover{background:var(--seal-deep)}
+.send:disabled{background:var(--rule-strong);cursor:not-allowed}
+.send.stop{background:var(--ink);color:var(--paper)}
+.privacy{max-width:760px;margin:8px auto 0;font-size:12px;color:var(--ink-soft);text-align:center}
+.jump{position:absolute;left:50%;transform:translateX(-50%);bottom:150px;display:flex;align-items:center;gap:6px;padding:7px 14px 7px 10px;border-radius:999px;background:var(--ink);color:var(--paper);border:none;font-size:13px;font-weight:500;box-shadow:var(--float);cursor:pointer}
+
+/* sources panel */
+.panel{border-left:1px solid var(--rule);background:var(--sheet);display:flex;flex-direction:column;min-height:0}
+.panel-head{display:flex;align-items:center;gap:8px;padding:14px 14px 12px 20px;border-bottom:1px solid var(--rule);min-height:58px}
+.panel-head h2{margin:0;font-family:var(--serif);font-size:17px;font-weight:600;flex:1}
+.panel-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.src{border-radius:14px;padding:14px 16px 14px;border:1px solid var(--rule);background:var(--sheet);display:flex;flex-direction:column;gap:8px;cursor:pointer}
+.src:hover{border-color:var(--rule-strong)}
+.src.sel{border-color:var(--seal);box-shadow:0 0 0 3px var(--seal-wash)}
+.src-top{display:flex;gap:10px;align-items:flex-start}
+.src-top .seal{margin:2px 0 0;vertical-align:0}
+.src-title{font-weight:600;font-size:14px;line-height:1.35}
+.src-kind{font-size:12.5px;color:var(--ink-soft)}
+.quote{margin:0;font-family:var(--serif);font-size:14px;line-height:1.6;color:var(--ink);padding-left:10px;position:relative}
+.quote::before{content:"\201C";position:absolute;left:-4px;top:-6px;font-size:26px;color:var(--seal)}
+.src-meta{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ink-soft)}
+.meter{width:54px;height:5px;border-radius:999px;background:var(--rule);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--pine)}
+.src-meta a{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-weight:500}
+.gone{font-size:13px;color:var(--ink-soft);font-style:italic}
+
+/* streaming */
+.steps{list-style:none;margin:0 0 16px;padding:14px 16px;border-radius:14px;background:var(--sheet);border:1px solid var(--rule);display:flex;flex-direction:column;gap:9px;font-size:14px}
+.steps li{display:flex;align-items:center;gap:10px}
+.steps .ok{width:20px;height:20px;border-radius:50%;background:var(--pine);color:var(--sheet);display:grid;place-items:center}
+.steps .ok svg.i{width:12px;height:12px;stroke-width:3}
+.steps .now{width:20px;height:20px;border-radius:50%;border:2px solid var(--seal);border-right-color:transparent;animation:spin .9s linear infinite}
+.steps .todo{width:20px;height:20px;border-radius:50%;border:2px dashed var(--rule-strong)}
+.steps li.pending{color:var(--ink-soft)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.caret{display:inline-block;width:8px;height:18px;background:var(--seal);vertical-align:-3px;margin-left:2px;border-radius:2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* empty state */
+.hello{max-width:760px;margin:0 auto;padding:12vh 32px 220px;display:flex;flex-direction:column;gap:30px}
+.hello h1{margin:0;font-family:var(--serif);font-weight:500;font-size:40px;line-height:1.15;letter-spacing:-.02em;max-width:18ch}
+.hello .lede{margin:0;font-size:16.5px;color:var(--ink-soft);max-width:56ch}
+.starters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.starter{display:flex;flex-direction:column;gap:6px;text-align:left;padding:16px 18px;border-radius:14px;border:1px solid var(--rule);background:var(--sheet);cursor:pointer}
+.starter:hover{border-color:var(--seal)}
+.starter .k{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-soft)}
+.starter .t{font-size:15.5px;font-weight:500;line-height:1.4}
+
+/* forms */
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:14px;font-weight:500}
+.field input,.field select{padding:11px 13px;border-radius:10px;border:1px solid var(--rule-strong);background:var(--sheet);font-size:15px;color:var(--ink)}
+.field input.focus-ring{border-color:var(--seal);box-shadow:0 0 0 3px var(--seal-wash);outline:none}
+.field .help{font-size:13px;color:var(--ink-soft)}
+.field .err{font-size:13px;color:var(--danger);display:flex;gap:6px;align-items:center}
+.field input.bad{border-color:var(--danger)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 18px;border-radius:12px;border:none;background:var(--seal);color:#FFF8EA;font-weight:600;font-size:15px;cursor:pointer}
+.btn:hover{background:var(--seal-deep)}
+.btn.ghost{background:none;border:1px solid var(--rule-strong);color:var(--ink);font-weight:500}
+.btn.danger{background:var(--danger);color:#FFF6F2}
+.toast{position:absolute;left:50%;transform:translateX(-50%);bottom:28px;display:flex;align-items:center;gap:10px;padding:10px 16px 10px 12px;border-radius:12px;background:var(--ink);color:var(--paper);font-size:14px;box-shadow:var(--float)}
+.toast .i{color:#9ED0B8}
+.pp .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+</style>
+</helmet>
+<div class="{{rootClass}}" style="width: 1440px; height: 900px;">
+<div class="shell">
+<aside class="side" aria-label="Your questions">
+  <div class="brand"><span class="brand-mark" aria-hidden="true">P</span><span class="brand-name">PolicyPal</span><button class="iconbtn" type="button" aria-label="Hide the sidebar"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg></button></div>
+  <button class="newq" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg> New question <span class="kbd">Ctrl K</span></button>
+  <label class="search"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input type="search" placeholder="Search your questions" aria-label="Search your questions"></label>
+  <nav class="threads" aria-label="Threads">
+    <div class="group"><div class="group-label">Today</div>
+      <div class="thread"><button class="thread-title" type="button">Silver plans, San Diego</button></div>
+      <div class="thread"><button class="thread-title" type="button">Copay vs coinsurance</button></div>
+    </div>
+  </nav>
+  <button class="account" type="button" aria-label="Account menu for you@example.com"><span class="avatar">Y</span><span class="account-email">you@example.com</span><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></button>
+</aside>
+<main class="main">
+  <header class="topbar"><a href="#" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 500; text-decoration: none;"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg> Back to your questions</a></header>
+  <div class="scroll">
+    <div style="max-width: 980px; margin: 0 auto; padding: 48px 32px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 56px; align-items: start;">
+      <form style="display: flex; flex-direction: column; gap: 22px;" aria-label="Your profile">
+        <div><h1 style="margin: 0 0 8px; font-family: var(--serif); font-weight: 500; font-size: 34px; letter-spacing: -0.015em;">Your profile</h1><p class="muted" style="margin: 0; font-size: 16px; max-width: 52ch;">Plan questions use your ZIP code and age to find plans you can buy and price them for you.</p></div>
+        <fieldset style="border: none; margin: 0; padding: 22px 24px; border-radius: 16px; background: var(--sheet); border: 1px solid var(--rule); display: flex; flex-direction: column; gap: 16px;">
+          <legend style="font-family: var(--serif); font-weight: 600; font-size: 16px; padding: 0 6px; margin-left: -6px;">For comparing plans</legend>
+          <div class="field"><label for="zip">ZIP code</label><input id="zip" inputmode="numeric" value="92101" style="max-width: 180px;">
+            <span class="help" style="display: flex; align-items: center; gap: 6px; color: var(--pine); font-weight: 500;"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> San Diego County, CA</span></div>
+          <div class="notice" style="margin: 0; background: var(--pine-wash);"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>Plans in CA are sold on Covered California. PolicyPal compares them from CMS's published plan data.</span></div>
+          <div class="field"><label for="dob">Date of birth</label><input id="dob" type="text" value="04/12/1986" style="max-width: 220px;"><span class="help">Used to work out your age for prices. Never shown to the AI model.</span></div>
+        </fieldset>
+        <div style="display: flex; align-items: center; gap: 14px;"><button class="btn" type="button" onClick="{{save}}">Save profile</button><sc-if value="{{saved}}" hint-placeholder-val="{{ false }}"><span style="display: inline-flex; align-items: center; gap: 6px; color: var(--pine); font-weight: 500;"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Saved. Plan questions now use this profile.</span></sc-if></div>
+      </form>
+      <aside style="display: flex; flex-direction: column; gap: 12px; padding-top: 66px;" aria-label="How this is used">
+        <h2 style="margin: 0; font-family: var(--serif); font-size: 16px; font-weight: 600;">Where this goes</h2>
+        <p style="margin: 0; font-size: 14px; line-height: 1.6;">What you save here stays on our server and is never sent to the AI model.</p>
+        <p style="margin: 0; font-size: 14px; line-height: 1.6;">Anything you type in a question is sent, so keep personal details out of questions.</p>
+      </aside>
+    </div>
+  </div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"dark":{"editor":"boolean","default":false},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { saved: false }; }
+  renderVals() {
+    return { rootClass: this.props.dark ? "pp dark" : "pp", saved: this.state.saved, save: () => this.setState({ saved: true }) };
+  }
+}
+</script>
+</body>
+</html>
