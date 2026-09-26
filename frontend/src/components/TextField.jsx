@@ -5,7 +5,9 @@ import IconButton from "./IconButton";
 export default function TextField({ id, label, error, hint, type = "text", ...inputProps }) {
   const [shown, setShown] = useState(false);
   const isPassword = type === "password";
-  const describedBy = [hint && `${id}-hint`, error && `${id}-error`].filter(Boolean).join(" ") || undefined;
+  // An error takes the hint's place, so the field is described by one or the other.
+  const showHint = Boolean(hint) && !error;
+  const describedBy = error ? `${id}-error` : showHint ? `${id}-hint` : undefined;
 
   const input = (
     <input
@@ -31,7 +33,7 @@ export default function TextField({ id, label, error, hint, type = "text", ...in
       ) : (
         input
       )}
-      {hint && (
+      {showHint && (
         <span className="help" id={`${id}-hint`}>
           {hint}
         </span>

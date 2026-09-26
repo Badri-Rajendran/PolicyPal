@@ -11,32 +11,13 @@ import SourcesPanel from "../features/chat/sources/SourcesPanel";
 import { clearSourceCache } from "../features/chat/sources/useSource";
 import Transcript from "../features/chat/transcript/Transcript";
 import { useMessages } from "../features/chat/useMessages";
+import { useSidebarHidden } from "../features/chat/useSidebarHidden";
 import { useThreads } from "../features/chat/useThreads";
 import "../features/plans/plans.css";
 import { useAuth } from "../hooks/useAuth";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useShortcuts } from "../hooks/useShortcuts";
 import { SessionExpiredError } from "../services/apiClient";
-
-const SIDEBAR_KEY = "policypal.sidebar";
-
-// localStorage holds only whether the sidebar is hidden, per browser.
-function readSidebarHidden() {
-  try {
-    return localStorage.getItem(SIDEBAR_KEY) === "hidden";
-  } catch {
-    return false;
-  }
-}
-
-function storeSidebarHidden(hidden) {
-  try {
-    if (hidden) localStorage.setItem(SIDEBAR_KEY, "hidden");
-    else localStorage.removeItem(SIDEBAR_KEY);
-  } catch {
-    // Storage unavailable: the choice holds for this page only.
-  }
-}
 
 function placeholderFor({ isSending, hasMessages, phone }) {
   if (isSending) return "PolicyPal is answering…";
@@ -57,7 +38,7 @@ export default function ChatPage() {
 
   const [draft, setDraft] = useState("");
   const [shownThreadId, setShownThreadId] = useState(threadId);
-  const [sidebarHidden, setSidebarHidden] = useState(readSidebarHidden);
+  const [sidebarHidden, setHidden] = useSidebarHidden();
   const [drawerOpen, setDrawerOpen] = useState(false);
   // The Sources panel: which answer's sources, and which one is selected.
   const [panel, setPanel] = useState(null);
@@ -130,11 +111,6 @@ export default function ChatPage() {
     renameThread(id, title).catch((err) => {
       if (!(err instanceof SessionExpiredError)) setToast("Couldn't rename this thread. Try again.");
     });
-  }
-
-  function setHidden(hidden) {
-    storeSidebarHidden(hidden);
-    setSidebarHidden(hidden);
   }
 
   function fillComposer(text) {

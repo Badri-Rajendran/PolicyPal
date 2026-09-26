@@ -146,7 +146,7 @@ describe("AuthForm", () => {
     const onModeChange = vi.fn();
     render(<AuthForm mode="login" onModeChange={onModeChange} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Create one" }));
+    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
 
     expect(onModeChange).toHaveBeenCalledWith("register");
   });

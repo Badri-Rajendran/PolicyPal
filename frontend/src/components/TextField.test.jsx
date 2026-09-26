@@ -28,6 +28,12 @@ describe("TextField", () => {
     expect(screen.getByLabelText("Date of birth")).toHaveAccessibleDescription("Never shown to the AI model.");
   });
 
+  it("lets an error take the hint's place", () => {
+    render(<TextField id="dob" label="Date of birth" value="" onChange={() => {}} hint="Never shown." error="Enter your date of birth." />);
+    expect(screen.queryByText("Never shown.")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Date of birth")).toHaveAccessibleDescription("Enter your date of birth.");
+  });
+
   it("has no show/hide button for an ordinary field", () => {
     render(<TextField id="email" label="Email" value="" onChange={() => {}} />);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();

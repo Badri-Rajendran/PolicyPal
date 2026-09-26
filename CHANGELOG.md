@@ -74,6 +74,15 @@
     can reach, "Ask about this plan" (fills the composer with
     `About plan {n}, {name}: `), and a head with the title, place and date as
     separate parts. The premium, SBC and exchange notes are unchanged.
+  - Sign-in and register use the split layout: the promise and an example
+    cited answer (HealthCare.gov's glossary text for Copayment and
+    Coinsurance) beside the form, which keeps its validation, ZIP code and
+    date of birth, and gains a password show/hide toggle. On narrow screens
+    only the form and the promise show.
+  - The profile page sits in the app shell with the sidebar, beside a
+    "Where this goes" aside; its fieldset legend is in sentence case, and a
+    save is confirmed with a check. `useSidebarHidden` shares the sidebar's
+    remembered state between the chat and profile pages.
 
 - Design for the chat redesign
   (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the

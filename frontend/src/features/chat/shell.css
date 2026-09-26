@@ -72,6 +72,26 @@
   overflow: hidden;
 }
 
+.scroll {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.back-link:hover {
+  background: var(--sheet-2);
+}
+
 .topbar {
   display: flex;
   align-items: center;

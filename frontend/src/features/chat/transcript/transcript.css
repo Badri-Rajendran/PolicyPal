@@ -1,11 +1,5 @@
 /* Ported from docs/design/chat-redesign/tokens.css: the transcript. */
 
-.scroll {
-  flex: 1;
-  overflow: auto;
-  min-height: 0;
-}
-
 .column {
   max-width: 760px;
   margin: 0 auto;

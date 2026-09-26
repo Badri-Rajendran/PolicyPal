@@ -35,7 +35,14 @@ describe("ProfileForm", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
 
     expect(onSave).toHaveBeenCalledWith({ zip_code: "75801", date_of_birth: "1985-01-02", county_fips: "48001" });
-    expect(await screen.findByRole("status")).toHaveTextContent("Saved.");
+    const done = await screen.findByRole("status");
+    expect(done).toHaveTextContent("Saved. Plan questions now use this profile.");
+    expect(done.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("heads its fields in sentence case", () => {
+    render(<ProfileForm profile={saved} counties={counties} onSave={onSave} />);
+    expect(screen.getByRole("group", { name: "For comparing plans" })).toBeInTheDocument();
   });
 
   it("refuses a date of birth under 13 without sending it", async () => {
