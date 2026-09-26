@@ -1,72 +1,217 @@
+/* Ported from docs/design/chat-redesign/tokens.css: .btn, .iconbtn, .menu,
+   .field and .toast. */
+
 .btn {
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  padding: 0.6rem 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  border: none;
+  background: var(--seal);
+  color: #fff8ea;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--seal-deep);
+}
+
+.btn.ghost {
+  background: none;
+  border: 1px solid var(--rule-strong);
+  color: var(--ink);
   font-weight: 500;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--sheet-2);
+}
+
+.btn.danger {
+  background: var(--danger);
+  color: #fff6f2;
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: var(--danger);
+  filter: brightness(0.92);
+}
+
+.btn.sm {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 8px;
 }
 
 .btn:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
-.btn-primary {
-  background: var(--seal);
-  color: #fff8ec;
+.spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: spin 0.9s linear infinite;
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: var(--seal-deep);
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.btn-ghost {
-  background: transparent;
-  border-color: var(--rule);
+.iconbtn {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  border: none;
+  background: none;
+  display: grid;
+  place-items: center;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.iconbtn:hover:not(:disabled) {
+  background: var(--sheet-2);
   color: var(--ink);
 }
 
-.btn-ghost:hover:not(:disabled) {
-  border-color: var(--ink-soft);
+.iconbtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
-.btn-danger {
-  background: transparent;
+/* Menu */
+
+.menu-anchor {
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  z-index: 20;
+  min-width: 188px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  box-shadow: var(--float);
+  display: flex;
+  flex-direction: column;
+}
+
+.menu.below {
+  top: calc(100% + 4px);
+  right: 0;
+}
+
+.menu.above {
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+}
+
+.menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu button:hover,
+.menu button:focus-visible {
+  background: var(--sheet-2);
+}
+
+.menu .danger {
   color: var(--danger);
 }
 
-.btn-danger:hover:not(:disabled) {
-  text-decoration: underline;
+.menu hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 6px 2px;
 }
+
+/* Fields */
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 6px;
   text-align: left;
 }
 
 .field label {
-  font-size: 0.85rem;
-  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 500;
 }
 
-.field input {
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
+.field input,
+.field select {
+  padding: 11px 13px;
+  border-radius: 10px;
+  border: 1px solid var(--rule-strong);
   background: var(--sheet);
+  font-size: 15px;
   color: var(--ink);
 }
 
-.field input[aria-invalid="true"] {
+.field input:focus-visible,
+.field select:focus-visible {
+  border-color: var(--seal);
+  box-shadow: 0 0 0 3px var(--seal-wash);
+  outline: none;
+}
+
+.field input.bad,
+.field input[aria-invalid="true"],
+.field select[aria-invalid="true"] {
   border-color: var(--danger);
+}
+
+.field .help {
+  font-size: 13px;
+  color: var(--ink-soft);
 }
 
 .field-error {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: 13px;
   color: var(--danger);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.field-password {
+  position: relative;
+}
+
+.field-password input {
+  width: 100%;
+  padding-right: 44px;
+}
+
+.field-password .iconbtn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .error-banner {
@@ -74,10 +219,44 @@
   color: var(--danger);
   border: 1px solid var(--danger);
   border-radius: var(--radius);
-  padding: 0.6rem 0.8rem;
-  font-size: 0.88rem;
+  padding: 10px 14px;
+  font-size: 14px;
 }
 
+.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--pine);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Toast */
+
+.toast {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 28px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 10px 12px;
+  border-radius: 12px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 14px;
+  box-shadow: var(--float);
+}
+
+.toast .i {
+  color: #9ed0b8;
+}
+
+/* Kept until the transcript's redesign replaces the thinking dots. */
 .thinking {
   display: inline-flex;
   gap: 0.3rem;
@@ -105,31 +284,8 @@
   80%,
   100% {
     opacity: 0.25;
-    transform: translateY(0);
   }
   40% {
     opacity: 1;
-    transform: translateY(-2px);
   }
-}
-
-.link {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--pine);
-  font-weight: 500;
-  text-decoration: underline;
-}
-
-.field select {
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--sheet);
-  color: var(--ink);
-}
-
-.field select[aria-invalid="true"] {
-  border-color: var(--danger);
 }

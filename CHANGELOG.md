@@ -21,6 +21,11 @@
     unknown plans left as text), and the plain text Copy writes.
     `utils/threadGroups.js` groups threads into Today, Previous 7 days and
     Earlier; `utils/exchanges.js` pairs questions with their answers.
+  - Generic components: `Button` (primary, ghost, danger; a spinner while
+    busy), `IconButton` (its label is its name), an accessible `Menu` (arrow
+    keys, Home/End, Enter/Space, Esc and outside clicks close it and return
+    focus), a self-dismissing `Toast`, and a show/hide toggle and hint on
+    password `TextField`s.
 
 - Design for the chat redesign
   (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the
