@@ -482,3 +482,15 @@ def test_california_is_a_state_the_ingest_takes_and_all_is_still_the_api_states(
     with pytest.raises(SystemExit):
         ingest.parse_args(["--states", "NY"])
 
+
+def test_a_recorded_failure_is_counted_as_skipped_not_as_current(sbc, fetches, catalog, session, capsys):
+    """Counted as both, a blocked document read as healthy in the run's first line."""
+    sbc[SILVER] = None
+    ingest.execute(["NH"], YEAR)
+    capsys.readouterr()
+
+    ingest.execute(["NH"], YEAR)
+
+    out = capsys.readouterr().out
+    assert "2 SBC documents behind the NH plans for 1999; 1 already current, reading 0" in out
+    assert "1 recorded failures skipped" in out

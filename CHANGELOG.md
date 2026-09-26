@@ -499,6 +499,9 @@
 
 ### Fixed
 
+- `make ingest-sbc` counted a recorded failure twice: once as "already
+  current" and again as a "recorded failure skipped". So a run over blocked
+  documents read as healthier than it was. It now counts it once, as skipped.
 - "Compare the gold plans." and "Compare silver plans for me." skipped the plan
   search in about half of runs, in every state. The prompt left it open whether
   comparing plans of a metal level meant real plans or the level in general,

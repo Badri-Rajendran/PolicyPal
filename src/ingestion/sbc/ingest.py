@@ -346,7 +346,7 @@ def execute(states: list[str], year: int, limit: int | None = None,
     skipped = sum(1 for url in documents
                   if url not in held and stored.get(url) and stored[url].status not in READ_STATUSES)
     print(f"{len(documents)} SBC documents behind the {', '.join(states)} plans for {year}; "
-          f"{len(documents) - len(held)} already current, "
+          f"{len(documents) - len(held) - skipped} already current, "
           f"{'re-checking' if refresh else 'reading'} {len(urls)}")
     if skipped:
         print(f"{skipped} recorded failures skipped; `make refresh-sbc STATES={','.join(states)}` retries them")
