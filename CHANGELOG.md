@@ -559,6 +559,9 @@
 
 ### Fixed
 
+- **A streamed answer's spend survives a failed save.** Spend is marked as
+  recorded only after its commit succeeds. Before, a rolled-back commit took
+  the spend with it, and it was never recorded again.
 - `make ingest-sbc` counted a recorded failure twice: once as "already
   current" and again as a "recorded failure skipped". So a run over blocked
   documents read as healthier than it was. It now counts it once, as skipped.

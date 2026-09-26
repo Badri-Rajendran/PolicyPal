@@ -6,6 +6,7 @@ from unittest.mock import patch
 import flask
 import openai
 import pytest
+from sqlalchemy.orm import Session
 
 from src.api import deps
 from src.models.chat import MessageSource
@@ -253,3 +254,28 @@ def test_a_thread_deleted_while_it_is_answered_ends_with_error(client):
     assert [e for e, _ in events] == ["user_message", "stage", "error"]
     record.assert_called_once()
     assert client.get(f"/api/chat/threads/{thread_id}/messages", headers=headers).status_code == 404
+
+
+def test_spend_is_recorded_again_when_saving_the_answer_fails_to_commit(client):
+    """The commit that saves the answer also carries the spend. If it fails,
+    the rollback undoes both, and the spend must still be recorded."""
+    headers, thread_id = _thread(client, "stream-commit@example.com")
+    real_commit = Session.commit
+    state = {"recorded": 0, "failed": False}
+
+    def record(*_args):
+        state["recorded"] += 1
+
+    def flaky_commit(session):
+        if state["recorded"] == 1 and not state["failed"]:
+            state["failed"] = True
+            raise RuntimeError("commit failed")
+        return real_commit(session)
+
+    with patch("src.api.routes.chat.answer_query_events", return_value=iter([Done(Answer("A.", CHUNKS))])), \
+         patch("src.api.routes.chat.record_tokens", side_effect=record), \
+         patch.object(Session, "commit", flaky_commit):
+        resp = client.post(_url(thread_id), json={"content": "x"}, headers=headers, buffered=True)
+
+    assert _events(resp)[-1] == ("error", {"error": "generation failed"})
+    assert state == {"recorded": 2, "failed": True}

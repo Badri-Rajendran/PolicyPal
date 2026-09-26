@@ -295,12 +295,14 @@ def stream_message(thread_id: str):
         recorded = False
         source = None
 
+        # Marked recorded only once committed: a rolled-back commit took the
+        # spend with it, so it must be recorded again.
         def record_spend():
             nonlocal recorded
             if not recorded:
-                recorded = True
                 record_tokens(db, user_id, token_usage())
                 db.commit()
+                recorded = True
 
         try:
             yield _sse("user_message", {"message": question_json})
@@ -320,8 +322,8 @@ def stream_message(thread_id: str):
                         raise LookupError("thread deleted while it was being answered")
                     saved = _save_answer(db, current, body.content, event.answer)
                     record_tokens(db, user_id, token_usage())
-                    recorded = True
                     db.commit()
+                    recorded = True
                     thread_json = ThreadResponse.model_validate(current, from_attributes=True).model_dump(mode="json")
                     yield _sse("done", {"message": _message_json(saved), "thread": thread_json})
         except openai.OpenAIError:
