@@ -1,8 +1,9 @@
 import dataclasses
+import json
 import uuid
 
 import openai
-from flask import Blueprint, abort, jsonify
+from flask import Blueprint, Response, abort, jsonify, stream_with_context
 from flask_jwt_extended import jwt_required
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
@@ -21,8 +22,14 @@ from src.schemas.chat import (
 )
 from src.services.generation import (
     Answer,
+    Delta,
+    Done,
+    Notice,
+    Reset,
     ShownPlan,
+    Stage,
     answer_query,
+    answer_query_events,
     reset_token_usage,
     token_usage,
 )
@@ -38,6 +45,9 @@ from src.services.usage import (
 logger = get_logger(__name__)
 
 bp = Blueprint("chat", __name__, url_prefix="/api/chat")
+
+# One budget of sends per user, whichever route they use (ADR 0027).
+_send_limit = limiter.shared_limit("15 per minute", scope="chat_send")
 
 
 def _get_owned_thread(thread_id: str):
@@ -110,6 +120,15 @@ def _context(db, thread) -> tuple[list[dict], tuple[ShownPlan, ...]]:
         select(Message).where(Message.thread_id == thread.id).order_by(Message.created_at)
     ).scalars().all()
     return [{"role": m.role, "content": m.content} for m in prior], _shown_plans(db, thread.id)
+
+
+def _message_json(message: Message) -> dict:
+    return MessageResponse.model_validate(message, from_attributes=True).model_dump(mode="json")
+
+
+def _sse(event: str, data: dict) -> str:
+    """One Server-Sent Event. Names and fields are the server's; only text values come from the model."""
+    return f"event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
 
 
 def _save_answer(db, thread, question: str, result: Answer) -> Message:
@@ -208,7 +227,7 @@ def list_messages(thread_id: str):
 
 @bp.post("/threads/<thread_id>/messages")
 @jwt_required()
-@limiter.limit("15 per minute")
+@_send_limit
 def create_message(thread_id: str):
     body = parse_body(MessageCreateRequest)
     db, thread = _get_owned_thread(thread_id)
@@ -240,6 +259,92 @@ def create_message(thread_id: str):
     assistant_message = _save_answer(db, thread, body.content, result)
     response = MessageResponse.model_validate(assistant_message, from_attributes=True)
     return jsonify(response.model_dump(mode="json")), 201
+
+
+@bp.post("/threads/<thread_id>/messages/stream")
+@jwt_required()
+@_send_limit
+def stream_message(thread_id: str):
+    """create_message, as Server-Sent Events (ADR 0027).
+
+    Every check that can fail is made first, so its error is an ordinary
+    response. The question is then committed, so no transaction stays open
+    while the model writes, and the answer is saved and committed before
+    `done` is sent: `done` carries exactly what was saved.
+    """
+    body = parse_body(MessageCreateRequest)
+    db, thread = _get_owned_thread(thread_id)
+    user = get_current_user()
+    if budget_exhausted(db, user.id):
+        raise TokenBudgetExhaustedError(seconds_until_budget_resets())
+
+    history, shown_plans = _context(db, thread)
+    profile = plan_profile(user)
+    thread_uuid, user_id = thread.id, user.id
+    question = Message(thread_id=thread.id, role="user", content=body.content)
+    db.add(question)
+    db.flush()
+    question_json = _message_json(question)
+    db.commit()
+
+    def events():
+        # The view's session was closed by its teardown when it returned; this
+        # one is the stream's own, committed and closed by the stream's teardown.
+        db = get_db()
+        reset_token_usage()
+        recorded = False
+        source = None
+
+        def record_spend():
+            nonlocal recorded
+            if not recorded:
+                recorded = True
+                record_tokens(db, user_id, token_usage())
+                db.commit()
+
+        try:
+            yield _sse("user_message", {"message": question_json})
+            source = answer_query_events(body.content, history, profile=profile, shown_plans=shown_plans)
+            for event in source:
+                if isinstance(event, Stage):
+                    yield _sse("stage", {"stage": event.name})
+                elif isinstance(event, Notice):
+                    yield _sse("notice", {"text": event.text})
+                elif isinstance(event, Delta):
+                    yield _sse("delta", {"text": event.text})
+                elif isinstance(event, Reset):
+                    yield _sse("reset", {})
+                elif isinstance(event, Done):
+                    current = db.get(Thread, thread_uuid)
+                    if current is None:
+                        raise LookupError("thread deleted while it was being answered")
+                    saved = _save_answer(db, current, body.content, event.answer)
+                    record_tokens(db, user_id, token_usage())
+                    recorded = True
+                    db.commit()
+                    thread_json = ThreadResponse.model_validate(current, from_attributes=True).model_dump(mode="json")
+                    yield _sse("done", {"message": _message_json(saved), "thread": thread_json})
+        except openai.OpenAIError:
+            logger.exception("generation failed for thread %s", thread_uuid)
+            record_spend()
+            yield _sse("error", {"error": "generation failed"})
+        except Exception:
+            # Past this point there is no JSON error to fall back on: say so in
+            # the stream, never with the exception's text.
+            logger.exception("streaming an answer failed for thread %s", thread_uuid)
+            db.rollback()
+            record_spend()
+            yield _sse("error", {"error": "generation failed"})
+        finally:
+            # Also on a client that went away (GeneratorExit): stop generating,
+            # and record the spend so far, which is real. No answer is saved.
+            close = getattr(source, "close", None)
+            if close is not None:
+                close()
+            record_spend()
+
+    return Response(stream_with_context(events()), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @bp.get("/sources/<source_id>")

@@ -35,6 +35,12 @@
   stages, notices, text deltas, `Reset` and a final `Done`. Text streams only
   once the answer is grounded, and a closed stream closes the model's.
   `answer()` and `answer_query()` are unchanged wrappers.
+- `POST /api/chat/threads/<id>/messages/stream` streams an answer as
+  Server-Sent Events (`user_message`, `stage`, `notice`, `delta`, `reset`,
+  `done`, `error`). Errors before the stream are ordinary responses; the
+  question is committed first, the answer is saved before `done`, and spend is
+  recorded exactly once, also when the client goes away. It shares one
+  15-per-minute limit with the JSON send route (`scope="chat_send"`).
 - Design and ADR 0026 for California's SBCs, sub-project 2
   (`docs/superpowers/specs/2026-09-25-ca-sbc-design.md`). CMS's California
   file has no SBC links, so each plan's link comes from a hand-built manifest.

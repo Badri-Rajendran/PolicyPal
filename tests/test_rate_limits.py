@@ -4,7 +4,7 @@ same "hammer past the configured limit" shape.
 """
 from unittest.mock import patch
 
-from src.services.generation import Answer
+from src.services.generation import Answer, Done
 from tests.helpers import PROFILE
 
 
@@ -155,3 +155,31 @@ def test_source_lookup_is_rate_limited(client):
     assert [r.status_code for r in responses[:60]] == [404] * 60
     assert responses[60].status_code == 429
     assert "Retry-After" in responses[60].headers
+
+
+def test_both_send_routes_share_one_limit(client):
+    headers = _auth_headers(client, "send-shared@example.com")
+    thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+    body = {"content": "x"}
+    with patch("src.api.routes.chat.answer_query", return_value=Answer("a", [])), \
+         patch("src.api.routes.chat.answer_query_events", side_effect=lambda *a, **k: iter([Done(Answer("a", []))])):
+        json_route = _hammer(client, "POST", f"/api/chat/threads/{thread_id}/messages", 8, headers, body)
+        # buffered: each stream runs to its end before the next request.
+        stream_route = [client.post(f"/api/chat/threads/{thread_id}/messages/stream", json=body, headers=headers,
+                                    buffered=True) for _ in range(8)]
+
+    assert all(r.status_code == 201 for r in json_route)
+    assert [r.status_code for r in stream_route[:7]] == [200] * 7
+    assert stream_route[7].status_code == 429 and "Retry-After" in stream_route[7].headers
+
+
+def test_the_stream_route_is_rate_limited(client):
+    headers = _auth_headers(client, "stream-rl@example.com")
+    thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+    with patch("src.api.routes.chat.answer_query_events", side_effect=lambda *a, **k: iter([Done(Answer("a", []))])):
+        responses = [client.post(f"/api/chat/threads/{thread_id}/messages/stream", json={"content": "x"},
+                                 headers=headers, buffered=True) for _ in range(16)]
+
+    assert [r.status_code for r in responses[:15]] == [200] * 15
+    assert responses[15].status_code == 429
+    assert "Retry-After" in responses[15].headers
