@@ -13,7 +13,7 @@ from typing import Annotated, Literal, get_args
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from src.core.db import get_session
-from src.core.exchanges import exchange_for
+from src.core.exchanges import FILED_RATE_STATES, exchange_for
 from src.core.logging import get_logger
 from src.core.marketplace_api import REFERENCE_AGE
 
@@ -248,6 +248,22 @@ def _render(result: PlanSearchResult) -> ToolOutcome:
     return ToolOutcome(json.dumps(payload, default=str), plans=result.plans, notice=_prior_year_notice(result))
 
 
+def _standard_version_notice(coverages: list[PlanCoverage]) -> str | None:
+    """That a filed-rate state's SBCs are its plans' standard versions, when one is quoted (ADR 0026).
+
+    Those links are chosen by hand, one document per base plan, so what the
+    cost-sharing variants charge is not in it. Written here, like the
+    prior-year notice: asked to repeat a note, the model left it out.
+    """
+    exchanges = sorted({FILED_RATE_STATES[c.state].name for c in coverages
+                        if c.passages and c.state in FILED_RATE_STATES})
+    if not exchanges:
+        return None
+    return (f"Summaries of Benefits and Coverage quoted here for {' and '.join(exchanges)} plans are for each "
+            "plan's standard version; people who qualify for cost-sharing reductions or American Indian and "
+            "Alaska Native cost sharing pay less than they show.")
+
+
 def _coverage_row(coverage: PlanCoverage) -> dict:
     row = {"plan_id": coverage.plan_id, "status": coverage.status}
     if coverage.status == "not_found":
@@ -342,4 +358,4 @@ def _plan_coverage(raw_arguments: str, plan_years: Mapping[str, int] | None) -> 
     logger.info("plan_coverage: %s", [c.status for c in coverages])
     payload = {"status": "ok", "plans": [_coverage_row(c) for c in coverages]}
     chunks = tuple(p for c in coverages for p in c.passages)
-    return ToolOutcome(json.dumps(payload, default=str), chunks=chunks)
+    return ToolOutcome(json.dumps(payload, default=str), chunks=chunks, notice=_standard_version_notice(coverages))

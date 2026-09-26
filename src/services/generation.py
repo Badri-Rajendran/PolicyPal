@@ -469,7 +469,7 @@ def answer(query: str, chunks: list[RetrievedChunk],
     if coverage_read:
         cited = cited_labels(answer_text)
         chunks = [c for c in chunks if c.source in cited]
-    # Server-written, so it is said exactly when it is true (ADR 0024).
+    # Server-written, so it is said exactly when it is true (ADR 0024, 0026).
     answer_text = "\n\n".join([*notices, answer_text])
     return Answer(answer_text, _distinct(chunks + passages), tuple(plans.values()), needs)
 

@@ -8,12 +8,17 @@ from dataclasses import dataclass
 from datetime import date
 from functools import cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 REGISTRY_PATH = Path(__file__).with_name("registry.toml")
 
 KINDS = {"corpus", "catalog", "sbc_host", "directory"}
-PERMISSIONS = {"public_domain", "open_license", "written_permission", "pending_review", "denied"}
-APPROVED = {"public_domain", "open_license", "written_permission"}
+# mandated_disclosure: an issuer's Summary of Benefits and Coverage, which
+# federal law requires it to publish. Not a license: only an sbc_host may use
+# it, and its commercial use stays under review (ADR 0026).
+PERMISSIONS = {"public_domain", "open_license", "written_permission", "mandated_disclosure", "pending_review",
+               "denied"}
+APPROVED = {"public_domain", "open_license", "written_permission", "mandated_disclosure"}
 COMMERCIAL_USE = {"yes", "no", "review"}
 ROBOTS = {"allowed", "disallowed", "unavailable", "not_applicable"}
 ACCESS = {"api", "download", "crawl", "manual", "link"}
@@ -71,8 +76,18 @@ def _entry(raw: dict) -> RegisteredSource:
         raise RegistryError(f"{label}: verified_on must be a date")
     if not isinstance(raw["enabled"], bool):
         raise RegistryError(f"{label}: enabled must be true or false")
+    if raw["permission_status"] == "mandated_disclosure" and (raw["kind"] != "sbc_host"
+                                                             or raw["commercial_use"] != "review"):
+        raise RegistryError(f"{label}: mandated_disclosure is only for an sbc_host, with commercial_use 'review'")
     if raw["enabled"] and raw["permission_status"] not in APPROVED:
         raise RegistryError(f"{label}: enabled needs permission_status in {sorted(APPROVED)}")
+    # A path after the host, so a prefix can never also match a look-alike
+    # host (https://a.example.com.evil.test); links are matched by prefix.
+    scopes = raw["scope_urls"]
+    if not (isinstance(scopes, list) and scopes and all(
+            isinstance(prefix, str) and prefix.startswith("https://") and "/" in prefix[len("https://"):]
+            and urlsplit(prefix).netloc for prefix in scopes)):
+        raise RegistryError(f"{label}: scope_urls {scopes!r} must be a list of https://host/… prefixes")
     jurisdiction = raw["jurisdiction"]
     if not (isinstance(jurisdiction, str) and len(jurisdiction) == 2 and jurisdiction.isalpha()
             and jurisdiction.isupper()):
@@ -113,3 +128,20 @@ def require_enabled(source_id: str) -> RegisteredSource:
     if not entry.enabled:
         raise SourceNotApprovedError(f"{source_id} is disabled ({entry.permission_status})")
     return entry
+
+
+def sbc_host_for(url: str) -> RegisteredSource | None:
+    """The sbc_host entry whose scope covers this URL, enabled or not; None if none does.
+
+    Scopes are URL prefixes; the longest match wins, so a narrower entry can
+    sit inside a broader one.
+    """
+    matches = [(len(prefix), entry) for entry in _committed().values() if entry.kind == "sbc_host"
+               for prefix in entry.scope_urls if url.startswith(prefix)]
+    return max(matches, key=lambda match: match[0])[1] if matches else None
+
+
+def host_access(url: str) -> str | None:
+    """How an SBC link may be read: its enabled sbc_host's access ("crawl", "manual"), or None (ADR 0026)."""
+    entry = sbc_host_for(url)
+    return entry.access if entry is not None and entry.enabled else None

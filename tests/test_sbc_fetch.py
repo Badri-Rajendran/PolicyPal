@@ -13,7 +13,9 @@ from src.ingestion.sbc.fetch import (
     NOT_MODIFIED,
     cache_path,
     fetch_pdf,
+    looks_like_pdf,
     revalidate,
+    unsafe_reason,
 )
 
 URL = "https://sbc.example.com/plans/2026/gold.pdf"
@@ -224,3 +226,19 @@ def test_a_network_error_is_worth_trying_again(_offline):
 
     assert (result.status, result.transient) == ("http_error", True)
     assert "12345" not in (result.detail or "")
+
+
+@pytest.mark.parametrize(("head", "pdf"), [
+    (b"%PDF-1.7\n", True),
+    (b"\xef\xbb\xbf  \n%PDF-1.4", True),             # a little junk before the header, as some servers send
+    (b"<html><body>Sign in</body></html>", False),
+    (b" " * 2048 + b"%PDF-1.7", False),                  # past the window
+])
+def test_a_pdf_is_known_by_its_header_near_the_start(head, pdf):
+    """Shared by the fetcher and `make import-sbc` (ADR 0026)."""
+    assert looks_like_pdf(head) is pdf
+
+
+def test_the_safety_check_is_public_for_manifest_links():
+    assert unsafe_reason("https://sbc.example.com/gold.pdf") is None
+    assert unsafe_reason("http://sbc.example.com/gold.pdf") is not None

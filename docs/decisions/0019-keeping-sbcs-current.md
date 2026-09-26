@@ -4,7 +4,8 @@
 
 Accepted. Phase 4. Supersedes ADR 0015's "Known limits, left to Phase 4", and
 amends ADR 0013's "a failure is retried on the next run" and ADR 0016's
-folders.
+folders. Amended by ADR 0026: a document imported by hand is never
+re-requested, by `ingest-sbc` or `refresh-sbc`.
 
 ## Context
 

@@ -41,6 +41,7 @@ class PlanCoverage:
     passages: tuple[RetrievedChunk, ...] = ()
     # The precise status behind `status` (ADR 0017): "blocked", "not_read"…
     sbc_status: str | None = None
+    state: str | None = None
 
 
 def coverage_for(session, plan_ids: list[str], question: str,
@@ -56,7 +57,7 @@ def coverage_for(session, plan_ids: list[str], question: str,
 def _coverage(session, plan_id: str, question: str, year: int | None) -> PlanCoverage:
     stmt = (
         select(Plan.marketing_name, Plan.plan_year, Plan.benefits_url, Issuer.name,
-               SbcDocument.id, plan_sbc_status())
+               SbcDocument.id, plan_sbc_status(), Plan.state)
         .join(Issuer, Issuer.id == Plan.issuer_id)
         .outerjoin(SbcDocument, sbc_document_join())
         .where(Plan.hios_plan_id == plan_id)
@@ -69,10 +70,10 @@ def _coverage(session, plan_id: str, question: str, year: int | None) -> PlanCov
     if row is None:
         return PlanCoverage(plan_id, "not_found")
 
-    name, plan_year, url, issuer, document_id, sbc_status = row
+    name, plan_year, url, issuer, document_id, sbc_status, state = row
     if sbc_status not in READ_STATUSES:
         status = "no_document" if sbc_status in ("no_link", "not_read") else "unavailable"
-        return PlanCoverage(plan_id, status, name, issuer, plan_year, url, sbc_status=sbc_status)
+        return PlanCoverage(plan_id, status, name, issuer, plan_year, url, sbc_status=sbc_status, state=state)
 
     chunks = session.execute(
         select(SbcChunk.chunk_id, SbcChunk.section, SbcChunk.content)
@@ -91,7 +92,7 @@ def _coverage(session, plan_id: str, question: str, year: int | None) -> PlanCov
     )
     # Scores are logged, not gated on (ADR 0014); never the question itself.
     logger.info("plan_coverage %s: %s", plan_id, [round(p.score, 3) for p in passages])
-    return PlanCoverage(plan_id, "ok", name, issuer, plan_year, url, passages, sbc_status)
+    return PlanCoverage(plan_id, "ok", name, issuer, plan_year, url, passages, sbc_status, state)
 
 
 def source_label(plan_name: str, section: str) -> str:

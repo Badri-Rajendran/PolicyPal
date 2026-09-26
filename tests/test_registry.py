@@ -9,6 +9,7 @@ from src.ingestion.sources.registry import (
     SourceNotApprovedError,
     load_registry,
     require_enabled,
+    sbc_host_for,
 )
 
 _ENTRY = """
@@ -130,3 +131,63 @@ def test_a_disabled_source_is_left_out_of_the_run():
         name = registry_id = "nobody_approved_this"
 
     assert enabled_sources([_Denied(), _Unregistered()]) == []
+
+
+def _sbc_host(id_="h", prefix="https://sbc.example.com/", commercial="review", enabled="true", kind="sbc_host"):
+    return (_entry(id_, "mandated_disclosure", enabled)
+            .replace('kind = "corpus"', f'kind = "{kind}"')
+            .replace('commercial_use = "yes"', f'commercial_use = "{commercial}"')
+            .replace('scope_urls = ["https://example.com/"]', f'scope_urls = ["{prefix}"]'))
+
+
+def test_a_mandated_disclosure_is_approved_only_for_an_sbc_host_under_review(tmp_path):
+    """An SBC is published because the law requires it; that is not a licence (ADR 0026)."""
+    assert load_registry(_write(tmp_path, _sbc_host()))["h"].enabled
+
+    for broken in (_sbc_host(kind="corpus"), _sbc_host(commercial="yes"), _sbc_host(commercial="no")):
+        with pytest.raises(RegistryError, match="h: mandated_disclosure is only for an sbc_host"):
+            load_registry(_write(tmp_path, broken))
+
+
+def test_the_sbc_host_is_the_longest_prefix_covering_the_link_enabled_or_not(tmp_path, monkeypatch):
+    from src.ingestion.sources import registry
+
+    loaded = load_registry(_write(tmp_path, "".join([
+        _sbc_host("broad", "https://sbc.example.com/"),
+        _sbc_host("narrow", "https://sbc.example.com/ca/", enabled="false"),
+        _entry("corpus").replace('scope_urls = ["https://example.com/"]', 'scope_urls = ["https://corpus.example.com/"]'),
+    ])))
+    monkeypatch.setattr(registry, "_committed", lambda: loaded)
+
+    assert sbc_host_for("https://sbc.example.com/ca/gold.pdf").id == "narrow"
+    assert sbc_host_for("https://sbc.example.com/tx/gold.pdf").id == "broad"
+    assert sbc_host_for("https://corpus.example.com/gold.pdf") is None   # not an sbc_host
+    assert sbc_host_for("https://sbc.example.com.evil.test/gold.pdf") is None
+
+
+def test_every_california_carrier_is_a_mandated_disclosure_under_review():
+    hosts = {id_: e for id_, e in load_registry().items() if e.kind == "sbc_host" and e.jurisdiction == "CA"}
+
+    assert len(hosts) == 11
+    for entry in hosts.values():
+        assert (entry.permission_status, entry.commercial_use) == ("mandated_disclosure", "review")
+        assert all(prefix.startswith("https://") for prefix in entry.scope_urls)
+
+
+def test_carriers_whose_terms_ban_robots_are_never_crawled():
+    """The user's rule (ADR 0026): website Terms govern, as for Covered California."""
+    registry = load_registry()
+
+    for id_ in ("sbc_kaiser_ca", "sbc_blue_shield_ca", "sbc_western_health_advantage", "sbc_anthem_ca",
+                "sbc_la_care", "sbc_valley_health_plan"):
+        assert registry[id_].access == "manual", id_
+    assert not registry["sbc_health_net_ca"].enabled
+
+
+@pytest.mark.parametrize("scope", ['"https://sbc.example.com/"', '["https://sbc.example.com"]',
+                                   '["http://sbc.example.com/"]', '["sbc.example.com/"]', '[42]'])
+def test_a_scope_must_be_https_with_a_path_after_the_host(tmp_path, scope):
+    """Links are matched by prefix: without the "/", https://sbc.example.com would also match
+    https://sbc.example.com.evil.test/…"""
+    with pytest.raises(RegistryError, match="x: scope_urls .* must be a list of https://host/"):
+        load_registry(_write(tmp_path, _entry().replace('["https://example.com/"]', scope)))

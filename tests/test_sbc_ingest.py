@@ -93,7 +93,7 @@ def fetches(sbc, monkeypatch):
 
 @pytest.fixture
 def catalog(monkeypatch):
-    plan = ingest.PlanRef("99999NH0010001", "Example Gold", "Example Health")
+    plan = ingest.PlanRef("99999NH0010001", "Example Gold", "Example Health", "NH")
     monkeypatch.setattr(ingest, "documents_for", lambda session, states, year, issuer_ids: {GOLD: [plan], SILVER: [plan]})
 
 
@@ -381,3 +381,116 @@ def test_a_partly_read_document_is_neither_a_failure_nor_a_skipped_one(sbc, fetc
     assert ingest.execute(["NH"], YEAR) == Counter()
     assert "recorded failures skipped" not in capsys.readouterr().out
     assert fetches == []
+
+
+# California: links chosen by hand, read only as the source registry allows (ADR 0026)
+
+@pytest.fixture
+def california(sbc, sbc_hosts, monkeypatch):
+    """One California link on each kind of host, served like the others; returns the links by host."""
+    links = {kind: f"{prefix}gold.pdf" for kind, prefix in sbc_hosts.items() if kind != "texas"}
+    links["unregistered"] = "https://nobody.example.com/gold.pdf"
+    for url in links.values():
+        sbc[url] = _pages()
+    plans = {url: [ingest.PlanRef(f"11111CA001000{n}", "Gold 80 HMO", "Example Care", "CA")]
+             for n, url in enumerate(links.values(), 1)}
+    monkeypatch.setattr(ingest, "documents_for", lambda session, states, year, issuer_ids: plans)
+    return links
+
+
+def test_a_california_link_is_fetched_only_when_its_host_may_be_crawled(california, fetches, session, capsys):
+    assert ingest.execute(["CA"], YEAR) == Counter({"ok": 1})
+
+    assert fetches == [california["crawl"]]
+    out = capsys.readouterr().out
+    assert "4 SBC documents behind the CA plans for 1999; 0 already current, reading 1" in out
+    assert "1 awaiting a manual import (their host is manual-only): `make import-sbc YEAR=1999 DIR=<folder>`" in out
+    assert "2 links skipped: their host has no enabled sbc_host entry in the source registry" in out
+    assert _status(session, california["manual"]) is None
+
+
+def test_an_api_states_links_are_read_without_the_registry(sbc, fetches, sbc_hosts, monkeypatch):
+    """Their links come from CMS; extending the gate to them is a follow-up (ADR 0026)."""
+    plan = ingest.PlanRef("99999NH0010001", "Example Gold", "Example Health", "NH")
+    monkeypatch.setattr(ingest, "documents_for", lambda session, states, year, issuer_ids: {GOLD: [plan]})
+
+    assert ingest.execute(["NH"], YEAR) == Counter({"ok": 1})
+    assert fetches == [GOLD]
+
+
+def _import_by_hand(url):
+    """What `make import-sbc` leaves: the file in the cache, parsed and marked manual."""
+    ingest.cache_path(url, YEAR).write_bytes(url.encode())
+    return ingest.ingest_document(url, YEAR, acquisition="manual")
+
+
+def test_a_re_read_keeps_a_manual_document_marked_manual(california, session):
+    url = california["manual"]
+    assert _import_by_hand(url) == "ok"
+
+    ingest.ingest_document(url, YEAR, _row(session, url))
+
+    assert session.scalar(select(SbcDocument.acquisition).where(SbcDocument.url == url)) == "manual"
+
+
+def test_a_crawled_document_is_recorded_as_crawled(sbc, session):
+    ingest.ingest_document(GOLD, YEAR)
+
+    assert session.scalar(select(SbcDocument.acquisition).where(SbcDocument.url == GOLD)) == "crawl"
+
+
+def test_after_a_parser_change_a_manual_document_is_read_again_from_disk(california, fetches, session,
+                                                                         monkeypatch, tmp_path):
+    url = california["manual"]
+    _import_by_hand(url)
+    monkeypatch.setattr(ingest, "PARSER_VERSION", ingest.PARSER_VERSION + 1)
+    sbc_file = ingest.cache_path(url, YEAR)
+    before = sbc_file.stat().st_mtime_ns
+    fetches.clear()
+
+    ingest.execute(["CA"], YEAR)
+
+    assert url in fetches                               # served from the kept file, as fetch_pdf does
+    assert sbc_file.stat().st_mtime_ns == before       # not downloaded again
+    assert _version(session, url) == ingest.PARSER_VERSION
+    assert session.scalar(select(SbcDocument.acquisition).where(SbcDocument.url == url)) == "manual"
+
+
+def test_a_manual_document_whose_file_is_missing_is_never_fetched(california, fetches, session, capsys):
+    url = california["manual"]
+    _import_by_hand(url)
+    ingest.cache_path(url, YEAR).rename(ingest.cache_path(url, YEAR).with_suffix(".moved"))
+    fetches.clear()
+
+    ingest.execute(["CA"], YEAR)
+
+    assert url not in fetches
+    assert "1 manually imported PDFs are missing from" in capsys.readouterr().out
+    assert _status(session, url) == "ok"
+
+
+def test_a_california_run_with_no_links_says_to_apply_the_manifest(sbc, monkeypatch):
+    monkeypatch.setattr(ingest, "documents_for", lambda session, states, year, issuer_ids: {})
+
+    with pytest.raises(SystemExit, match="make apply-sbc-manifest YEAR=1999"):
+        ingest.execute(["CA"], YEAR)
+
+
+def test_california_is_a_state_the_ingest_takes_and_all_is_still_the_api_states():
+    assert ingest.parse_args(["--states", "CA"]).states == ["CA"]
+    assert "CA" not in ingest.parse_args(["--states", "ALL"]).states
+    with pytest.raises(SystemExit):
+        ingest.parse_args(["--states", "NY"])
+
+
+def test_a_recorded_failure_is_counted_as_skipped_not_as_current(sbc, fetches, catalog, session, capsys):
+    """Counted as both, a blocked document read as healthy in the run's first line."""
+    sbc[SILVER] = None
+    ingest.execute(["NH"], YEAR)
+    capsys.readouterr()
+
+    ingest.execute(["NH"], YEAR)
+
+    out = capsys.readouterr().out
+    assert "2 SBC documents behind the NH plans for 1999; 1 already current, reading 0" in out
+    assert "1 recorded failures skipped" in out

@@ -66,6 +66,23 @@ uv run python -m scripts.eval_sbc_ranking --year 2026    # before and after
 Check `make sbc-report` shows 0 documents on an older parser, and that the
 file count and modification times are unchanged.
 
+## California, and documents imported by hand
+
+California's links come from a manifest, and several carriers are manual-only
+(ADR 0026). The yearly steps are in
+[docs/runbooks/california.md](california.md). For the monthly routine:
+
+- **`make ingest-sbc STATES=CA` reads only what can be crawled.** It prints
+  how many links are "awaiting a manual import" and never requests them.
+- **`make refresh-sbc` never asks a carrier about an imported document.** To
+  pick up a carrier's corrected SBC, download it again in a browser and re-run
+  `make import-sbc`. The old file is archived.
+- **After a parser change,** imported documents are re-parsed from disk like
+  any other. If one's file is missing, the ingest says "import them again";
+  it does not fetch it.
+- **`make sbc-report`** shows how many read documents were crawled and how
+  many were imported by hand.
+
 ## Disk, and the one copy
 
 - A kept PDF averages about 0.75 MB. `make sbc-report` prints the totals for

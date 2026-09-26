@@ -10,6 +10,8 @@ Amended by ADR 0018: chart rows are rebuilt from the table's ruled grid, one
 line per service, and a PDF with no text layer is refused as scanned.
 Its "a refused `robots.txt` counts as disallowing everything" is **superseded
 by ADR 0020**, which follows RFC 9309's reading of an unavailable robots.txt.
+Amended by ADR 0026 for California: a carrier's website Terms can refuse us
+too, and a document a person downloads in a browser may be imported by hand.
 
 ## Context
 

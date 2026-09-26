@@ -1,4 +1,5 @@
-.PHONY: ingest build-index ingest-plans ingest-ca-plans ingest-sbc refresh-sbc sbc-report migrate api \
+.PHONY: ingest build-index ingest-plans ingest-ca-plans ingest-sbc refresh-sbc sbc-report apply-sbc-manifest \
+        check-sbc-manifest import-sbc migrate api \
         ui-dev ui-build ui-lint ui-preview ui-test test lint check
 
 # The plan year to work on; the commands default to the calendar year, which
@@ -29,7 +30,8 @@ ingest-ca-plans:
 	@test -n "$(YEAR)" || { echo "YEAR is required, e.g. make ingest-ca-plans YEAR=2026"; exit 2; }
 	uv run python -m src.ingestion.ca_puf --year $(YEAR) $(if $(ZIP),--zip $(ZIP)) $(if $(REFRESH),--refresh)
 
-# Summary of Benefits PDFs for the catalog plans in STATES; run ingest-plans
+# Summary of Benefits PDFs for the catalog plans in STATES; run ingest-plans (for
+# CA, ingest-ca-plans and its SBC manifest: ADR 0026)
 # first. Required for the same reason. e.g. make ingest-sbc STATES=NH,DE
 # TOP_ISSUERS=1 reads only the largest parent companies' plans, ISSUERS=40788,66252
 # only those HIOS issuers' (ADR 0015). Downloaded PDFs are always kept (ADR 0016).
@@ -48,6 +50,27 @@ refresh-sbc:
 # PDF. e.g. make sbc-report YEAR=2026 STATES=FL,TX VERIFY=1
 sbc-report:
 	uv run python -m src.ingestion.sbc.report $(YEAR_ARG) $(if $(STATES),--states $(STATES)) $(if $(VERIFY),--verify-files)
+
+# California's SBC links, from the committed src/ingestion/sbc/manifests/ca-YEAR.csv
+# (ADR 0026). ingest-ca-plans applies it too; run this after editing the file
+# or the source registry. e.g. make apply-sbc-manifest YEAR=2026
+apply-sbc-manifest:
+	@test -n "$(YEAR)" || { echo "YEAR is required, e.g. make apply-sbc-manifest YEAR=2026"; exit 2; }
+	uv run python -m src.ingestion.sbc.manifest apply --year $(YEAR)
+
+# After `make ingest-sbc STATES=CA`: documents whose printed title doesn't
+# name their plan, failures, and what still awaits a manual import. Reads only.
+check-sbc-manifest:
+	@test -n "$(YEAR)" || { echo "YEAR is required, e.g. make check-sbc-manifest YEAR=2026"; exit 2; }
+	uv run python -m src.ingestion.sbc.manifest check --year $(YEAR)
+
+# An SBC a person downloaded in a browser, for a carrier whose documents are
+# manual-only (ADR 0026). FILE=x.pdf URL=<its link in the manifest>, or DIR=folder
+# to match files to links by file name. e.g. make import-sbc YEAR=2026 DIR=~/Downloads/ca-sbc
+import-sbc:
+	@test -n "$(YEAR)" || { echo "YEAR is required, e.g. make import-sbc YEAR=2026 DIR=folder"; exit 2; }
+	@test -n "$(FILE)$(DIR)" || { echo "FILE= with URL=, or DIR=, is required"; exit 2; }
+	uv run python -m src.ingestion.sbc.import_pdf --year $(YEAR) $(if $(FILE),--file "$(FILE)" --url "$(URL)") $(if $(DIR),--dir "$(DIR)")
 
 migrate:
 	uv run alembic upgrade head

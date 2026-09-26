@@ -4,6 +4,72 @@
 
 ### Added
 
+- Design and ADR 0026 for California's SBCs, sub-project 2
+  (`docs/superpowers/specs/2026-09-25-ca-sbc-design.md`). CMS's California
+  file has no SBC links, so each plan's link comes from a hand-built manifest.
+  **Website Terms govern:** a carrier whose Terms ban robots or scrapers is
+  manual-only, even where `robots.txt` allows us, as Covered California already
+  was. ADR 0026 amends ADRs 0013, 0019 and 0025.
+- The source registry records the 11 California carriers as `sbc_host`
+  entries, each with its Terms, `robots.txt` outcome, access and removal
+  steps:
+  - **crawled:** IEHP, Molina, Sharp and Balance by CCHP;
+  - **manual-only:** Kaiser, Blue Shield, Western Health Advantage, Anthem,
+    L.A. Care and Valley;
+  - **disabled:** Health Net, whose SBCs sit behind a search form.
+
+  They use a new status, `mandated_disclosure`: an SBC is published because
+  federal law requires it, which is not a licence. So it is allowed only for an
+  `sbc_host`, and its commercial use stays `review`. `sbc_host_for` finds a
+  link's entry by the longest matching prefix, and every scope URL must now be
+  an `https://host/…` prefix, so it can't also match a look-alike host.
+- California's SBCs are linked from a committed, hand-built manifest,
+  `src/ingestion/sbc/manifests/ca-2026.csv`: 114 of 190 plans, 58 documents.
+  - `make apply-sbc-manifest YEAR=` checks every row first: plan ID, year, a
+    safe HTTPS link, and a California registry entry covering it. Then it sets
+    each California plan's link, and a plan with no row, or whose carrier is
+    disabled, gets none. `make ingest-ca-plans` applies it after each load.
+  - `make check-sbc-manifest YEAR=` lists, for a person to check:
+    - documents whose printed title lacks the plan's name;
+    - failures;
+    - plans awaiting a manual import;
+    - unread links;
+    - plans with no link.
+- `make ingest-sbc STATES=CA` and `make sbc-report STATES=CA`. California links
+  are read only as their carrier's entry allows:
+  - `crawl` is fetched;
+  - `manual` is never requested, and is counted as awaiting import;
+  - disabled or unregistered is skipped.
+
+  `STATES=ALL` is still the 30 HealthCare.gov states. First run: the 19 IEHP,
+  Molina and Sharp SBCs all read `ok`, with no name mismatches.
+- `make import-sbc YEAR= DIR=` (or `FILE= URL=`) reads an SBC a person
+  downloaded in a browser.
+  - **Checks:** the link must be a plan's and its carrier enabled, and the file
+    a PDF within the size cap.
+  - **What it does:** it is copied to the link's cache path, and any different
+    file there is archived. It is then parsed like a crawled one, with no
+    request. `DIR=` matches each file to the one manual-only link with its
+    name, or its `?fileName=` value.
+  - **Afterwards:** the document is recorded as `manual` and never re-requested.
+    `refresh-sbc` skips it; after a parser change it is re-parsed from disk,
+    and a missing file is reported for re-import.
+- Migration `3b1d6e2a9c47`: `sbc_documents.acquisition`, `crawl` or `manual`,
+  checked, default `crawl`. `sbc-report` counts read documents by it.
+- California coverage answers say that a plan's SBC is its standard version,
+  so people who qualify for cost-sharing reductions or American Indian and
+  Alaska Native cost sharing pay less than it shows. The server writes the
+  notice, like the prior-year one. A first version asked the model to repeat
+  a note from the tool result, and in a live question it left it out.
+- `docs/findings/ca-sbc.md`: where each California carrier publishes its SBCs,
+  what its Terms and `robots.txt` say (quoted), how each manifest row was
+  checked, what scripts requested before the Terms were read, and the first
+  run's counts. The eval still passes: 1,303 of 1,320 ranking questions put
+  the right section in the top 4 (98.7%; floor 97%).
+- Runbooks: `california.md` gains the yearly SBC routine (re-check Terms, write
+  the manifest, apply, crawl, import, check), and `sbc.md` how manual documents
+  behave in the monthly one. The README documents the new commands and the
+  registry's `mandated_disclosure`.
 - **PolicyPal is deployed to Azure.** The API runs on Container Apps in
   Central US on the image digest built from `main`, backed by a PostgreSQL 16
   Flexible Server with `pgvector`, and the browser app is on Static Web Apps.
@@ -447,6 +513,9 @@
 
 ### Fixed
 
+- `make ingest-sbc` counted a recorded failure twice: once as "already
+  current" and again as a "recorded failure skipped". So a run over blocked
+  documents read as healthier than it was. It now counts it once, as skipped.
 - "Compare the gold plans." and "Compare silver plans for me." skipped the plan
   search in about half of runs, in every state. The prompt left it open whether
   comparing plans of a metal level meant real plans or the level in general,

@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 
 from src.core.db import get_session
+from src.core.exchanges import CATALOG_STATES
 from src.models.plan import Issuer, Plan
 from src.models.sbc import SbcDocument
 from src.services.sbc_status import READ_STATUSES, plan_sbc_status, sbc_document_join
@@ -69,6 +70,7 @@ class Report:
     outdated: int                                 # documents stored by an older parser
     stale_plans: dict[str, int]                   # state -> plans the latest run didn't return
     files: dict[str, tuple[int, int]]             # folder -> (files, bytes)
+    acquired: Counter = field(default_factory=Counter)  # crawl / manual -> documents read (ADR 0026)
     missing_files: list[str] = field(default_factory=list)
     changed_files: list[str] = field(default_factory=list)
 
@@ -104,6 +106,11 @@ def collect(session, year: int, states: list[str] | None = None, verify: bool = 
         ),
         stale_plans=_stale_plans(session, year, states),
         files=_files(year),
+        acquired=Counter(dict(session.execute(
+            select(SbcDocument.acquisition, func.count())
+            .where(SbcDocument.plan_year == year, SbcDocument.status.in_(READ_STATUSES))
+            .group_by(SbcDocument.acquisition)
+        ).all())),
         **_verify(session, year) if verify else {},
     )
 
@@ -189,7 +196,8 @@ def render(report: Report) -> str:
         out += ["", "Why documents could not be read:"]
         out += [f"  {count:>6}  {status}: {detail}" for (status, detail), count in report.reasons.most_common()]
 
-    out += ["", f"Documents stored by an older parser (current is {PARSER_VERSION}): {report.outdated}"]
+    out += ["", f"Documents read: {report.acquired['crawl']} crawled, {report.acquired['manual']} imported by hand",
+            f"Documents stored by an older parser (current is {PARSER_VERSION}): {report.outdated}"]
     if report.orphans:
         out.append("Documents no plan points at (the plans moved link, or left): "
                    + ", ".join(f"{count} {status}" for status, count in report.orphans.most_common()))
@@ -207,12 +215,13 @@ def render(report: Report) -> str:
 def parse_args(args):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--year", type=int, default=datetime.now(UTC).year)
-    parser.add_argument("--states", help="Comma-separated state codes, or ALL; default every state with plans")
+    parser.add_argument("--states", help="Comma-separated state codes (CA too), or ALL for the HealthCare.gov "
+                                         "states; default every state with plans")
     parser.add_argument("--verify-files", action="store_true",
                         help="Also hash every stored PDF and report any missing or changed")
     parsed = parser.parse_args(args)
     try:
-        parsed.states = resolve_states(parsed.states) if parsed.states else None
+        parsed.states = resolve_states(parsed.states, CATALOG_STATES) if parsed.states else None
     except ValueError as exc:
         parser.error(str(exc))
     return parsed

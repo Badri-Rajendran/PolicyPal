@@ -1,5 +1,8 @@
 """`make ingest-ca-plans YEAR=2026 [ZIP=path] [REFRESH=1]`: load California's plans from the CMS PUF.
 
+Then applies the year's SBC manifest, if there is one (ADR 0026): the PUF has
+no SBC links, so without it every plan is shown with none.
+
     uv run python -m src.ingestion.ca_puf --year 2026
 """
 import argparse
@@ -16,6 +19,7 @@ from src.models.plan import ZipCounty
 
 from ..marketplace_api import county_zips
 from ..plans import _write_zip_counties
+from ..sbc.manifest import ManifestError, apply_for_year, manifest_path, print_apply
 from ..sources.registry import SourceNotApprovedError, require_enabled
 from .download import PUF_URL, NotPublishedError, download, sha256_of
 from .load import STATE, LoadError, load
@@ -69,6 +73,19 @@ def main(args=sys.argv[1:]):
     if report.unrated_zips:
         print(f"Los Angeles ZIPs with no CMS rating area, shown unpriced: {', '.join(report.unrated_zips)}")
     logger.info("california plans loaded: %d plans, %d rates, file %s", report.plans, report.rates, puf.label)
+    _apply_sbc_links(parsed.year)
+
+
+def _apply_sbc_links(year: int) -> None:
+    """The plans stay loaded whatever happens here; only their SBC links depend on it."""
+    try:
+        applied = apply_for_year(year)
+    except ManifestError as exc:
+        sys.exit(f"Plans loaded, but their SBC links were not applied: {exc}")
+    if applied is None:
+        print(f"No SBC manifest for {year} ({manifest_path(year).name}): every plan is shown with no SBC link")
+        return
+    print_apply(applied, year)
 
 
 if __name__ == "__main__":

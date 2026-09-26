@@ -53,6 +53,57 @@ of that year**, so this is a yearly routine, not a monthly one.
 Keep the previous year loaded. Its SBC answers and saved plan cards still refer
 to it.
 
+## SBC documents, every year after the load
+
+The PUF has no SBC links, so California's come from a committed, hand-built
+manifest: `src/ingestion/sbc/manifests/ca-<year>.csv` (ADR 0026). Each row's
+host must have an `sbc_host` entry in `src/ingestion/sources/registry.toml`.
+
+1. **Re-check each carrier's entry.** Before any automated request, re-read
+   its `robots.txt` **and** its website Terms. If the Terms now ban robots or
+   scrapers, set `access = "manual"`, whatever `robots.txt` says. Update
+   `robots_checked_on` and `verified_on`.
+2. **Write the new year's manifest.** Start from last year's file.
+   - For a `crawl` carrier, find each plan's SBC on its listing page.
+   - For a `manual` carrier, open its page in a browser. Never use a script.
+   - Set `verified_on` on each row. A new plan ID with no row is shown with no
+     link. [docs/findings/ca-sbc.md](../findings/ca-sbc.md) records where each
+     carrier publishes.
+3. **Apply it, then read what can be crawled:**
+
+   ```sh
+   make apply-sbc-manifest YEAR=2027
+   make ingest-sbc STATES=CA YEAR=2027
+   ```
+
+   `make ingest-ca-plans` applies the manifest itself when the file exists. The
+   ingest counts the links "awaiting a manual import" and never requests them.
+4. **Download the manual carriers' SBCs in a browser,** into one folder. Keep
+   each file's name exactly as the link's last path segment. Then:
+
+   ```sh
+   make import-sbc YEAR=2027 DIR=~/Downloads/ca-sbc-2027
+   make import-sbc YEAR=2027 FILE=path/to/file.pdf URL=<the manifest's link>   # when names differ
+   ```
+
+   `DIR=` imports only a file whose name matches exactly one manual-only link,
+   and reports the rest.
+5. **Check it:**
+
+   ```sh
+   make check-sbc-manifest YEAR=2027
+   make sbc-report STATES=CA YEAR=2027 VERIFY=1
+   ```
+
+   Open each name mismatch in the check: carriers print plan names their own
+   way, so a mismatch is not always wrong. Fix any row that points at another
+   plan's document, apply it again, and re-import. Record the counts in the
+   findings file.
+
+**Removing a carrier:** set its entry's `enabled = false`, then
+`make apply-sbc-manifest YEAR=…`. Its plans lose their link. Its documents and
+PDFs are kept (ADR 0016), and no plan points at them any more.
+
 ## If a load fails
 
 It changes nothing: validation runs before the first write, and the previous

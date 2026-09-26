@@ -59,3 +59,48 @@ def session():
         db.close()
         transaction.rollback()
         connection.close()
+
+
+_SBC_HOST = """
+[[source]]
+id = "{id}"
+name = "{id}"
+publisher = "An insurer"
+scope_urls = ["{prefix}"]
+kind = "sbc_host"
+jurisdiction = "{state}"
+license = "All rights reserved"
+license_url = "https://example.com/terms"
+permission_status = "mandated_disclosure"
+commercial_use = "review"
+robots = "allowed"
+robots_checked_on = 2026-09-26
+access = "{access}"
+verified_on = 2026-09-26
+enabled = {enabled}
+removal = "Disable it."
+notes = ""
+"""
+
+
+@pytest.fixture
+def sbc_hosts(monkeypatch, tmp_path):
+    """The committed registry plus made-up carrier hosts (ADR 0026).
+
+    Returns {id: URL prefix}: `crawl` and `manual` are enabled California
+    hosts, `off` a disabled one, and `texas` an enabled host of another state.
+    """
+    from src.ingestion.sources import registry
+
+    hosts = {
+        "crawl": ("https://crawl.example.com/sbc/", "CA", "crawl", "true"),
+        "manual": ("https://manual.example.com/sbc/", "CA", "manual", "true"),
+        "off": ("https://off.example.com/sbc/", "CA", "crawl", "false"),
+        "texas": ("https://texas.example.com/sbc/", "TX", "crawl", "true"),
+    }
+    path = tmp_path / "registry.toml"
+    path.write_text("".join(_SBC_HOST.format(id=id_, prefix=prefix, state=state, access=access, enabled=enabled)
+                            for id_, (prefix, state, access, enabled) in hosts.items()), encoding="utf-8")
+    loaded = registry.load_registry() | registry.load_registry(path)
+    monkeypatch.setattr(registry, "_committed", lambda: loaded)
+    return {id_: prefix for id_, (prefix, *_) in hosts.items()}

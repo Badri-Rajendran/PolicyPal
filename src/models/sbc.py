@@ -21,6 +21,9 @@ SBC_STATUSES = ("ok", "partial", "blocked", "http_error", "not_pdf", "too_large"
 # A plan's view of its document (ADR 0017): no link to one, a link never
 # read, or the document's own status.
 PLAN_SBC_STATUSES = ("no_link", "not_read", *SBC_STATUSES)
+# How the PDF reached us: fetched by the crawler, or downloaded by a person and
+# imported with `make import-sbc` (ADR 0026). A manual one is never requested.
+SBC_ACQUISITIONS = ("crawl", "manual")
 
 
 class SbcDocument(Base):
@@ -39,6 +42,7 @@ class SbcDocument(Base):
     __table_args__ = (
         UniqueConstraint("url", "plan_year", name="uq_sbc_documents_url_plan_year"),
         CheckConstraint(f"status IN {SBC_STATUSES}", name="ck_sbc_documents_status"),
+        CheckConstraint(f"acquisition IN {SBC_ACQUISITIONS}", name="ck_sbc_documents_acquisition"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -60,6 +64,7 @@ class SbcDocument(Base):
     etag: Mapped[str | None] = mapped_column(String(200), nullable=True)
     last_modified: Mapped[str | None] = mapped_column(String(64), nullable=True)
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acquisition: Mapped[str] = mapped_column(String(8), nullable=False, server_default="crawl")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

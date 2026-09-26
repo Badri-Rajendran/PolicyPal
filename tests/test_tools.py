@@ -233,6 +233,37 @@ def test_coverage_returns_each_plans_passages_as_data_and_as_citations():
     assert outcome.chunks == (passage,)
 
 
+def _coverage_outcome(*coverages):
+    with patch("src.services.tools.coverage_for", return_value=list(coverages)), patch("src.services.tools.get_session"):
+        return run_tool("plan_coverage", _coverage_args([c.plan_id for c in coverages]))
+
+
+def test_quoting_a_california_plans_sbc_opens_the_answer_with_the_standard_version_notice():
+    """Server-written (ADR 0026): asked to repeat a note, the model left it out."""
+    passage = RetrievedChunk("c1", "If you need immediate medical attention\nUrgent care $50", "Silver 70 - x.pdf", 0.4)
+    outcome = _coverage_outcome(
+        PlanCoverage("11111CA0010001", "ok", "Silver 70 HMO", "Example Care", 2026, "https://a.example/s.pdf",
+                     (passage,), "ok", "CA"),
+        PlanCoverage("12345NH0010001", "ok", "Gold", "Example", 2026, "https://a.example/g.pdf", (passage,), "ok", "NH"))
+
+    assert outcome.notice == (
+        "Summaries of Benefits and Coverage quoted here for Covered California plans are for each plan's "
+        "standard version; people who qualify for cost-sharing reductions or American Indian and Alaska "
+        "Native cost sharing pay less than they show.")
+    assert "note" not in json.loads(outcome.content)["plans"][0]
+
+
+@pytest.mark.parametrize("coverage", [
+    PlanCoverage("12345NH0010001", "ok", "Gold", "Example", 2026, "https://a.example/g.pdf",
+                 (RetrievedChunk("c1", "text", "Gold - x.pdf", 0.4),), "ok", "NH"),
+    PlanCoverage("11111CA0010001", "no_document", "Silver 70 HMO", "Example Care", 2026, "https://a.example/s.pdf",
+                 sbc_status="not_read", state="CA"),
+    PlanCoverage("11111CA0010002", "not_found"),
+])
+def test_no_notice_when_no_california_sbc_is_quoted(coverage):
+    assert _coverage_outcome(coverage).notice is None
+
+
 def _search_payload(result, zip_code="90012"):
     with patch("src.services.tools.search_plans", return_value=result), patch("src.services.tools.get_session"):
         return json.loads(run_tool("search_plans", _args(zip_code=zip_code, age=40)).content)

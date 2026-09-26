@@ -217,7 +217,7 @@ def test_a_document_that_is_gone_or_now_refused_loses_its_text_but_not_its_file(
 def test_a_run_reads_what_is_new_and_leaves_recorded_failures_to_a_refresh(issuer, session, catalog, monkeypatch,
                                                                           tmp_path):
     monkeypatch.setattr(ingest, "documents_for",
-                        lambda session, states, year, issuer_ids: {GOLD: [ingest.PlanRef("99999NH0010001", "Gold", "Example")]})
+                        lambda session, states, year, issuer_ids: {GOLD: [ingest.PlanRef("99999NH0010001", "Gold", "Example", "NH")]})
     issuer.reply = FetchResult("blocked", detail="robots.txt disallows it")
     assert ingest.execute(["NH"], YEAR) == Counter({"blocked": 1})
 
@@ -229,7 +229,7 @@ def test_a_run_reads_what_is_new_and_leaves_recorded_failures_to_a_refresh(issue
 
 def test_a_refresh_asks_about_every_stored_document(issuer, session, catalog, monkeypatch, tmp_path):
     monkeypatch.setattr(ingest, "documents_for",
-                        lambda session, states, year, issuer_ids: {GOLD: [ingest.PlanRef("99999NH0010001", "Gold", "Example")]})
+                        lambda session, states, year, issuer_ids: {GOLD: [ingest.PlanRef("99999NH0010001", "Gold", "Example", "NH")]})
     ingest.execute(["NH"], YEAR)
     issuer.reply = FetchResult(NOT_MODIFIED)
 
@@ -257,3 +257,15 @@ def test_every_pdf_ever_written_is_still_on_disk_after_any_run(issuer, session, 
 def test_refresh_is_a_flag_on_the_ingest_command():
     assert ingest.parse_args(["--states", "NH", "--refresh"]).refresh is True
     assert ingest.parse_args(["--states", "NH"]).refresh is False
+
+
+def test_a_refresh_never_asks_the_carrier_about_a_document_imported_by_hand(issuer, session, catalog, monkeypatch,
+                                                                            tmp_path):
+    """A person downloaded it; asking the carrier again is what the manual route exists to avoid (ADR 0026)."""
+    monkeypatch.setattr(ingest, "documents_for",
+                        lambda session, states, year, issuer_ids: {GOLD: [ingest.PlanRef("99999NH0010001", "Gold", "Example", "NH")]})
+    ingest.ingest_document(GOLD, YEAR, acquisition="manual")
+
+    assert ingest.execute(["NH"], YEAR, refresh=True) == Counter()
+    assert issuer.asked == []
+    assert _document(session).acquisition == "manual"

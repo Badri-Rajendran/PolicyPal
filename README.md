@@ -275,7 +275,9 @@ Every source PolicyPal reads or links is recorded in
 [`src/ingestion/sources/registry.toml`](src/ingestion/sources/registry.toml),
 with its licence, permission status, `robots.txt` status and removal steps
 (ADR 0025). Only approved sources run. Covered California is recorded as
-link-only: its Terms of Use forbid automated access.
+link-only: its Terms of Use forbid automated access. Each California carrier
+whose SBCs are used is an `sbc_host` entry with status `mandated_disclosure`,
+which is not a licence, so its commercial use stays under review (ADR 0026).
 Verified API behaviour is recorded in
 [`docs/findings/cms-marketplace-api.md`](docs/findings/cms-marketplace-api.md).
 
@@ -317,6 +319,30 @@ sections into `sbc_chunks`, kept apart from the corpus that `make ingest` rebuil
   plans left without an SBC. A recorded failure is left to `make refresh-sbc`
   (ADR 0019), so ingesting another state does not re-request every blocked host.
 - For a quick check: `uv run python -m src.ingestion.sbc --states NH --limit 5`.
+
+#### California's SBCs
+
+```bash
+make apply-sbc-manifest YEAR=2026            # links from src/ingestion/sbc/manifests/ca-2026.csv
+make ingest-sbc STATES=CA YEAR=2026          # reads only the carriers that may be crawled
+make import-sbc YEAR=2026 DIR=~/Downloads/ca-sbc   # PDFs a person downloaded in a browser
+make check-sbc-manifest YEAR=2026            # what still needs a person's eye
+```
+
+CMS's California file has no SBC links. A committed, hand-built manifest gives
+each plan its link, and each carrier has a registry entry (ADR 0026).
+
+- **Crawled:** carriers whose `robots.txt` and website Terms both allow
+  automated access.
+- **Manual only:** carriers whose Terms ban robots or scrapers, and hosts that
+  block bots. A person downloads their SBCs in a browser, and `make import-sbc`
+  reads the file with no request to the carrier. The document is recorded as
+  `manual` and never re-requested.
+
+California answers say the SBC is the plan's standard version, since
+cost-sharing reductions lower what it shows. The yearly steps are in
+[docs/runbooks/california.md](docs/runbooks/california.md), and the carrier
+research in [docs/findings/ca-sbc.md](docs/findings/ca-sbc.md).
 
 ### Keeping documents current
 
