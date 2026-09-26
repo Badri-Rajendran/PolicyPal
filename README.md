@@ -16,8 +16,9 @@ Because HealthCare.gov is the authoritative consumer source, answers about healt
 
 - **Conversational Q&A**, organized into threads you can rename, over a curated insurance knowledge base
 - **Hybrid RAG pipeline** — BM25 + pgvector semantic search, cross-encoder reranked and relevance-filtered before reaching the LLM, so weakly-relevant matches never become context
-- **Cited answers** — every reply lists the source passages and their relevance score, and the plans it compared in a side-by-side table; both survive reloading the conversation. Each plan in the table says whether its Summary of Benefits was read, and why not (ADR 0017)
-- **Streamed answers, readable sources** — answers stream in as they are written, with progress along the way; each citation can be opened to a brief quote of the passage it used, checked against a hash of what was cited, with its link and licence credit (ADR 0027)
+- **Cited answers** — answers render as Markdown, and every claim carries a numbered seal. A seal opens the Sources panel on the passage it cites: a brief quote with its document, section, match score and a link to the carrier's PDF or the Wikipedia article, with Wikipedia's licence credit, and checked against a hash of what was cited, so a passage rebuilt since the answer is never shown as if it were the one cited (ADR 0027). The plans an answer compared show in a numbered table, and a plan named in the text jumps to its row; "Ask about this plan" starts a follow-up. Both survive reloading the conversation. Each plan in the table says whether its Summary of Benefits was read, and why not (ADR 0017)
+- **Streaming answers** — an answer arrives as it is written, after progress steps ("Searching plans near you", "Reading Summaries of Benefits", …). Stop (or Esc) cancels it and keeps the question, with "Ask again" (ADR 0027)
+- **A chat that stays out of the way** — threads grouped by date, searched as you type, and renamed or deleted inline; a sidebar that hides (a drawer on a phone); System, Light or Dark themes; and shortcuts: Ctrl/⌘K for a new question, `/` to type, Esc to stop or close. Only the theme and the sidebar's hidden state are kept in the browser
 - **Real plan comparison** — ask about ACA Marketplace plans; the model searches the ingested catalog and CMS prices the plans live for your age (ADR 0010). In California, premiums are CMS's filed rates for your age and ZIP's rating area, and answers name Covered California (ADR 0024). It compares plans and never recommends one
 - **A profile, kept off the model** — signup takes a ZIP code, date of birth and county, and plan questions use them without their ever being sent to the LLM. Nobody under 13 can sign up (ADR 0012)
 - **JWT-authenticated API** — only a signed-in user can query, and only ever sees their own threads
@@ -27,7 +28,7 @@ Because HealthCare.gov is the authoritative consumer source, answers about healt
 
 | Layer            | Technology                          |
 | ---------------- | ------------------------------------ |
-| Frontend         | React 19 (Vite, plain JSX)          |
+| Frontend         | React 19 (Vite, plain JSX); `react-markdown` + `remark-gfm` (answers, no raw HTML), `motion` (reduced-motion aware), `lucide-react` (icons) — all pinned |
 | Backend          | Flask                                |
 | Database         | PostgreSQL + pgvector                |
 | RAG              | rank-bm25, sentence-transformers, HF transformers |
@@ -110,7 +111,7 @@ PolicyPal/
 ├── docs/plans/         # phased roadmap for the plan-comparison expansion
 ├── docs/findings/      # what each live run actually measured
 ├── docs/runbooks/      # keeping the plan documents current
-├── frontend/           # React + Vite chat UI
+├── frontend/           # React + Vite chat UI (design: docs/design/chat-redesign/)
 ├── scripts/            # ask.py (manual RAG smoke test), eval_retrieval.py,
 │                     # eval_generation.py, eval_sbc_ranking.py
 ├── tests/

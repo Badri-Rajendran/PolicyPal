@@ -83,6 +83,10 @@
     "Where this goes" aside; its fieldset legend is in sentence case, and a
     save is confirmed with a check. `useSidebarHidden` shares the sidebar's
     remembered state between the chat and profile pages.
+  - README: the chat's features (streaming, seals and the Sources panel,
+    rename and search, themes, shortcuts) and the four new dependencies.
+    `frontend/CLAUDE.md`: the chat's folders, the design tokens, pinned
+    dependencies, and the Markdown, storage and motion rules.
 
 - Design for the chat redesign
   (`docs/superpowers/specs/2026-09-26-chat-redesign-design.md`), with the
