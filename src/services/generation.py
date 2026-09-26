@@ -1,7 +1,9 @@
 import re
+from collections.abc import Iterator
 from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import lru_cache
+from types import SimpleNamespace
 
 from openai import BadRequestError, OpenAI
 
@@ -12,7 +14,7 @@ from src.policypal.config import settings
 from .plan_search import PlanResult, plan_catalog_available
 from .profile import PlanProfile
 from .retrieval import RetrievedChunk, search
-from .tools import PLAN_COVERAGE, TOOLS, run_tool
+from .tools import PLAN_COVERAGE, SEARCH_PLANS, TOOLS, run_tool
 
 logger = get_logger(__name__)
 
@@ -191,6 +193,45 @@ class Answer:
     needs_plan_inputs: tuple[str, ...] = ()
 
 
+# What answer_events yields as it works (ADR 0027). Every event is built here,
+# by server code: the model supplies only Delta text, never an event or field.
+
+@dataclass(frozen=True)
+class Stage:
+    """Progress, for the user: understanding | searching | plans | coverage | writing."""
+
+    name: str
+
+
+@dataclass(frozen=True)
+class Notice:
+    """A server-written notice, sent as soon as a tool returns it (ADR 0024, 0026)."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class Delta:
+    """Answer text to append to what was streamed so far."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class Reset:
+    """Discard the deltas so far: the round that streamed them went on to call a tool."""
+
+
+@dataclass(frozen=True)
+class Done:
+    """The finished answer, exactly as answer() returns it. Always the last event."""
+
+    answer: Answer
+
+
+type AnswerEvent = Stage | Notice | Delta | Reset | Done
+
+
 _DELIMITER_TAGS = re.compile(
     r"</?(?:user_question|retrieved_context|conversation|plans_shown)>", re.IGNORECASE
 )
@@ -311,6 +352,76 @@ def _complete(messages: list[dict], max_output_tokens: int, model: str, *,
     return choice.message
 
 
+def _blocking(messages: list[dict], max_output_tokens: int, model: str, *,
+              tools: list[dict] | None = None, tool_choice: str | None = None):
+    """_complete as a generator that yields no text, so both paths share one tool loop."""
+    message = _complete(messages, max_output_tokens, model, tools=tools, tool_choice=tool_choice)
+    yield from ()
+    return message
+
+
+def _complete_stream(messages: list[dict], max_output_tokens: int, model: str, *,
+                     tools: list[dict] | None = None, tool_choice: str | None = None):
+    """_complete, streaming: yields the reply's text as it arrives, and returns the
+    whole message (content and tool calls) as _complete does. Raises openai.OpenAIError
+    on failure, mid-stream included."""
+    options = {}
+    if tools:
+        options = {"tools": tools, "parallel_tool_calls": False}
+        if tool_choice:
+            options["tool_choice"] = tool_choice
+    stream = _llm().chat.completions.create(
+        model=model,
+        messages=messages,
+        max_completion_tokens=max_output_tokens,
+        reasoning_effort=settings.reasoning_effort,
+        stream=True,
+        # The last chunk carries the usage; without it the budget counts nothing.
+        stream_options={"include_usage": True},
+        **options,
+    )
+
+    parts: list[str] = []
+    calls: dict[int, dict] = {}
+    finish_reason = None
+    counted = False
+    try:
+        for chunk in stream:
+            if chunk.usage:
+                _tokens_used.set(_tokens_used.get() + chunk.usage.total_tokens)
+                counted = True
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
+            if choice.delta.content:
+                parts.append(choice.delta.content)
+                yield choice.delta.content
+            # A tool call arrives in fragments, keyed by its index.
+            for piece in choice.delta.tool_calls or []:
+                call = calls.setdefault(piece.index, {"id": None, "name": "", "arguments": ""})
+                call["id"] = piece.id or call["id"]
+                if piece.function:
+                    call["name"] += piece.function.name or ""
+                    call["arguments"] += piece.function.arguments or ""
+            finish_reason = choice.finish_reason or finish_reason
+    finally:
+        # Also when the consumer stops early (a client that went away): the
+        # connection closes, so the model stops writing and billing.
+        close = getattr(stream, "close", None)
+        if close is not None:
+            close()
+
+    if not counted:
+        logger.warning("streamed completion for %s returned no usage; spend uncounted", model)
+    if finish_reason not in ("stop", "tool_calls"):
+        logger.warning("completion for %s finished with reason %r, not 'stop'", model, finish_reason)
+    tool_calls = [
+        SimpleNamespace(id=c["id"], function=SimpleNamespace(name=c["name"], arguments=c["arguments"]))
+        for _, c in sorted(calls.items())
+    ]
+    return SimpleNamespace(content="".join(parts) or None, tool_calls=tool_calls or None)
+
+
 def _generate(messages: list[dict], max_output_tokens: int, model: str) -> str:
     return (_complete(messages, max_output_tokens, model).content or "").strip()
 
@@ -387,18 +498,25 @@ def rewrite_query(query: str, history: list[dict]) -> str:
     return rewritten
 
 
-def answer(query: str, chunks: list[RetrievedChunk],
-           history: list[dict] | None = None, profile: PlanProfile | None = None,
-           shown_plans: tuple[ShownPlan, ...] = ()) -> Answer:
-    """Answer from the retrieved chunks and, when the catalog is loaded, plan searches.
+def answer_events(query: str, chunks: list[RetrievedChunk],
+                  history: list[dict] | None = None, profile: PlanProfile | None = None,
+                  shown_plans: tuple[ShownPlan, ...] = (), *, stream: bool = False) -> Iterator[AnswerEvent]:
+    """answer(), as events: Stage, Notice, Delta and Reset as they happen, then Done.
 
     Retrieval finding nothing no longer ends the request by itself: a plan
     question matches no corpus chunk, and must still reach search_plans
     (ADR 0010). Only with no chunks and no catalog is the paid call skipped.
+
+    With `stream`, the reply's text is yielded as Deltas, but only once the
+    answer is grounded (chunks retrieved, or a tool run): before that it is
+    held back, so the NO_ANSWER path never has to take back shown text. A
+    round whose streamed text turns into tool calls is followed by Reset
+    (ADR 0027). Done carries exactly what answer() returns.
     """
     plan_tools = plan_catalog_available()
     if not chunks and not plan_tools:
-        return Answer(NO_ANSWER_RESPONSE, chunks)
+        yield Done(Answer(NO_ANSWER_RESPONSE, chunks))
+        return
 
     system = SYSTEM_PROMPT + PLAN_TOOL_PROMPT + COVERAGE_PROMPT if plan_tools else SYSTEM_PROMPT
     messages = [{"role": "system", "content": system}]
@@ -418,17 +536,46 @@ def answer(query: str, chunks: list[RetrievedChunk],
     needs: tuple[str, ...] = ()
     notices: list[str] = []
     searched = coverage_read = False
+    complete = _complete_stream if stream else _blocking
+    writing = False
+    last_stage = None
 
     for round_ in range(_MAX_TOOL_ROUNDS + 1):
         last = round_ == _MAX_TOOL_ROUNDS
-        message = _complete(messages, cap, settings.llm_model, tools=tools,
-                            tool_choice="none" if tools and last else None)
+        grounded = bool(chunks) or searched
+        streamed = False
+        pieces = complete(messages, cap, settings.llm_model, tools=tools,
+                          tool_choice="none" if tools and last else None)
+        try:
+            while True:
+                try:
+                    piece = next(pieces)
+                except StopIteration as finished:
+                    message = finished.value
+                    break
+                if grounded:
+                    if not writing:
+                        writing = True
+                        yield Stage("writing")
+                    streamed = True
+                    yield Delta(piece)
+        finally:
+            # Closed explicitly when these events are (a client that went
+            # away), so the model's stream is closed at once, not on collection.
+            pieces.close()
         calls = (getattr(message, "tool_calls", None) or []) if tools and not last else []
         if not calls:
             break
+        if streamed:
+            yield Reset()
+            writing = False
 
         messages.append(_assistant_turn(message, calls))
         for call in calls:
+            stage = "plans" if call.function.name == SEARCH_PLANS else "coverage"
+            if stage != last_stage:
+                last_stage = stage
+                yield Stage(stage)
             outcome = run_tool(call.function.name, call.function.arguments, profile, dict(plan_years))
             searched = True
             coverage_read = coverage_read or call.function.name == PLAN_COVERAGE
@@ -439,6 +586,7 @@ def answer(query: str, chunks: list[RetrievedChunk],
             passages += outcome.chunks
             if outcome.notice and outcome.notice not in notices:
                 notices.append(outcome.notice)
+                yield Notice(outcome.notice)
             # Plan and issuer names come from CMS: data, and delimited as such.
             messages.append({"role": "tool", "tool_call_id": call.id,
                              "content": _neutralize_delimiters(outcome.content)})
@@ -451,14 +599,16 @@ def answer(query: str, chunks: list[RetrievedChunk],
         # Nothing was retrieved and nothing was searched, so whatever the
         # model wrote is ungrounded. The spend is recorded all the same.
         logger.info("no chunks and no plan search for question (len=%d); declining", len(query))
-        return Answer(NO_ANSWER_RESPONSE, chunks)
+        yield Done(Answer(NO_ANSWER_RESPONSE, chunks))
+        return
 
     if not answer_text:
         # The output cap was spent entirely on reasoning (see max_output_tokens);
         # _complete already warned why. Never persist a blank assistant reply.
         logger.warning("empty answer for question (len=%d, %d prior turns); falling back",
                         len(query), len(history or []))
-        return Answer(NO_ANSWER_RESPONSE, chunks)
+        yield Done(Answer(NO_ANSWER_RESPONSE, chunks))
+        return
 
     logger.info("generated answer (%d chars) for question (len=%d, %d prior turns, %d plans)",
                 len(answer_text), len(query), len(history or []), len(plans))
@@ -471,7 +621,24 @@ def answer(query: str, chunks: list[RetrievedChunk],
         chunks = [c for c in chunks if c.source in cited]
     # Server-written, so it is said exactly when it is true (ADR 0024, 0026).
     answer_text = "\n\n".join([*notices, answer_text])
-    return Answer(answer_text, _distinct(chunks + passages), tuple(plans.values()), needs)
+    yield Done(Answer(answer_text, _distinct(chunks + passages), tuple(plans.values()), needs))
+
+
+def _final(events: Iterator[AnswerEvent]) -> Answer:
+    for event in events:
+        if isinstance(event, Done):
+            return event.answer
+    raise RuntimeError("answer_events ended without Done")
+
+
+def answer(query: str, chunks: list[RetrievedChunk],
+           history: list[dict] | None = None, profile: PlanProfile | None = None,
+           shown_plans: tuple[ShownPlan, ...] = ()) -> Answer:
+    """Answer from the retrieved chunks and, when the catalog is loaded, plan searches.
+
+    answer_events, drained: the CLI, the evals and the JSON route call this.
+    """
+    return _final(answer_events(query, chunks, history, profile, shown_plans))
 
 
 def cited_labels(text: str) -> set[str]:
@@ -498,4 +665,21 @@ def answer_query(query: str, history: list[dict] | None = None,
     selected = select_history(history or [])
     chunks = search(rewrite_query(query, selected), top_k)
     return answer(query, chunks, selected, profile, shown_plans)
+
+
+def answer_query_events(query: str, history: list[dict] | None = None, top_k: int | None = None,
+                        profile: PlanProfile | None = None, shown_plans: tuple[ShownPlan, ...] = (),
+                        *, stream: bool = True) -> Iterator[AnswerEvent]:
+    """answer_query(), as events, for the streaming route (ADR 0027).
+
+    Kept beside answer_query rather than under it: tests of answer_query
+    patch answer(), which this does not call.
+    """
+    selected = select_history(history or [])
+    if selected:
+        yield Stage("understanding")      # rewrite_query calls the model only with history
+    retrieval_query = rewrite_query(query, selected)
+    yield Stage("searching")
+    chunks = search(retrieval_query, top_k)
+    yield from answer_events(query, chunks, selected, profile, shown_plans, stream=stream)
 

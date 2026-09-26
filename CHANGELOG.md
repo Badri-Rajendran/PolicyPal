@@ -31,6 +31,10 @@
   with status `ok`, `unverified` (older answers, no hash), `changed` or
   `missing` (60 per minute). It is addressed by citation id, never chunk id;
   another user's citation is a 404.
+- Generation is an event stream: `answer_events` and `answer_query_events` yield
+  stages, notices, text deltas, `Reset` and a final `Done`. Text streams only
+  once the answer is grounded, and a closed stream closes the model's.
+  `answer()` and `answer_query()` are unchanged wrappers.
 - Design and ADR 0026 for California's SBCs, sub-project 2
   (`docs/superpowers/specs/2026-09-25-ca-sbc-design.md`). CMS's California
   file has no SBC links, so each plan's link comes from a hand-built manifest.

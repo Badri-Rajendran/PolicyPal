@@ -1,3 +1,4 @@
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -9,10 +10,18 @@ from src.policypal.config import settings
 from src.services.generation import (
     BOUNDARY_SENTENCE,
     NO_ANSWER_RESPONSE,
+    Answer,
+    Delta,
+    Done,
+    Notice,
+    Reset,
     ShownPlan,
+    Stage,
     _build_user_prompt,
     answer,
+    answer_events,
     answer_query,
+    answer_query_events,
     reset_token_usage,
     rewrite_query,
     select_history,
@@ -683,3 +692,215 @@ def test_the_prompt_says_comparing_plans_of_a_level_means_searching():
     assert "call search_plans" in PLAN_TOOL_PROMPT
     # The exception is kept, so a question about what a level means stays a corpus question.
     assert "what is a silver plan?" in PLAN_TOOL_PROMPT
+
+
+# Streaming (ADR 0027)
+
+
+def _chunk(content=None, tool_calls=None, finish=None, usage=None):
+    """One streamed chunk, shaped like the SDK's ChatCompletionChunk."""
+    choices = [] if content is None and tool_calls is None and finish is None else [SimpleNamespace(
+        delta=SimpleNamespace(content=content, tool_calls=tool_calls), finish_reason=finish)]
+    return SimpleNamespace(choices=choices, usage=usage)
+
+
+def _tool_delta(index, call_id=None, name=None, arguments=None):
+    return SimpleNamespace(index=index, id=call_id, function=SimpleNamespace(name=name, arguments=arguments))
+
+
+class _Stream:
+    """A stand-in for the SDK's Stream: iterable, and closable."""
+
+    def __init__(self, chunks):
+        self._chunks = iter(chunks)
+        self.closed = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return next(self._chunks)
+
+    def close(self):
+        self.closed = True
+
+
+def _streaming_client(*rounds):
+    client = MagicMock()
+    client.chat.completions.create.side_effect = [_Stream(r) for r in rounds]
+    return client
+
+
+def _usage(total):
+    return _chunk(usage=SimpleNamespace(total_tokens=total))
+
+
+def test_streamed_answer_matches_the_blocking_one():
+    chunks = [RetrievedChunk("c1", "A deductible is the amount you pay first.", "wiki_D.txt", 0.9)]
+    rounds = [_chunk("A deductible "), _chunk("is what you pay first."), _chunk(finish="stop"), _usage(42)]
+    client = _streaming_client(rounds)
+    with patch("src.services.generation._llm", return_value=client):
+        reset_token_usage()
+        events = list(answer_events("What is a deductible?", chunks, stream=True))
+    with patch("src.services.generation._llm", return_value=_fake_client("A deductible is what you pay first.")):
+        blocking = answer("What is a deductible?", chunks)
+
+    assert events[0] == Stage("writing")
+    assert [e.text for e in events if isinstance(e, Delta)] == ["A deductible ", "is what you pay first."]
+    assert events[-1] == Done(blocking)
+    assert blocking == Answer("A deductible is what you pay first.", chunks)
+    assert token_usage() == 42
+    sent = client.chat.completions.create.call_args.kwargs
+    assert sent["stream"] is True and sent["stream_options"] == {"include_usage": True}
+
+
+def test_the_blocking_path_yields_no_text_events():
+    with patch("src.services.generation._llm", return_value=_fake_client("An answer.")):
+        events = list(answer_events("Q", [_make_chunk()]))
+    assert events == [Done(Answer("An answer.", [_make_chunk()]))]
+
+
+def test_reset_when_a_streamed_round_calls_a_tool(_no_plan_catalog):
+    _no_plan_catalog.return_value = True
+    chunks = [RetrievedChunk("c1", "context", "wiki_D.txt", 0.9)]
+    first = [_chunk("Let me look"), _chunk(tool_calls=[_tool_delta(0, "call_1", "search_plans", '{"zip_code": ')]),
+             _chunk(tool_calls=[_tool_delta(0, arguments=_ARGS.removeprefix('{"zip_code": '))]),
+             _chunk(finish="tool_calls"), _usage(5)]
+    second = [_chunk("Here are the plans."), _chunk(finish="stop"), _usage(7)]
+    reset_token_usage()
+    with patch("src.services.generation._llm", return_value=_streaming_client(first, second)), \
+         patch("src.services.generation.run_tool", return_value=_plan_found()) as run_tool:
+        events = list(answer_events("Silver plans?", chunks, stream=True))
+
+    assert events[:4] == [Stage("writing"), Delta("Let me look"), Reset(), Stage("plans")]
+    assert events[4:] == [Stage("writing"), Delta("Here are the plans."), events[-1]]
+    assert run_tool.call_args.args[1] == _ARGS          # fragments reassembled
+    assert events[-1].answer.text == "Here are the plans."
+    assert [p.hios_plan_id for p in events[-1].answer.plans] == ["11111TX0010001"]
+    assert token_usage() == 12
+
+
+def test_the_tool_turn_echoes_the_reassembled_call(_no_plan_catalog):
+    _no_plan_catalog.return_value = True
+    first = [_chunk(tool_calls=[_tool_delta(0, "call_9", "search_", "{")]),
+             _chunk(tool_calls=[_tool_delta(0, None, "plans", "}")]), _chunk(finish="tool_calls")]
+    second = [_chunk("Done."), _chunk(finish="stop")]
+    client = _streaming_client(first, second)
+    with patch("src.services.generation._llm", return_value=client), \
+         patch("src.services.generation.run_tool", return_value=_plan_found()):
+        list(answer_events("Plans?", [], stream=True))
+    turn = client.chat.completions.create.call_args.kwargs["messages"][-2]
+    assert turn["tool_calls"] == [{"id": "call_9", "type": "function",
+                                   "function": {"name": "search_plans", "arguments": "{}"}}]
+
+
+def test_nothing_streams_before_the_answer_is_grounded(_no_plan_catalog):
+    _no_plan_catalog.return_value = True
+    rounds = [_chunk("Ungrounded guess."), _chunk(finish="stop"), _usage(3)]
+    reset_token_usage()
+    with patch("src.services.generation._llm", return_value=_streaming_client(rounds)):
+        events = list(answer_events("Hi", [], stream=True))
+    assert events == [Done(Answer(NO_ANSWER_RESPONSE, []))]
+    assert token_usage() == 3
+
+
+def test_text_before_a_first_search_is_held_back_and_needs_no_reset(_no_plan_catalog):
+    _no_plan_catalog.return_value = True
+    first = [_chunk("Searching now."), _chunk(tool_calls=[_tool_delta(0, "call_1", "search_plans", _ARGS)]),
+             _chunk(finish="tool_calls")]
+    second = [_chunk("Plans."), _chunk(finish="stop")]
+    with patch("src.services.generation._llm", return_value=_streaming_client(first, second)), \
+         patch("src.services.generation.run_tool", return_value=_plan_found()):
+        events = list(answer_events("Plans?", [], stream=True))
+    assert Reset() not in events
+    assert [e.text for e in events if isinstance(e, Delta)] == ["Plans."]
+
+
+def test_a_notice_is_sent_as_soon_as_a_tool_returns_it(_no_plan_catalog):
+    _no_plan_catalog.return_value = True
+    outcome = replace(_plan_found(), notice="These are 2026 plans.")
+    first = [_chunk(tool_calls=[_tool_delta(0, "call_1", "search_plans", _ARGS)]), _chunk(finish="tool_calls")]
+    second = [_chunk("Plans."), _chunk(finish="stop")]
+    with patch("src.services.generation._llm", return_value=_streaming_client(first, second)), \
+         patch("src.services.generation.run_tool", return_value=outcome):
+        events = list(answer_events("Plans?", [RetrievedChunk("c", "x", "wiki_X.txt", 0.9)], stream=True))
+    first_delta = next(i for i, e in enumerate(events) if isinstance(e, Delta))
+    assert events.index(Notice("These are 2026 plans.")) < first_delta
+    assert events[-1].answer.text == "These are 2026 plans.\n\nPlans."
+
+
+def test_a_coverage_call_is_its_own_stage(_no_plan_catalog):
+    _no_plan_catalog.return_value = True
+    first = [_chunk(tool_calls=[_tool_delta(0, "call_1", "plan_coverage", '{"plan_ids": []}')]),
+             _chunk(finish="tool_calls")]
+    second = [_chunk("Covered."), _chunk(finish="stop")]
+    with patch("src.services.generation._llm", return_value=_streaming_client(first, second)), \
+         patch("src.services.generation.run_tool", return_value=ToolOutcome('{"status": "ok"}')):
+        events = list(answer_events("Is it covered?", [], stream=True))
+    assert Stage("coverage") in events and Stage("plans") not in events
+
+
+def test_the_blocking_path_reports_stages_and_notices_too(_no_plan_catalog):
+    _no_plan_catalog.return_value = True
+    client = MagicMock()
+    client.chat.completions.create.side_effect = [_completion(tool_calls=[_search_call()]), _completion("Plans.")]
+    with patch("src.services.generation._llm", return_value=client), \
+         patch("src.services.generation.run_tool", return_value=replace(_plan_found(), notice="N.")):
+        events = list(answer_events("Plans?", []))
+    assert events[:2] == [Stage("plans"), Notice("N.")]
+    assert events[-1].answer.text == "N.\n\nPlans."
+
+
+def test_a_stream_without_usage_is_warned_about():
+    rounds = [_chunk("Text."), _chunk(finish="stop")]
+    with patch("src.services.generation._llm", return_value=_streaming_client(rounds)), \
+         patch("src.services.generation.logger") as log:
+        list(answer_events("Q", [RetrievedChunk("c", "x", "wiki_X.txt", 0.9)], stream=True))
+    assert any("no usage" in call.args[0] for call in log.warning.call_args_list)
+
+
+def test_a_stream_cut_short_is_warned_about():
+    rounds = [_chunk("Text."), _chunk(finish="length"), _usage(1)]
+    with patch("src.services.generation._llm", return_value=_streaming_client(rounds)), \
+         patch("src.services.generation.logger") as log:
+        list(answer_events("Q", [RetrievedChunk("c", "x", "wiki_X.txt", 0.9)], stream=True))
+    assert any("finished with reason" in call.args[0] for call in log.warning.call_args_list)
+
+
+def test_closing_the_events_closes_the_model_stream():
+    """A client that goes away must not leave the model writing (ADR 0027)."""
+    stream = _Stream([_chunk("One "), _chunk("two."), _chunk(finish="stop")])
+    client = MagicMock()
+    client.chat.completions.create.return_value = stream
+    with patch("src.services.generation._llm", return_value=client):
+        events = answer_events("Q", [RetrievedChunk("c", "x", "wiki_X.txt", 0.9)], stream=True)
+        assert [next(events), next(events)] == [Stage("writing"), Delta("One ")]
+        events.close()
+    assert stream.closed
+
+
+def test_a_finished_stream_is_closed_too():
+    stream = _Stream([_chunk("One."), _chunk(finish="stop")])
+    client = MagicMock()
+    client.chat.completions.create.return_value = stream
+    with patch("src.services.generation._llm", return_value=client):
+        list(answer_events("Q", [RetrievedChunk("c", "x", "wiki_X.txt", 0.9)], stream=True))
+    assert stream.closed
+
+
+def test_answer_query_events_reports_rewriting_and_searching():
+    history = [{"role": "user", "content": "Earlier"}, {"role": "assistant", "content": "Reply"}]
+    with patch("src.services.generation.rewrite_query", return_value="standalone"), \
+         patch("src.services.generation.search", return_value=[]) as search, \
+         patch("src.services.generation.answer_events", return_value=iter([Done(Answer("x", []))])) as events:
+        out = list(answer_query_events("And?", history))
+    assert out == [Stage("understanding"), Stage("searching"), Done(Answer("x", []))]
+    search.assert_called_once_with("standalone", None)
+    assert events.call_args.kwargs == {"stream": True}
+
+
+def test_answer_query_events_does_not_claim_to_rewrite_without_history():
+    with patch("src.services.generation.search", return_value=[]), \
+         patch("src.services.generation.answer_events", return_value=iter([Done(Answer("x", []))])):
+        out = list(answer_query_events("What is a deductible?"))
+    assert out[0] == Stage("searching")
