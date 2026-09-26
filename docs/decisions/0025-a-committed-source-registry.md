@@ -3,7 +3,9 @@
 ## Status
 
 Accepted. Records in data what ADR 0003 (corpus sources) and ADR 0013 (SBC
-copyright) decided in prose.
+copyright) decided in prose. Amended by ADR 0026: a fourth approved status,
+`mandated_disclosure`, for `sbc_host` entries only, and every scope URL must
+be an `https://host/…` prefix.
 
 ## Context
 
@@ -28,7 +30,7 @@ new dependency:
 | --- | --- |
 | `kind` | `corpus`, `catalog`, `sbc_host`, `directory` |
 | `jurisdiction` | `US` or a state code |
-| `permission_status` | `public_domain`, `open_license`, `written_permission`, `pending_review`, `denied` |
+| `permission_status` | `public_domain`, `open_license`, `written_permission`, `mandated_disclosure` (ADR 0026: `sbc_host` only, `commercial_use = "review"`), `pending_review`, `denied` |
 | `commercial_use` | `yes`, `no`, `review` |
 | `robots` | `allowed`, `disallowed`, `unavailable`, `not_applicable`; `robots_checked_on` is required unless `not_applicable` |
 | `access` | `api`, `download`, `crawl`, `manual`, `link` |
@@ -40,7 +42,10 @@ Every entry also has `id`, `name`, `publisher`, `scope_urls`, `license`,
 - required fields are present, and no unknown field;
 - values are from the lists above;
 - ids are unique;
-- `enabled = true` needs `public_domain`, `open_license` or `written_permission`.
+- `enabled = true` needs `public_domain`, `open_license`, `written_permission`
+  or, since ADR 0026, `mandated_disclosure`;
+- each `scope_urls` entry is an `https://host/…` prefix (ADR 0026), so it
+  cannot also match a look-alike host.
 
 An invalid registry fails the import, so a bad edit cannot quietly enable
 anything.

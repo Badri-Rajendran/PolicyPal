@@ -1,6 +1,8 @@
 # Every source PolicyPal reads or links, and whether it may be used (ADR 0025).
-# `enabled = true` needs permission_status public_domain, open_license or
-# written_permission; registry.py refuses anything else when it loads.
+# `enabled = true` needs permission_status public_domain, open_license,
+# written_permission or mandated_disclosure; registry.py refuses anything else
+# when it loads. mandated_disclosure is only for an sbc_host (an issuer's SBC,
+# which federal law requires it to publish), with commercial_use "review" (ADR 0026).
 # Record a refused source too, disabled, so the decision is not re-litigated.
 
 [[source]]
@@ -113,3 +115,220 @@ verified_on = 2026-09-24
 enabled = false
 removal = "Nothing is stored; remove the links in src/core/exchanges.py and frontend/src/features/plans/exchanges.js."
 notes = "Linked, never read. Its Terms of Use forbid access 'through any automated means (including, but not limited to, use of scripts, web crawlers, or screen scrapers)' and downloading or republishing without a separate written agreement. robots.txt allows everything; the Terms govern."
+
+# California carriers' SBCs (ADR 0026). Each is a federally mandated disclosure,
+# not a licensed work, so commercial use stays under review. A carrier whose
+# website Terms ban robots or scrapers is manual-only, whatever its robots.txt
+# says: a person downloads its SBCs in a browser and `make import-sbc` reads
+# them. Removal for every one: set enabled = false, then
+# `make apply-sbc-manifest YEAR=…`; its plans lose their links, and its PDFs
+# are kept (ADR 0016). Evidence per carrier: docs/findings/ca-sbc.md.
+
+[[source]]
+id = "sbc_iehp"
+name = "IEHP Covered California SBCs"
+publisher = "Inland Empire Health Plan (a public entity)"
+scope_urls = ["https://www.iehp.org/content/dam/iehp-org/en/documents/coveredcalifornia/summary-of-benefits-and-coverage/"]
+kind = "sbc_host"
+jurisdiction = "CA"
+license = "All rights reserved (site footer); no website terms of use"
+license_url = "https://www.iehp.org/en/terms-and-conditions"
+permission_status = "mandated_disclosure"
+commercial_use = "review"
+robots = "allowed"
+robots_checked_on = 2026-09-26
+access = "crawl"
+verified_on = 2026-09-26
+enabled = true
+removal = "Set enabled = false, then `make apply-sbc-manifest YEAR=…`."
+notes = "Static PDFs named by metal level, listed at https://www.iehp.org/en/browse-plans/covered-california. The linked terms page covers only IEHP's text-message service; no website terms were found, so nothing bans automated access."
+
+[[source]]
+id = "sbc_molina_ca"
+name = "Molina Healthcare of California Marketplace SBCs"
+publisher = "Molina Healthcare of California"
+scope_urls = ["https://www.molinamarketplace.com/marketplace/ca/en-us/-/media/Molina/PublicWebsite/PDF/members/ca/en-us/Marketplace/"]
+kind = "sbc_host"
+jurisdiction = "CA"
+license = "All rights reserved; use limited to learning about Molina's plans"
+license_url = "https://www.molinahealthcare.com/members/common/en-us/terms_privacy.aspx"
+permission_status = "mandated_disclosure"
+commercial_use = "review"
+robots = "allowed"
+robots_checked_on = 2026-09-26
+access = "crawl"
+verified_on = 2026-09-26
+enabled = true
+removal = "Set enabled = false, then `make apply-sbc-manifest YEAR=…`."
+notes = "Files named CA<yy>SBCE_<metal>_1.pdf, beside the EOCs listed at https://www.molinamarketplace.com/marketplace/ca/en-us/MemberForms.aspx (the page lists only EOCs). The Terms have no robots clause, but say 'You may use the Sites solely for the purposes of learning about ... Molina Healthcare's health plans' and bar reproduction or distribution 'for any other purpose'."
+
+[[source]]
+id = "sbc_sharp"
+name = "Sharp Health Plan Covered California SBCs"
+publisher = "Sharp Health Plan"
+scope_urls = ["https://www.sharphealthplan.com/docs/default-source/plan-documents/summary-of-benefits-and-coverage/"]
+kind = "sbc_host"
+jurisdiction = "CA"
+license = "All rights reserved; no reproduction or redistribution beyond personal use without written consent"
+license_url = "https://www.sharphealthplan.com/terms-of-use-and-registration-agreement"
+permission_status = "mandated_disclosure"
+commercial_use = "review"
+robots = "allowed"
+robots_checked_on = 2026-09-26
+access = "crawl"
+verified_on = 2026-09-26
+enabled = true
+removal = "Set enabled = false, then `make apply-sbc-manifest YEAR=…`."
+notes = "Listed at https://www.sharphealthplan.com/our-plans/individual-and-family-plans/plan-details-rates-2026. robots.txt disallows /docs/default-source/pdfs/, which this folder is not under. The Terms have no robots clause, only 'not to misuse, abuse, or overuse beyond reasonable amounts'. Each SBC prints its HIOS plan ID."
+
+[[source]]
+id = "sbc_balance_cchp"
+name = "Balance by CCHP Covered California SBCs"
+publisher = "Chinese Community Health Plan (Balance by CCHP)"
+scope_urls = ["https://balancebycchp.com/wp-content/uploads/"]
+kind = "sbc_host"
+jurisdiction = "CA"
+license = "All rights reserved; stored only for personal, non-commercial use; no republication without written consent"
+license_url = "https://balancebycchp.com/terms-and-conditions/"
+permission_status = "mandated_disclosure"
+commercial_use = "review"
+robots = "allowed"
+robots_checked_on = 2026-09-26
+access = "crawl"
+verified_on = 2026-09-26
+enabled = true
+removal = "Set enabled = false, then `make apply-sbc-manifest YEAR=…`."
+notes = "The Terms have no robots clause. On 2026-09-26 the site held 2026 EOCs but only 2025 SBCs, so no 2026 plan is linked; re-check when writing each year's manifest."
+
+[[source]]
+id = "sbc_kaiser_ca"
+name = "Kaiser Permanente California individual and family SBCs"
+publisher = "Kaiser Foundation Health Plan, Inc."
+scope_urls = ["https://healthy.kaiserpermanente.org/content/dam/kporg/final/documents/health-plan-documents/summary-of-benefits/ca/individual-family/"]
+kind = "sbc_host"
+jurisdiction = "CA"
+license = "All rights reserved; a single copy for personal, noncommercial use"
+license_url = "https://healthy.kaiserpermanente.org/termsconditions"
+permission_status = "mandated_disclosure"
+commercial_use = "review"
+robots = "allowed"
+robots_checked_on = 2026-09-26
+access = "manual"
+verified_on = 2026-09-26
+enabled = true
+removal = "Set enabled = false, then `make apply-sbc-manifest YEAR=…`."
+notes = "Manual only: under the Terms, using any 'robot', 'spider', data mining tools ... or other automatic device ... to (1) access, acquire, copy or monitor any portion of the Site is a material breach. SBCs are named <HIOS>-01-en-<year>.pdf."
+
+[[source]]
+id = "sbc_blue_shield_ca"
+name = "Blue Shield of California individual and family SBCs"
+publisher = "California Physician's Service DBA Blue Shield of California"
+scope_urls = ["https://www.blueshieldca.com/memberwebapp/unauth-document-download?fileName="]
+kind = "sbc_host"
+jurisdiction = "CA"
+license = "All rights reserved; personal, non-commercial use only"
+license_url = "https://www.blueshieldca.com/en/home/site-help/terms-of-use"
+permission_status = "mandated_disclosure"
+commercial_use = "review"
+robots = "allowed"
+robots_checked_on = 2026-09-26
+access = "manual"
+verified_on = 2026-09-26
+enabled = true
+removal = "Set enabled = false, then `make apply-sbc-manifest YEAR=…`."
+notes = "Manual only: the Terms forbid accessing the site 'with any engine, software, tool, agent, device or mechanism other than' Blue Shield's own or 'generally available third party web browsers'. Listed at https://www.blueshieldca.com/memberwebapp/welcome/documents/ifp; there is no static PDF URL. One Trio HMO SBC per metal serves all 18 regional plan IDs. robots.txt disallows */download/."
+
+[[source]]
+id = "sbc_western_health_advantage"
+name = "Western Health Advantage Covered California SBCs"
+publisher = "Western Health Advantage"
+scope_urls = ["https://www.westernhealth.com/shop/?sp=plan-sbc"]
+kind = "sbc_host"
+jurisdiction = "CA"
+license = "All rights reserved; a personal licence to access the site"
+license_url = "https://www.westernhealth.com/legal/terms-of-use/"
+permission_status = "mandated_disclosure"
+commercial_use = "review"
+robots = "allowed"
+robots_checked_on = 2026-09-26
+access = "manual"
+verified_on = 2026-09-26
+enabled = true
+removal = "Set enabled = false, then `make apply-sbc-manifest YEAR=…`."
+notes = "Manual only: the Terms say 'You may not ... (2) use any data mining, robots, or similar gathering and extraction tools'. Their reproduction ban exempts 'files containing Benefit Plans and Sales Materials', which may cover SBCs; not relied on. SBCs are generated from a query URL; one serves each plan's pair of rating-area filings. robots.txt asks for Crawl-Delay: 5."
+
+[[source]]
+id = "sbc_anthem_ca"
+name = "Anthem Blue Cross California SBCs"
+publisher = "Anthem Blue Cross"
+scope_urls = ["https://sbc.anthem.com/dpsdeeplink/deepLink/"]
+kind = "sbc_host"
+jurisdiction = "CA"
+license = "All rights reserved; for your own use, no commercial purpose"
+license_url = "https://www.anthem.com/ca/terms-of-use"
+permission_status = "mandated_disclosure"
+commercial_use = "review"
+robots = "unavailable"
+robots_checked_on = 2026-09-26
+access = "manual"
+verified_on = 2026-09-26
+enabled = true
+removal = "Set enabled = false, then `make apply-sbc-manifest YEAR=…`."
+notes = "Manual only: the Terms forbid any 'robot, spider, site search/retrieval application or other manual or automatic device to retrieve, index, \"scrape,\" \"data mine\"', and creating 'a database by systematically downloading'. sbc.anthem.com/robots.txt answers 401; www.anthem.com's disallows /*.pdf$. Plans are found on the SBC posting site, https://sbc.anthem.com/dps. The 30-state crawl also reads this host (ADR 0026: a follow-up)."
+
+[[source]]
+id = "sbc_la_care"
+name = "L.A. Care Covered California SBCs"
+publisher = "L.A. Care Health Plan"
+scope_urls = ["https://www.lacare.org/sites/default/files/"]
+kind = "sbc_host"
+jurisdiction = "CA"
+license = "All rights reserved; commercial use prohibited without written authorization (from search results; the page was not fetched)"
+license_url = "https://www.lacare.org/terms-and-conditions"
+permission_status = "mandated_disclosure"
+commercial_use = "review"
+robots = "allowed"
+robots_checked_on = 2026-09-25
+access = "manual"
+verified_on = 2026-09-26
+enabled = true
+removal = "Set enabled = false, then `make apply-sbc-manifest YEAR=…`."
+notes = "Manual only, and never fetched by any script: robots.txt names AI crawlers (anthropic-ai, ClaudeBot, ChatGPT-User, …) as unwelcome, taken as intent, though `*` allows us. Search results show the Terms banning robots and scrapers. Listed at https://lacare.org/members/documents/la-care-covered; la5600_laccd_* files are the off-exchange line."
+
+[[source]]
+id = "sbc_valley_health_plan"
+name = "Valley Health Plan Covered California SBCs"
+publisher = "Valley Health Plan (County of Santa Clara)"
+scope_urls = ["https://files.santaclaracounty.gov/exjcpb1461/"]
+kind = "sbc_host"
+jurisdiction = "CA"
+license = "Unknown: the site blocks automated clients, so its terms could not be read"
+license_url = "https://www.valleyhealthplan.org/"
+permission_status = "mandated_disclosure"
+commercial_use = "review"
+robots = "unavailable"
+robots_checked_on = 2026-09-26
+access = "manual"
+verified_on = 2026-09-26
+enabled = true
+removal = "Set enabled = false, then `make apply-sbc-manifest YEAR=…`."
+notes = "Manual only: valleyhealthplan.org and the county's file host both answer automated clients with a Cloudflare 403. Listed at https://www.valleyhealthplan.org/benefits-and-coverage-information-covered-california-and-ifp-members."
+
+[[source]]
+id = "sbc_health_net_ca"
+name = "Health Net California SBCs"
+publisher = "Health Net of California"
+scope_urls = ["https://www.healthnet.com/portal/shopping/"]
+kind = "sbc_host"
+jurisdiction = "CA"
+license = "All rights reserved; downloads for personal, non-commercial use only"
+license_url = "https://www.healthnet.com/content/healthnet/en_us/disclaimers/legal/terms-conditions.html"
+permission_status = "mandated_disclosure"
+commercial_use = "review"
+robots = "allowed"
+robots_checked_on = 2026-09-25
+access = "manual"
+verified_on = 2026-09-26
+enabled = false
+removal = "Already disabled: its plans have no link."
+notes = "Disabled (user decision, 2026-09-25): SBCs are reachable only through a POST search form (/portal/shopping/searchSBC.action), so its 61 plans show no link and point to Covered California."

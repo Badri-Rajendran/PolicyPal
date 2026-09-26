@@ -4,6 +4,25 @@
 
 ### Added
 
+- Design and ADR 0026 for California's SBCs, sub-project 2
+  (`docs/superpowers/specs/2026-09-25-ca-sbc-design.md`). CMS's California
+  file has no SBC links, so each plan's link comes from a hand-built manifest.
+  **Website Terms govern:** a carrier whose Terms ban robots or scrapers is
+  manual-only, even where `robots.txt` allows us, as Covered California already
+  was. ADR 0026 amends ADRs 0013, 0019 and 0025.
+- The source registry records the 11 California carriers as `sbc_host`
+  entries, each with its Terms, `robots.txt` outcome, access and removal
+  steps:
+  - **crawled:** IEHP, Molina, Sharp and Balance by CCHP;
+  - **manual-only:** Kaiser, Blue Shield, Western Health Advantage, Anthem,
+    L.A. Care and Valley;
+  - **disabled:** Health Net, whose SBCs sit behind a search form.
+
+  They use a new status, `mandated_disclosure`: an SBC is published because
+  federal law requires it, which is not a licence. So it is allowed only for an
+  `sbc_host`, and its commercial use stays `review`. `sbc_host_for` finds a
+  link's entry by the longest matching prefix, and every scope URL must now be
+  an `https://host/…` prefix, so it can't also match a look-alike host.
 - **PolicyPal is deployed to Azure.** The API runs on Container Apps in
   Central US on the image digest built from `main`, backed by a PostgreSQL 16
   Flexible Server with `pgvector`, and the browser app is on Static Web Apps.
