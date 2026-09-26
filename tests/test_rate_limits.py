@@ -131,3 +131,15 @@ def test_county_lookup_is_rate_limited(client):
     assert [r.status_code for r in responses[:30]] == [200] * 30
     assert responses[30].status_code == 429
     assert "Retry-After" in responses[30].headers
+
+
+def test_rename_thread_is_rate_limited(client):
+    headers = _auth_headers(client, "rename-rl@example.com")
+    thread_id = client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+
+    responses = _hammer(client, "PATCH", f"/api/chat/threads/{thread_id}", times=31, headers=headers,
+                        body={"title": "t"})
+
+    assert [r.status_code for r in responses[:30]] == [200] * 30
+    assert responses[30].status_code == 429
+    assert "Retry-After" in responses[30].headers

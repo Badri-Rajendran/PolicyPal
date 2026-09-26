@@ -3,7 +3,7 @@ import uuid
 import openai
 from flask import Blueprint, abort, jsonify
 from flask_jwt_extended import jwt_required
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
 from src.api.deps import TokenBudgetExhaustedError, get_current_user, get_db, parse_body
@@ -14,6 +14,7 @@ from src.schemas.chat import (
     MessageCreateRequest,
     MessageResponse,
     ThreadCreateRequest,
+    ThreadRenameRequest,
     ThreadResponse,
 )
 from src.services.generation import (
@@ -133,6 +134,22 @@ def delete_thread(thread_id: str):
     db, thread = _get_owned_thread(thread_id)
     db.delete(thread)
     return "", 204
+
+
+@bp.patch("/threads/<thread_id>")
+@jwt_required()
+@limiter.limit("30 per minute")
+def rename_thread(thread_id: str):
+    body = parse_body(ThreadRenameRequest)
+    db, thread = _get_owned_thread(thread_id)
+
+    # updated_at is the thread's last activity and orders the list: renaming
+    # is not activity, so it is set to itself, which stops onupdate firing.
+    db.execute(
+        update(Thread).where(Thread.id == thread.id).values(title=body.title, updated_at=Thread.updated_at)
+    )
+    db.refresh(thread)
+    return jsonify(ThreadResponse.model_validate(thread, from_attributes=True).model_dump(mode="json"))
 
 
 @bp.get("/threads/<thread_id>/messages")

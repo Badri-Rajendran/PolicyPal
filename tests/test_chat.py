@@ -1,13 +1,14 @@
 import uuid
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import ANY, patch
 
-from sqlalchemy import func, select
+import pytest
+from sqlalchemy import func, select, update
 
 from src.api import deps
-from src.models.chat import Message, MessagePlan
+from src.models.chat import Message, MessagePlan, Thread
 from src.services.generation import Answer
 from src.services.plan_search import PlanResult
 from src.services.profile import PlanProfile, age_on, today
@@ -368,3 +369,76 @@ def test_a_follow_up_is_given_the_plans_last_shown_and_its_sbc_citations_are_kep
     assert [(p.position, p.plan_id, p.plan_year) for p in shown] == [(1, "66252TX0380010", 2026), (2, "33602TX0460725", 2026)]
     assert shown_again == shown
     assert reply["sources"] == [{"chunk_id": passage.chunk_id, "source": passage.source, "relevance": 0.21}]
+
+
+def _new_thread(client, headers):
+    return client.post("/api/chat/threads", json={}, headers=headers).get_json()["id"]
+
+
+def test_rename_thread_sets_a_stripped_title(client):
+    headers = _auth_headers(client, email="rename@example.com")
+    thread_id = _new_thread(client, headers)
+
+    resp = client.patch(f"/api/chat/threads/{thread_id}", json={"title": "  Silver plans, San Diego  "}, headers=headers)
+
+    assert resp.status_code == 200
+    assert resp.get_json()["title"] == "Silver plans, San Diego"
+    listed = client.get("/api/chat/threads", headers=headers).get_json()
+    assert listed[0]["title"] == "Silver plans, San Diego"
+
+
+def test_rename_does_not_move_a_thread_up_the_list(client):
+    # Every request in a test shares one transaction, where now() never moves,
+    # so a bump could not be seen: the thread is first dated a week back.
+    headers = _auth_headers(client, email="rename-order@example.com")
+    older = _new_thread(client, headers)
+    newer = _new_thread(client, headers)
+    week_ago = datetime.now(UTC) - timedelta(days=7)
+    db = deps.SessionLocal()
+    db.execute(update(Thread).where(Thread.id == uuid.UUID(older)).values(updated_at=week_ago))
+    db.flush()
+
+    client.patch(f"/api/chat/threads/{older}", json={"title": "Renamed"}, headers=headers)
+
+    after = client.get("/api/chat/threads", headers=headers).get_json()
+    assert [t["id"] for t in after] == [newer, older]
+    assert datetime.fromisoformat(after[1]["updated_at"]) == week_ago
+
+
+@pytest.mark.parametrize("title", ["", "   ", "x" * 201])
+def test_rename_rejects_a_blank_or_long_title(client, title):
+    headers = _auth_headers(client, email=f"rename-bad{len(title)}@example.com")
+    thread_id = _new_thread(client, headers)
+
+    resp = client.patch(f"/api/chat/threads/{thread_id}", json={"title": title}, headers=headers)
+
+    assert resp.status_code == 422
+
+
+def test_rename_accepts_a_title_of_exactly_200_characters(client):
+    headers = _auth_headers(client, email="rename-200@example.com")
+    thread_id = _new_thread(client, headers)
+
+    resp = client.patch(f"/api/chat/threads/{thread_id}", json={"title": "x" * 200}, headers=headers)
+
+    assert resp.status_code == 200
+
+
+@pytest.mark.parametrize("thread_id", ["00000000-0000-0000-0000-000000000000", "not-a-uuid"])
+def test_rename_of_a_missing_thread_is_404(client, thread_id):
+    headers = _auth_headers(client, email="rename-missing@example.com")
+    assert client.patch(f"/api/chat/threads/{thread_id}", json={"title": "x"}, headers=headers).status_code == 404
+
+
+def test_cannot_rename_another_users_thread(client):
+    owner = _auth_headers(client, email="rename-owner@example.com")
+    thread_id = _new_thread(client, owner)
+    other = _auth_headers(client, email="rename-other@example.com")
+
+    assert client.patch(f"/api/chat/threads/{thread_id}", json={"title": "x"}, headers=other).status_code == 404
+    listed = client.get("/api/chat/threads", headers=owner).get_json()
+    assert listed[0]["title"] is None
+
+
+def test_rename_requires_auth(client):
+    assert client.patch("/api/chat/threads/00000000-0000-0000-0000-000000000000", json={"title": "x"}).status_code == 401

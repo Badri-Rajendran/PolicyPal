@@ -2,11 +2,25 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ThreadCreateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=200)
+
+
+class ThreadRenameRequest(BaseModel):
+    # max_length is checked before the validator strips, so a title padded
+    # past 200 characters is refused too.
+    title: str = Field(max_length=200)
+
+    @field_validator("title")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("title must not be blank")
+        return value
 
 
 class ThreadResponse(BaseModel):

@@ -18,6 +18,8 @@
   The work splits into a backend PR and a frontend PR. The implementation plan
   is in `docs/superpowers/plans/2026-09-26-chat-redesign.md`.
 
+- `PATCH /api/chat/threads/<id>` renames a thread (1–200 characters, trimmed;
+  30 per minute). It leaves `updated_at`, and so the list order, alone.
 - Design and ADR 0026 for California's SBCs, sub-project 2
   (`docs/superpowers/specs/2026-09-25-ca-sbc-design.md`). CMS's California
   file has no SBC links, so each plan's link comes from a hand-built manifest.
