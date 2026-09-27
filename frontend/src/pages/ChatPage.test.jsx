@@ -242,7 +242,8 @@ describe("ChatPage", () => {
     await user.type(screen.getByRole("textbox", { name: "Thread name" }), " 101{Enter}");
 
     expect(renameThread).toHaveBeenCalledWith("t1", "Deductibles 101");
-    expect(await screen.findByRole("status")).toHaveTextContent("Couldn't rename this thread. Try again.");
+    // By its text: the transcript keeps a status region of its own.
+    expect(await screen.findByText("Couldn't rename this thread. Try again.")).toHaveAttribute("role", "status");
   });
 
   it("renames the open thread from its title", async () => {

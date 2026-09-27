@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ErrorBanner from "../../../components/ErrorBanner";
 import { toExchanges } from "../../../utils/exchanges";
+import { sourceNumbers } from "../../../utils/markers";
 import EmptyState from "./EmptyState";
 import Exchange from "./Exchange";
 import JumpToLatest from "./JumpToLatest";
@@ -10,6 +11,17 @@ import "./transcript.css";
 const PINNED_PX = 80;
 // Further than this above it, "Jump to latest" appears (spec §4.3).
 const JUMP_PX = 200;
+
+// What a screen reader hears when an answer finishes: the streaming region is
+// replaced by the saved answer, which announces nothing. Sources are counted
+// as the seals number them, one per document.
+function readyText(messages, finishedId) {
+  const answer = finishedId && messages.find((m) => m.id === finishedId);
+  if (!answer) return "";
+  const count = sourceNumbers(answer.sources).size;
+  if (count === 0) return "Answer ready";
+  return `Answer ready, ${count} ${count === 1 ? "source" : "sources"}`;
+}
 
 function Content({ messages, status, error, onPrompt, onRetry, children }) {
   if (status === "loading" && messages.length === 0) {
@@ -71,10 +83,15 @@ export default function Transcript({
     endRef.current?.scrollIntoView({ block: "end", behavior: still ? "auto" : "smooth" });
   }
 
-  // The scroll position is the DOM's: follow new text only while pinned.
+  // The scroll position is the DOM's: follow new text only while pinned. A
+  // question just sent (a draft appearing) is always shown, and pins the view
+  // again, wherever the reader had scrolled to.
+  const drafting = useRef(false);
   useEffect(() => {
+    if (live && !drafting.current) pinned.current = true;
+    drafting.current = Boolean(live);
     if (pinned.current) endRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length, live?.text, live?.stages.length, live?.notices.length]);
+  }, [messages.length, live]);
 
   return (
     <>
@@ -103,6 +120,11 @@ export default function Transcript({
         <div className="transcript-end" ref={endRef} />
       </div>
       {away && <JumpToLatest onClick={jump} />}
+      {/* Always mounted, and empty while an answer streams, so the next
+          answer is announced even when its text is the same as the last. */}
+      <p className="visually-hidden" role="status">
+        {live ? "" : readyText(messages, finishedId)}
+      </p>
     </>
   );
 }

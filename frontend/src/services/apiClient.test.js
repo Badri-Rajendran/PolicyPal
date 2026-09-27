@@ -108,6 +108,17 @@ function streamOf(...chunks) {
   });
 }
 
+// A body whose connection drops after the first chunk, with `failure` as the
+// browser's rejection, and a cancel to watch.
+function droppingBody(chunk, failure) {
+  const read = vi
+    .fn()
+    .mockResolvedValueOnce({ value: new TextEncoder().encode(chunk), done: false })
+    .mockRejectedValueOnce(failure);
+  const cancel = vi.fn().mockResolvedValue(undefined);
+  return { getReader: () => ({ read, cancel }), cancel };
+}
+
 describe("apiStream", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -153,6 +164,30 @@ describe("apiStream", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError")));
     const error = await apiStream("/x", { token: "tok", body: {}, onEvent: vi.fn() }).catch((e) => e);
     expect(error.name).toBe("AbortError");
+  });
+
+  it("says PolicyPal can't be reached when the connection drops mid-stream, and lets the reader go", async () => {
+    const body = droppingBody('event: delta\ndata: {"text":"a"}\n\n', new TypeError("network error"));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, body }));
+    const onEvent = vi.fn();
+
+    const error = await apiStream("/x", { token: "tok", body: {}, onEvent }).catch((e) => e);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.message).toMatch(/Can't reach PolicyPal/);
+    expect(error.message).not.toMatch(/network error/);
+    expect(onEvent).toHaveBeenCalledWith({ event: "delta", data: { text: "a" } });
+    expect(body.cancel).toHaveBeenCalledOnce();
+  });
+
+  it("rethrows an abort mid-stream as the AbortError it is, and lets the reader go", async () => {
+    const body = droppingBody('event: stage\ndata: {"stage":"searching"}\n\n', new DOMException("aborted", "AbortError"));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, body }));
+
+    const error = await apiStream("/x", { token: "tok", body: {}, onEvent: vi.fn() }).catch((e) => e);
+
+    expect(error.name).toBe("AbortError");
+    expect(body.cancel).toHaveBeenCalledOnce();
   });
 
   it("says PolicyPal can't be reached when the network fails", async () => {

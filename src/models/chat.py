@@ -63,8 +63,15 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     thread: Mapped["Thread"] = relationship(back_populates="messages")
+    # Most relevant first; (chunk_id, source) is unique per answer, so ties are
+    # ordered too, byte-wise ("C") as Python compares them: _save_answer builds
+    # the list in this same order.
     sources: Mapped[list["MessageSource"]] = relationship(
-        back_populates="message", cascade="all, delete-orphan", order_by="MessageSource.relevance.desc()"
+        back_populates="message",
+        cascade="all, delete-orphan",
+        order_by=lambda: (
+            MessageSource.relevance.desc(), MessageSource.chunk_id.collate("C"), MessageSource.source.collate("C")
+        ),
     )
     plans: Mapped[list["MessagePlan"]] = relationship(
         back_populates="message", cascade="all, delete-orphan", order_by="MessagePlan.position"

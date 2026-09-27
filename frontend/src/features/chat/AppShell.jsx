@@ -1,13 +1,13 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef } from "react";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { FOCUSABLE, trapTab } from "./focus";
 import "./shell.css";
 
 const SIDEBAR_WIDTH = 276;
-const FOCUSABLE = 'a[href], button:not([disabled]), input, [tabindex]:not([tabindex="-1"])';
 
-// The phone's sidebar: a drawer over the chat, with focus moved into it and
-// returned when it closes.
+// The phone's sidebar: a drawer over the chat, with focus moved into it, kept
+// there, and returned when it closes.
 function Drawer({ children, onClose }) {
   const ref = useRef(null);
 
@@ -36,9 +36,12 @@ function Drawer({ children, onClose }) {
         aria-modal="true"
         aria-label="Your questions"
         onKeyDown={(event) => {
-          if (event.key !== "Escape") return;
-          event.stopPropagation(); // not also the page's Esc
-          onClose();
+          if (event.key === "Escape") {
+            event.stopPropagation(); // not also the page's Esc
+            onClose();
+          } else {
+            trapTab(event, ref.current);
+          }
         }}
         initial={{ x: "-100%" }}
         animate={{ x: 0 }}
@@ -75,7 +78,12 @@ export default function AppShell({ sidebar, main, panel = null, sidebarHidden = 
           {sidebar}
         </motion.div>
       )}
-      {main}
+      {/* Behind an open drawer the chat is hidden, as aria-modal says; the
+          drawer keeps Tab. Not inert: that would blur the button that opened
+          the drawer before the drawer could note it, and focus couldn't go back. */}
+      <div className="shell-main" aria-hidden={(phone && drawerOpen) || undefined}>
+        {main}
+      </div>
       <AnimatePresence>{panel}</AnimatePresence>
     </div>
   );

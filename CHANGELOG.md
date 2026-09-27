@@ -643,6 +643,32 @@
 
 ### Fixed
 
+- **The phone drawer keeps Tab inside it,** as its `aria-modal` promised, and
+  hides the chat behind it from screen readers (`aria-hidden`; `inert` would
+  blur the button that opened it, and focus couldn't return there). The trap
+  is shared with the Sources sheet (`features/chat/focus.js`).
+- **A question sent while scrolled up is shown,** and the view follows its
+  answer again. Scrolling up while it streams still stops the following.
+- **A finished answer is announced to screen readers:** "Answer ready, N
+  sources" (one per cited document, as the seals count them), from a status
+  region that stays mounted. The streaming region was removed at `done`, so
+  nothing was said. History never announces.
+- **A connection lost mid-answer says PolicyPal can't be reached,** not the
+  browser's raw error, and `apiStream` always cancels its reader, so the
+  connection is let go however the stream ends. An abort is still rethrown
+  as itself.
+- ADR 0027 notes that its timeout bound left out the CMS pricing call: at
+  most 8 s in each of two tool rounds, so the theoretical bound passes
+  Azure's 240 s ingress timeout.
+- Renaming a thread checks the 1 to 200 characters after trimming, as ADR
+  0027 says. A title that fits once its spaces are removed was refused.
+- **A citation keeps its seal number after a reload.** A streamed answer
+  listed its sources in retrieval order, and a reload in relevance order, so
+  the numbers could change. Both now list them most relevant first, ties by
+  chunk and label compared byte-wise (`COLLATE "C"` in SQL).
+- The test of a streamed answer whose save fails to commit now runs the real
+  spend recording. It checks that the day's total is the spend once (not 0,
+  not doubled) and that no answer or citation is left behind.
 - **A streamed answer's spend survives a failed save.** Spend is marked as
   recorded only after its commit succeeds. Before, a rolled-back commit took
   the spend with it, and it was never recorded again.
@@ -754,6 +780,9 @@
 
 ### Security
 
+- The database engine hides bound values (`hide_parameters=True`), so an
+  email, question or answer never appears in a SQL error or its log line.
+  Postgres's own message can still quote a value it failed to parse.
 - **A streamed round that never reports its usage is counted by estimate:**
   the whole prompt plus the output cap. This covers a client that
   disconnects, Stop, or a dropped connection. Without it, ending streams

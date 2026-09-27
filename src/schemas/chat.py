@@ -10,17 +10,14 @@ class ThreadCreateRequest(BaseModel):
 
 
 class ThreadRenameRequest(BaseModel):
-    # max_length is checked before the validator strips, so a title padded
-    # past 200 characters is refused too.
-    title: str = Field(max_length=200)
+    # 1 to 200 characters after trimming (ADR 0027): stripped before the
+    # length is checked, and anything but a string is left for `str` to refuse.
+    title: str = Field(min_length=1, max_length=200)
 
-    @field_validator("title")
+    @field_validator("title", mode="before")
     @classmethod
-    def _not_blank(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("title must not be blank")
-        return value
+    def _trimmed(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
 
 class ThreadResponse(BaseModel):

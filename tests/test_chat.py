@@ -409,9 +409,9 @@ def test_rename_does_not_move_a_thread_up_the_list(client):
     assert datetime.fromisoformat(after[1]["updated_at"]) == week_ago
 
 
-@pytest.mark.parametrize("title", ["", "   ", "x" * 201])
-def test_rename_rejects_a_blank_or_long_title(client, title):
-    headers = _auth_headers(client, email=f"rename-bad{len(title)}@example.com")
+@pytest.mark.parametrize("title", ["", "   ", "x" * 201, " " + "x" * 201 + " ", 123, None])
+def test_rename_rejects_a_blank_long_or_non_text_title(client, title):
+    headers = _auth_headers(client, email=f"rename-bad-{uuid.uuid4().hex[:8]}@example.com")
     thread_id = _new_thread(client, headers)
 
     resp = client.patch(f"/api/chat/threads/{thread_id}", json={"title": title}, headers=headers)
@@ -419,13 +419,15 @@ def test_rename_rejects_a_blank_or_long_title(client, title):
     assert resp.status_code == 422
 
 
-def test_rename_accepts_a_title_of_exactly_200_characters(client):
-    headers = _auth_headers(client, email="rename-200@example.com")
+@pytest.mark.parametrize("title", ["x" * 200, "   " + "x" * 200 + "   "])
+def test_rename_accepts_200_characters_counted_after_trimming(client, title):
+    headers = _auth_headers(client, email=f"rename-200-{len(title)}@example.com")
     thread_id = _new_thread(client, headers)
 
-    resp = client.patch(f"/api/chat/threads/{thread_id}", json={"title": "x" * 200}, headers=headers)
+    resp = client.patch(f"/api/chat/threads/{thread_id}", json={"title": title}, headers=headers)
 
     assert resp.status_code == 200
+    assert resp.get_json()["title"] == "x" * 200
 
 
 @pytest.mark.parametrize("thread_id", ["00000000-0000-0000-0000-000000000000", "not-a-uuid"])

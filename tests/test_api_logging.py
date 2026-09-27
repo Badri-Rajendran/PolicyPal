@@ -9,8 +9,11 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from src.core import logging as app_logging
+from src.core.db import engine
 
 
 def test_creating_the_app_installs_the_file_handler(app):
@@ -28,6 +31,18 @@ def test_the_libraries_that_would_log_secrets_stay_at_warning(app):
     """urllib3 logs the CMS URL with its ?apikey=; httpx and openai log the prompt."""
     for name in ("urllib3", "httpx", "openai"):
         assert logging.getLogger(name).level == logging.WARNING
+
+
+def test_a_database_error_leaves_out_the_values_it_was_given():
+    """SQLAlchemy's error text, which is logged, carries the bound values by
+    default: an email, a question or an answer. (Postgres's own message can
+    still quote a value it failed on; this error doesn't, so only SQLAlchemy's
+    part is tested.)"""
+    with engine.connect() as connection, pytest.raises(DBAPIError) as caught:
+        connection.execute(text("SELECT :value, 1 / 0"), {"value": "someone@example.com"})
+
+    assert "someone@example.com" not in str(caught.value)
+    assert "hidden due to hide_parameters" in str(caught.value)
 
 
 @pytest.fixture
