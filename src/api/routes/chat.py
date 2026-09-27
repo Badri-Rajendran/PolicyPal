@@ -138,10 +138,12 @@ def _save_answer(db, thread, question: str, result: Answer) -> Message:
         thread_id=thread.id,
         role="assistant",
         content=result.text,
+        # In the order a reload returns them (Message.sources), so a seal keeps
+        # its number: the live answer is serialized from this list as built.
         sources=[
             MessageSource(chunk_id=c.chunk_id, source=c.source, relevance=c.score,
                           content_sha256=content_hash(c.content))
-            for c in result.chunks
+            for c in sorted(result.chunks, key=lambda c: (-c.score, c.chunk_id, c.source))
         ],
         # A snapshot of what the answer showed, in the order shown (ADR 0011).
         plans=[_plan_row(position, plan) for position, plan in enumerate(result.plans)],

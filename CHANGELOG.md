@@ -643,6 +643,10 @@
 
 ### Fixed
 
+- **A citation keeps its seal number after a reload.** A streamed answer
+  listed its sources in retrieval order, and a reload in relevance order, so
+  the numbers could change. Both now list them most relevant first, ties by
+  chunk and label compared byte-wise (`COLLATE "C"` in SQL).
 - The test of a streamed answer whose save fails to commit now runs the real
   spend recording. It checks that the day's total is the spend once (not 0,
   not doubled) and that no answer or citation is left behind.

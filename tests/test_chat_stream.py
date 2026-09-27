@@ -292,3 +292,43 @@ def test_spend_is_recorded_again_when_saving_the_answer_fails_to_commit(client):
     assert [m["role"] for m in _saved(client, headers, thread_id)] == ["user"]
     left = select(func.count()).select_from(MessageSource).join(Message).where(Message.thread_id == uuid.UUID(thread_id))
     assert db.scalar(left) == 0
+
+
+@pytest.fixture
+def kept_on_commit(client, monkeypatch):
+    """Sessions that keep their objects on commit, as production's SessionLocal
+    does (src/core/db.py). The live answer is then serialized from the list
+    _save_answer built, rather than re-read in the relationship's order."""
+    make_session = deps.SessionLocal
+
+    def keeping():
+        session = make_session()
+        session.expire_on_commit = False
+        return session
+
+    monkeypatch.setattr(deps, "SessionLocal", keeping)
+    return client
+
+
+def test_done_numbers_sources_as_a_reload_does(kept_on_commit):
+    """Seals are numbered by source order, so a live answer and the same answer
+    reloaded must list its sources alike: most relevant first, then byte-wise
+    by chunk and label, whatever order retrieval gave them in."""
+    client = kept_on_commit
+    headers, thread_id = _thread(client, "stream-order@example.com")
+    chunks = [
+        RetrievedChunk("c_low", "low", "wiki_Low.txt", 0.31),
+        RetrievedChunk("c_tie", "high", "plan a - Summary of Benefits.pdf", 0.92),
+        RetrievedChunk("c_tie", "high", "Plan B - Summary of Benefits.pdf", 0.92),
+        RetrievedChunk("c_mid", "mid", "wiki_Mid.txt", 0.55),
+        RetrievedChunk("b_tie", "high", "wiki_Tie.txt", 0.92),
+    ]
+    done = _events(_stream(client, headers, thread_id, [Done(Answer("A.", chunks))]))[-1][1]
+
+    def order(sources):
+        return [(s["chunk_id"], s["source"]) for s in sources]
+
+    expected = [("b_tie", "wiki_Tie.txt"), ("c_tie", "Plan B - Summary of Benefits.pdf"),
+                ("c_tie", "plan a - Summary of Benefits.pdf"), ("c_mid", "wiki_Mid.txt"), ("c_low", "wiki_Low.txt")]
+    assert order(done["message"]["sources"]) == expected
+    assert order(_saved(client, headers, thread_id)[1]["sources"]) == expected
