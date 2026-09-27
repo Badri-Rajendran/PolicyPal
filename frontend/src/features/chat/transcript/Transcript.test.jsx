@@ -129,4 +129,51 @@ describe("Transcript", () => {
     rerender(<Transcript {...props} live={{ ...live, text: "It's the amount" }} />);
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
+
+  it("announces a finished answer with its count of cited documents", () => {
+    const sources = [
+      { id: "s1", source: "Plan A - Summary of Benefits.pdf", chunk_id: "c1", relevance: 0.9 },
+      { id: "s2", source: "Plan A - Summary of Benefits.pdf", chunk_id: "c2", relevance: 0.8 },
+      { id: "s3", source: "wiki_Copayment.txt", chunk_id: "c3", relevance: 0.7 },
+    ];
+    const cited = [messages[0], { ...messages[1], sources }];
+    const { rerender } = renderTranscript({ messages: cited });
+    const status = () => screen.getByRole("status");
+    expect(status()).toBeEmptyDOMElement(); // history never announces
+
+    rerender(<Transcript messages={cited} status="ready" finishedId="a1" onOpenSource={vi.fn()} />);
+    expect(status()).toHaveTextContent("Answer ready, 2 sources");
+  });
+
+  it("says just that the answer is ready when it cites nothing, and stays quiet while one streams", () => {
+    const live = { questionId: "q2", stages: ["writing"], notices: [], text: "It" };
+    const { rerender } = renderTranscript({ finishedId: "a1" });
+    const status = () => screen.getByRole("status");
+    expect(status()).toHaveTextContent(/^Answer ready$/);
+
+    const asked = [...messages, { id: "q2", role: "user", content: "And a copay?", created_at: "2026-01-01T00:01:00Z" }];
+    rerender(<Transcript messages={asked} status="ready" live={live} finishedId="a1" onOpenSource={vi.fn()} />);
+    expect(status()).toBeEmptyDOMElement();
+  });
+
+  it("shows a question you send even while scrolled up, then follows its answer", () => {
+    const scrollIntoView = vi.fn();
+    const props = { messages, status: "ready", live: null, onOpenSource: vi.fn() };
+    const { container, rerender } = render(<Transcript {...props} />);
+    container.querySelector(".transcript-end").scrollIntoView = scrollIntoView;
+    const scroller = container.querySelector(".scroll");
+    scrollTo(scroller, { top: 100 });
+
+    const question = { id: "temp-1", role: "user", content: "And a copay?", created_at: "2026-01-01T00:01:00Z" };
+    const live = { questionId: "temp-1", stages: [], notices: [], text: "" };
+    rerender(<Transcript {...props} messages={[...messages, question]} live={live} />);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    rerender(<Transcript {...props} messages={[...messages, question]} live={{ ...live, text: "A copay" }} />);
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+
+    scrollTo(scroller, { top: 100 }); // scrolling up again still stops the following
+    rerender(<Transcript {...props} messages={[...messages, question]} live={{ ...live, text: "A copay is" }} />);
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
 });

@@ -643,6 +643,12 @@
 
 ### Fixed
 
+- **A question sent while scrolled up is shown,** and the view follows its
+  answer again. Scrolling up while it streams still stops the following.
+- **A finished answer is announced to screen readers:** "Answer ready, N
+  sources" (one per cited document, as the seals count them), from a status
+  region that stays mounted. The streaming region was removed at `done`, so
+  nothing was said. History never announces.
 - **A connection lost mid-answer says PolicyPal can't be reached,** not the
   browser's raw error, and `apiStream` always cancels its reader, so the
   connection is let go however the stream ends. An abort is still rethrown
