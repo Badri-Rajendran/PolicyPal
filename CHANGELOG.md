@@ -643,6 +643,9 @@
 
 ### Fixed
 
+- The test of a streamed answer whose save fails to commit now runs the real
+  spend recording. It checks that the day's total is the spend once (not 0,
+  not doubled) and that no answer or citation is left behind.
 - **A streamed answer's spend survives a failed save.** Spend is marked as
   recorded only after its commit succeeds. Before, a rolled-back commit took
   the spend with it, and it was never recorded again.

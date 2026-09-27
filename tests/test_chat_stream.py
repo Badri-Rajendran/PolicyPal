@@ -6,13 +6,17 @@ from unittest.mock import patch
 import flask
 import openai
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.api import deps
-from src.models.chat import MessageSource
+from src.models.chat import Message, MessageSource
+from src.models.user import User
 from src.services.generation import Answer, Delta, Done, Notice, Reset, Stage
 from src.services.passages import content_hash
 from src.services.retrieval import RetrievedChunk
+from src.services.usage import record_tokens as real_record
+from src.services.usage import tokens_used_today
 from tests.test_chat import _auth_headers
 
 CHUNKS = [RetrievedChunk("c1", "A deductible is...", "wiki_Health.txt", 0.9)]
@@ -258,24 +262,33 @@ def test_a_thread_deleted_while_it_is_answered_ends_with_error(client):
 
 def test_spend_is_recorded_again_when_saving_the_answer_fails_to_commit(client):
     """The commit that saves the answer also carries the spend. If it fails,
-    the rollback undoes both, and the spend must still be recorded."""
+    the rollback undoes both: the spend is recorded again, once, and nothing
+    of the answer is left behind."""
     headers, thread_id = _thread(client, "stream-commit@example.com")
     real_commit = Session.commit
-    state = {"recorded": 0, "failed": False}
+    state = {"spends": [], "failed": False}
 
-    def record(*_args):
-        state["recorded"] += 1
+    def record(db, user_id, tokens):
+        state["spends"].append(tokens)
+        real_record(db, user_id, tokens)
 
     def flaky_commit(session):
-        if state["recorded"] == 1 and not state["failed"]:
+        if len(state["spends"]) == 1 and not state["failed"]:
             state["failed"] = True
             raise RuntimeError("commit failed")
         return real_commit(session)
 
     with patch("src.api.routes.chat.answer_query_events", return_value=iter([Done(Answer("A.", CHUNKS))])), \
+         patch("src.api.routes.chat.token_usage", return_value=21), \
          patch("src.api.routes.chat.record_tokens", side_effect=record), \
          patch.object(Session, "commit", flaky_commit):
         resp = client.post(_url(thread_id), json={"content": "x"}, headers=headers, buffered=True)
 
     assert _events(resp)[-1] == ("error", {"error": "generation failed"})
-    assert state == {"recorded": 2, "failed": True}
+    assert state == {"spends": [21, 21], "failed": True}
+    db = deps.SessionLocal()
+    user_id = db.scalar(select(User.id).where(User.email == "stream-commit@example.com"))
+    assert tokens_used_today(db, user_id) == 21    # the rolled-back 21 is gone, not doubled
+    assert [m["role"] for m in _saved(client, headers, thread_id)] == ["user"]
+    left = select(func.count()).select_from(MessageSource).join(Message).where(Message.thread_id == uuid.UUID(thread_id))
+    assert db.scalar(left) == 0
