@@ -643,6 +643,9 @@
 
 ### Fixed
 
+- ADR 0027 notes that its timeout bound left out the CMS pricing call: at
+  most 8 s in each of two tool rounds, so the theoretical bound passes
+  Azure's 240 s ingress timeout.
 - Renaming a thread checks the 1 to 200 characters after trimming, as ADR
   0027 says. A title that fits once its spaces are removed was refused.
 - **A citation keeps its seal number after a reload.** A streamed answer

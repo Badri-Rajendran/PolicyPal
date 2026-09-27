@@ -15,6 +15,12 @@ It amends two earlier ADRs:
 Sub-project 3 of the California expansion, which had planned to take this
 number, takes ADR 0028 instead.
 
+Corrected on 2026-09-27: the timeout bound under Consequences counts only
+the model calls, which with retries alone reach 240 s. Each of the two tool
+rounds can add a live CMS pricing call of up to 8 s
+(`cms_live_timeout_seconds`), so the theoretical bound is past Azure's
+ingress timeout, not close to it. The usual worst case is still well under it.
+
 ## Context
 
 The chat worked, but three things made it read like a prototype:
