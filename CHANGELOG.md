@@ -643,6 +643,8 @@
 
 ### Fixed
 
+- Renaming a thread checks the 1 to 200 characters after trimming, as ADR
+  0027 says. A title that fits once its spaces are removed was refused.
 - **A citation keeps its seal number after a reload.** A streamed answer
   listed its sources in retrieval order, and a reload in relevance order, so
   the numbers could change. Both now list them most relevant first, ties by
