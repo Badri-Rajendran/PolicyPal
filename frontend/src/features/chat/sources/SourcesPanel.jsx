@@ -4,25 +4,9 @@ import { useEffect, useRef } from "react";
 import IconButton from "../../../components/IconButton";
 import { useMediaQuery } from "../../../hooks/useMediaQuery";
 import { sourceNumbers } from "../../../utils/markers";
+import { trapTab } from "../focus";
 import SourceCard from "./SourceCard";
 import "./sources.css";
-
-const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-// Tab and Shift+Tab stay inside a modal sheet, wrapping at either end. Moved
-// by hand, since focus can sit on a card that isn't itself in the tab order.
-function trapTab(event, container) {
-  if (event.key !== "Tab") return;
-  const focusable = [...container.querySelectorAll(FOCUSABLE)];
-  if (focusable.length === 0) return;
-  const current = document.activeElement;
-  const position = (el) => current.compareDocumentPosition(el);
-  const after = focusable.filter((el) => el !== current && position(el) & Node.DOCUMENT_POSITION_FOLLOWING);
-  const before = focusable.filter((el) => el !== current && position(el) & Node.DOCUMENT_POSITION_PRECEDING);
-  const next = event.shiftKey ? (before.at(-1) ?? focusable.at(-1)) : (after[0] ?? focusable[0]);
-  event.preventDefault();
-  next.focus();
-}
 
 // The cited passages of one answer (Main.dc.html's panel): a column beside the
 // transcript, or a bottom sheet with a scrim at 720 px and below (Mobile.dc.html).

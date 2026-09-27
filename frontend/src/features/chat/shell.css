@@ -19,6 +19,12 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* Only there to hide the main column behind the phone drawer: its child
+   stays the grid item. */
+.shell-main {
+  display: contents;
+}
+
 .shell-error {
   display: flex;
   flex-direction: column;

@@ -643,6 +643,10 @@
 
 ### Fixed
 
+- **The phone drawer keeps Tab inside it,** as its `aria-modal` promised, and
+  hides the chat behind it from screen readers (`aria-hidden`; `inert` would
+  blur the button that opened it, and focus couldn't return there). The trap
+  is shared with the Sources sheet (`features/chat/focus.js`).
 - **A question sent while scrolled up is shown,** and the view follows its
   answer again. Scrolling up while it streams still stops the following.
 - **A finished answer is announced to screen readers:** "Answer ready, N

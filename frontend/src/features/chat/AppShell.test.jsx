@@ -37,6 +37,7 @@ describe("AppShell", () => {
     expect(container.firstChild).toHaveClass("collapsed");
     expect(screen.queryByRole("complementary", { name: "Your questions" })).not.toBeInTheDocument();
     expect(container.querySelector(".side-wrap")).toHaveAttribute("inert");
+    expect(container.querySelector(".shell-main")).not.toHaveAttribute("aria-hidden");
   });
 
   describe("on a phone", () => {
@@ -64,6 +65,47 @@ describe("AppShell", () => {
       expect(onCloseDrawer).toHaveBeenCalledTimes(1);
       await userEvent.click(document.querySelector(".scrim"));
       expect(onCloseDrawer).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps Tab inside the open drawer, and the chat behind it out of reach", async () => {
+      const twoButtons = (
+        <aside aria-label="Your questions">
+          <button type="button">New question</button>
+          <button type="button">Profile</button>
+        </aside>
+      );
+      const chat = (
+        <main>
+          <button type="button">Send</button>
+        </main>
+      );
+      const { container } = render(<AppShell sidebar={twoButtons} main={chat} drawerOpen onCloseDrawer={vi.fn()} />);
+      const drawer = screen.getByRole("dialog", { name: "Your questions" });
+
+      for (let i = 0; i < 4; i += 1) {
+        await userEvent.tab();
+        expect(drawer).toContainElement(document.activeElement);
+      }
+      await userEvent.tab({ shift: true });
+      expect(drawer).toContainElement(document.activeElement);
+      expect(container.querySelector(".shell-main")).toHaveAttribute("aria-hidden", "true");
+    });
+
+    it("gives the chat back, and focus to what opened the drawer, once it closes", async () => {
+      const opener = (
+        <main>
+          <button type="button">Open your questions</button>
+        </main>
+      );
+      const { container, rerender } = render(<AppShell sidebar={sidebar} main={opener} drawerOpen={false} onCloseDrawer={vi.fn()} />);
+      screen.getByRole("button", { name: "Open your questions" }).focus();
+
+      rerender(<AppShell sidebar={sidebar} main={opener} drawerOpen onCloseDrawer={vi.fn()} />);
+      expect(screen.getByRole("button", { name: "New question" })).toHaveFocus();
+      rerender(<AppShell sidebar={sidebar} main={opener} drawerOpen={false} onCloseDrawer={vi.fn()} />);
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Open your questions" })).toHaveFocus());
+      expect(container.querySelector(".shell-main")).not.toHaveAttribute("aria-hidden");
     });
 
     it("removes the drawer once closed", async () => {
