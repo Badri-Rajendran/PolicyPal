@@ -761,6 +761,9 @@
 
 ### Security
 
+- The database engine hides bound values (`hide_parameters=True`), so an
+  email, question or answer never appears in a SQL error or its log line.
+  Postgres's own message can still quote a value it failed to parse.
 - **A streamed round that never reports its usage is counted by estimate:**
   the whole prompt plus the output cap. This covers a client that
   disconnects, Stop, or a dropped connection. Without it, ending streams
