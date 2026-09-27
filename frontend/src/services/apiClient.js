@@ -68,7 +68,8 @@ export async function apiFetch(path, { method = "GET", token, body } = {}) {
 }
 
 // A POST answered with text/event-stream. Errors before the stream reject as
-// apiFetch's do; an abort is rethrown as the AbortError it is.
+// apiFetch's do, and so does a connection lost part-way; an abort is rethrown
+// as the AbortError it is.
 export async function apiStream(path, { token, body, signal, onEvent }) {
   const headers = { "Content-Type": "application/json", Accept: "text/event-stream" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -90,10 +91,19 @@ export async function apiStream(path, { token, body, signal, onEvent }) {
   const parser = createSseParser(onEvent);
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    parser.push(decoder.decode(value, { stream: true }));
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      parser.push(decoder.decode(value, { stream: true }));
+    }
+  } catch (err) {
+    if (err?.name === "AbortError") throw err;
+    throw new ApiError(UNREACHABLE, 0);
+  } finally {
+    // Frees the connection whichever way the loop ended; a finished stream
+    // makes this a no-op, and a failed one can't fail it any further.
+    reader.cancel().catch(() => {});
   }
   parser.push(decoder.decode());
   parser.end();

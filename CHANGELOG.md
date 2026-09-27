@@ -643,6 +643,10 @@
 
 ### Fixed
 
+- **A connection lost mid-answer says PolicyPal can't be reached,** not the
+  browser's raw error, and `apiStream` always cancels its reader, so the
+  connection is let go however the stream ends. An abort is still rethrown
+  as itself.
 - ADR 0027 notes that its timeout bound left out the CMS pricing call: at
   most 8 s in each of two tool rounds, so the theoretical bound passes
   Azure's 240 s ingress timeout.
